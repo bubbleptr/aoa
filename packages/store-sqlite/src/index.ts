@@ -474,9 +474,7 @@ function createTx(db: Database): Tx {
       })),
     getJournal(session, call): JournalEntry | null {
       const r = q.getJournal.get(session, call);
-      if (!r) return null;
-      const { intentAt: _intentAt, resultAt: _resultAt, ...entry } = toJournal(r);
-      return entry;
+      return r ? toJournal(r) : null;
     },
     listJournal: (session) => q.listJournal.all(session).map(toJournal),
     recordIntent(e) {
