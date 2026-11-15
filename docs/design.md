@@ -87,6 +87,10 @@ interface Channel {
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
 | `apps/aoa` | CLI、`serve`、worktree 管理 |
 
+写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`runtime-pi` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
+
+runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消息时，内核把结局记成 `sent`。
+
 「任务」不是内核概念。内核只有 session；`apps/aoa` 在新 session 开始时建一个 worktree，于是一项任务就是一个 session 加一个 worktree。
 
 ## 4. 数据
@@ -134,7 +138,7 @@ interface Channel {
 
 ### scheduler
 
-照 §4.3。按最早的 `due` 定闹钟，最长一分钟复查一次。到点时在同一个事务里写事件、把 follow-up 标完成、把 schedule 推到下一次。事件的 `dedupe_key` 是 `(timer_id, occurrence)`。停机期间错过的只补最近一次。
+照 §4.3。第一版的周期只有固定间隔（`{ everyMs, anchor }`），下一次总是从 anchor 算，不累加，所以不会漂；没有 cron。按最早的 `due` 定闹钟，最长一分钟复查一次。到点时在同一个事务里写事件、把 follow-up 标完成、把 schedule 推到下一次。事件的 `dedupe_key` 是 `(timer_id, occurrence)`。停机期间错过的只补最近一次。
 
 ### dispatcher
 
@@ -159,6 +163,12 @@ GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里�
 凭据：`git_push`、`github_open_pr`、`github_comment` 是宿主进程里的工具，由宿主加上凭据再发请求，agent 的上下文和调用参数里不出现凭据（I-PRM-1）。不做沙箱。agent 的 shell 和宿主是同一个系统用户，所以读凭据路径和 `~/.aoa` 的调用不会被规则直接放行。这是已知并接受的风险，和 早先的项目 ADR-0052 §7 撤回后的状态一致。
 
 延后调用照 §6.4：session 存盘，run 结束，请求进 outbox，答复作为 `approval_answer` 事件回到 inbox，同一个 `call_id` 的第二次答复被去重丢掉。24 小时没答复就写一个到期事件。
+
+三处规范没写、这里定下的：
+
+- 怎么回答。session 停在延后调用上时，你在它的 thread 上发的下一条评论就是答复：`/approve` 是批准，`/deny 理由` 是拒绝；其他内容对提问来说是答案，对审批来说算拒绝并把内容当作你的意见交给 agent。通道不解析，它只按作者标出这是你的话；改写成 `approval_answer` 在内核收事件时做。
+- 批准之后谁执行。内核在新 run 开始前自己执行被批准的那次调用（照常记日志），把结果连同答复一起交给 runtime；runtime 只告诉模型结果，不让模型再调一次。这样不用改写 transcript 里停在半路的那次调用。
+- 失败的 run 立刻重试，不退避，三次后事件进 `dead`。
 
 ## 7. 记忆
 
