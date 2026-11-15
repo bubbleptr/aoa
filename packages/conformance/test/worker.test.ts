@@ -56,5 +56,20 @@ for (const [name, factory] of storeFactories) {
       await serving;
       expect(h.events().map((e) => e.status)).toEqual(["done"]);
     });
+
+    test("the worker reports each run's start and its recorded end, including a failure", async () => {
+      const seen: string[] = [];
+      const runtime = new ScriptedRuntime([{ fail: new Error("model down") }, {}]);
+      const worker = h.worker({
+        runtime,
+        onRunStart: (r) => seen.push(`start ${r.runId} ${r.events}`),
+        onRunEnd: (r) => seen.push(`end ${r.runId} ${r.end?.kind ?? r.error}`),
+      });
+      h.append();
+      await worker.drain();
+
+      const [first, second] = h.runs().map((r) => r.id);
+      expect(seen).toEqual([`start ${first} 1`, `end ${first} model down`, `start ${second} 1`, `end ${second} silent`]);
+    });
   });
 }

@@ -5,7 +5,7 @@ import type { PolicyConfig } from "./policy.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
-import type { Event, InboxId, RunEnd, RunId, RunResult, Session, ToolDef } from "./types.ts";
+import type { Event, InboxId, RunEnd, RunId, RunResult, Session, SessionId, ToolDef } from "./types.ts";
 
 export const LEASE_MS = 5 * 60_000;
 export const LEASE_RENEW_MS = 60_000;
@@ -30,7 +30,13 @@ export type WorkerOptions = {
   policy?: PolicyConfig;
   /** The inbox's memory directory, read into every run's resident context (spec §5). */
   memory?: Memory;
+  /** Called when a run starts, with how many events it took. */
+  onRunStart?: (run: { runId: RunId; sessionId: SessionId; events: number }) => void;
+  /** Called once a run's outcome is stored: its end, or the error that sent its events back. */
+  onRunEnd?: (run: RunOutcome) => void;
 };
+
+export type RunOutcome = { runId: RunId; sessionId: SessionId; end: RunEnd | null; error: string | null };
 
 export type DrainResult = {
   runs: number;
@@ -53,6 +59,8 @@ export class Worker {
   private readonly prepareSession: WorkerOptions["prepareSession"];
   private readonly policy: PolicyConfig | undefined;
   private readonly memory: Memory | undefined;
+  private readonly onRunStart: NonNullable<WorkerOptions["onRunStart"]>;
+  private readonly onRunEnd: NonNullable<WorkerOptions["onRunEnd"]>;
 
   /** Set once a crash point fires; from then on this worker behaves as a dead process. */
   private crashed: SimulatedCrash | null = null;
@@ -71,6 +79,8 @@ export class Worker {
     this.prepareSession = o.prepareSession;
     this.policy = o.policy;
     this.memory = o.memory;
+    this.onRunStart = o.onRunStart ?? (() => {});
+    this.onRunEnd = o.onRunEnd ?? (() => {});
   }
 
   /**
@@ -166,6 +176,7 @@ export class Worker {
 
   private async execute(claim: Claim): Promise<void> {
     this.crashAt("after_claim");
+    this.onRunStart({ runId: claim.runId, sessionId: claim.session.id, events: claim.events.length });
     const stopRenewal = this.renewLease(claim.runId);
     const c = { ...claim };
     let result: RunResult;
@@ -207,6 +218,7 @@ export class Worker {
         t.endRun(c.runId, { error }, this.clock.now());
         t.releaseEvents(c.runId, MAX_ATTEMPTS);
       });
+      this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
       return;
     } finally {
       stopRenewal();
@@ -214,11 +226,12 @@ export class Worker {
 
     this.assertAlive();
     this.crashAt("before_complete");
-    this.store.tx((t) => {
+    const outcome = this.store.tx((t): RunOutcome => {
       const now = this.clock.now();
       if (t.completeEvents(c.runId) === 0) {
-        t.endRun(c.runId, { error: "lost its lease before completing; the events were handed to another run" }, now);
-        return;
+        const error = "lost its lease before completing; the events were handed to another run";
+        t.endRun(c.runId, { error }, now);
+        return { runId: c.runId, sessionId: c.session.id, end: null, error };
       }
       const msgs = t.claimRunMessages(c.session.id, c.runId);
       const pending = t.getSession(c.session.id)!.pending;
@@ -231,7 +244,9 @@ export class Worker {
             : result.end;
       t.endRun(c.runId, { end }, now);
       t.recordSessionRun(c.session.id, c.runId, result.sessionRef ?? c.session.runtimeRef);
+      return { runId: c.runId, sessionId: c.session.id, end, error: null };
     });
+    this.onRunEnd(outcome);
   }
 
   private renewLease(runId: RunId): () => void {
