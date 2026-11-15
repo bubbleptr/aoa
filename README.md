@@ -15,7 +15,7 @@
 - 一个 GitHub App，装到目标仓库上，权限给 Issues、Pull requests、Contents 的读写。把私钥文件放在本机。
 - 模型的 API key 放在环境变量里，例如 `ANTHROPIC_API_KEY`。
 
-把 `aoa.config.example.ts` 复制成 `aoa.config.ts` 再改。配置里只写环境变量名和私钥路径，不写密钥。
+把 `aoa.config.example.ts` 复制成 `aoa.config.ts` 再改。配置里只写环境变量名和私钥路径，不写密钥。`serve` 要求配置 `classifier`：没有它，每条 `bash` 和 `git_push` 都要等你批准，agent 自己跑不了检查，也提交不了。
 
 ```bash
 bun run aoa serve                      # 常驻：轮询 GitHub，跑任务，发评论；Ctrl-C 停

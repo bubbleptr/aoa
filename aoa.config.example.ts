@@ -6,6 +6,7 @@ export default defineAgent({
   dataDir: "~/.aoa",
   repo: { path: "~/code/your-repo", base: "main" },
   model: { provider: "anthropic", modelId: "your-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  // Required by `aoa serve`: it judges bash and git_push calls, which otherwise all wait for your approval.
   classifier: { provider: "anthropic", modelId: "your-small-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
   github: {
     owner: "your-github-user-or-org",

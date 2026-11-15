@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { answer, send, status } from "./commands.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, validateForServe } from "./config.ts";
 import { serve } from "./serve.ts";
 import { type Seams, assemble } from "./wiring.ts";
 
@@ -83,6 +83,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
   try {
     switch (p.command) {
       case "serve": {
+        validateForServe(agent.config);
         const keyEnv = agent.config.model.apiKeyEnv;
         const env = io.seams?.env ?? process.env;
         if (!env[keyEnv]) throw new Error(`The model API key is missing: set the environment variable ${keyEnv}.`);

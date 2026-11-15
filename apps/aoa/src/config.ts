@@ -15,7 +15,7 @@ export type AgentConfig = {
   dataDir: string;
   repo: { path: string; base: string };
   model: ModelRef;
-  /** Judges `medium` calls; without one they wait for the user. */
+  /** Judges `medium` calls; without one they wait for the user. Required by `serve`. */
   classifier?: ModelRef;
   github: {
     owner: string;
@@ -144,6 +144,19 @@ export function validateConfig(raw: unknown): AgentConfig {
   }
   if (c.rate !== undefined) config.rate = rate(c.rate);
   return config;
+}
+
+/**
+ * What `serve` needs beyond a valid config. `bash` and `git_push` are `medium`, and a `medium` call with no
+ * classifier waits for the user, so without one the agent cannot even run the project's checks unattended.
+ */
+export function validateForServe(c: AgentConfig): void {
+  if (!c.classifier) {
+    throw new ConfigError(
+      "classifier",
+      "is required for serve: without it every bash and git_push call waits for your approval, so the agent cannot run checks or commit on its own",
+    );
+  }
 }
 
 export type Paths = {

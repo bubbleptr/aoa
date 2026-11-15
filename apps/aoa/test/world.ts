@@ -65,12 +65,12 @@ export class World {
   private readonly judgeModel = fauxProvider({ provider: "judge", models: [{ id: "judge" }] });
   agent!: Agent;
 
-  constructor() {
+  constructor(o: { classifier?: boolean } = {}) {
     this.config = {
       dataDir: join(this.root, "data"),
       repo: { path: this.repo, base: "main" },
       model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV },
-      classifier: { provider: "judge", modelId: "judge", apiKeyEnv: KEY_ENV },
+      ...(o.classifier === false ? {} : { classifier: { provider: "judge", modelId: "judge", apiKeyEnv: KEY_ENV } }),
       github: {
         owner: OWNER,
         repo: REPO,
