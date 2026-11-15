@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { LEASE_MS, SimulatedCrash, addFollowUp, closeSession, type Session, type ToolDef } from "@aoa/kernel";
-import { Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
+import { Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const whereAmI: ToolDef = {
   name: "where_am_i",
@@ -98,6 +98,25 @@ for (const [name, factory] of storeFactories) {
       await worker.drain();
       expect(runtime.runs[1]!.input.session).toMatchObject({ id: session, resumed: true });
       expect(h.store.tx((t) => t.getSession(session))?.status).toBe("open");
+    });
+
+    test("closing a session that waits on a call drops the call, so the reopened session works", async () => {
+      const deploy = countingTool("deploy");
+      const lint = countingTool("lint");
+      const runtime = new ScriptedRuntime([{ calls: [{ tool: "deploy", callId: "call-1" }] }, { calls: [{ tool: "lint", callId: "call-2" }] }]);
+      const worker = h.worker({ runtime, tools: [deploy, lint], policy: { risk: { lint: "low" } } });
+      h.append({ thread: "task-1" });
+      await worker.drain();
+      const session = runtime.runs[0]!.input.session.id;
+
+      closeSession(h.store, session);
+      expect(h.store.tx((t) => t.getDeferred("call-1"))).toBeNull();
+      h.append({ thread: "task-1", payload: { text: "start over" } });
+      await worker.drain();
+
+      expect(runtime.runs[1]!.input.events.map((e) => e.source)).toEqual(["user_message"]);
+      expect(runtime.runs[1]!.toolResults).toEqual([{ status: "ok", output: { done: 1 } }]);
+      expect(h.store.tx((t) => t.getSession(session))).toMatchObject({ status: "open", pending: null });
     });
   });
 }
