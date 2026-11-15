@@ -41,6 +41,8 @@ export type EventInsert = {
   status: Extract<EventStatus, "pending" | "dropped">;
 };
 
+export type JournalRecord = JournalEntry & { intentAt: number; resultAt: number | null };
+
 export type OutMsgInsert = Omit<OutMsg, "status" | "attempts">;
 
 /** An undelivered message and the earliest time it may be tried. */
@@ -79,7 +81,10 @@ export interface Tx {
   insertSession(s: { id: SessionId; inboxId: InboxId; createdAt: number }): void;
   getSession(id: SessionId): Session | null;
   recordSessionRun(id: SessionId, run: RunId, runtimeRef: string | null): void;
-  setSessionWorkdir(id: SessionId, workdir: string): void;
+  /** Null when the workdir was removed, so the next run of the session prepares a new one. */
+  setSessionWorkdir(id: SessionId, workdir: string | null): void;
+  /** Oldest first. */
+  listSessions(inboxId: InboxId): Session[];
   setSessionStatus(id: SessionId, status: Extract<SessionStatus, "open" | "closed">): void;
   /** The first thread registered for the session: where its messages go. Null if it has none. */
   primaryThread(session: SessionId): string | null;
@@ -90,6 +95,8 @@ export interface Tx {
   insertDeferred(d: PendingCall): void;
   getDeferred(callId: CallId): PendingCall | null;
   deleteDeferred(callId: CallId): void;
+  /** Oldest first. */
+  listDeferred(inboxId: InboxId): PendingCall[];
   recordDecision(d: DecisionRecord): void;
   /** Oldest first. */
   listDecisions(session: SessionId): DecisionRecord[];
@@ -99,6 +106,8 @@ export interface Tx {
   listRuns(inboxId: InboxId): RunRecord[];
 
   getJournal(session: SessionId, call: CallId): JournalEntry | null;
+  /** The session's journal, in the order the intents were recorded. */
+  listJournal(session: SessionId): JournalRecord[];
   recordIntent(e: { inboxId: InboxId; sessionId: SessionId; callId: CallId; tool: string; args: unknown; at: number }): void;
   recordResult(session: SessionId, call: CallId, result: ToolResult, at: number): void;
 

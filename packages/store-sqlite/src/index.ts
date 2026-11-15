@@ -7,6 +7,7 @@ import type {
   EventInsert,
   EventStatus,
   JournalEntry,
+  JournalRecord,
   RunEnd,
   RunRecord,
   Session,
@@ -18,7 +19,18 @@ import type {
 } from "@aoa/kernel";
 import { migrate } from "./schema.ts";
 
-export type SqliteStore = Store & { close(): void };
+export type PullState = { number: number; state: "open" | "merged" | "closed"; checkedAt: number };
+
+/**
+ * The last known state of each session's pull request, as `aoa status` last saw it on GitHub.
+ * It lives outside `Tx` because the kernel knows nothing of pull requests.
+ */
+export type PullStates = {
+  get(sessionId: string): PullState | null;
+  set(sessionId: string, s: PullState): void;
+};
+
+export type SqliteStore = Store & { pulls: PullStates; close(): void };
 
 /** Opens (and migrates) a store on a file path or `:memory:`. */
 export function sqliteStore(path: string): SqliteStore {
@@ -28,8 +40,24 @@ export function sqliteStore(path: string): SqliteStore {
   db.exec("PRAGMA foreign_keys = ON");
   migrate(db);
   const t = createTx(db);
+  const getPull = db.query<{ number: number; state: PullState["state"]; checked_at: number }, [string]>(
+    "SELECT number, state, checked_at FROM pull_states WHERE session_id = ?",
+  );
+  const setPull = db.query(
+    `INSERT INTO pull_states (session_id, number, state, checked_at) VALUES ($session, $number, $state, $at)
+     ON CONFLICT (session_id) DO UPDATE SET number = excluded.number, state = excluded.state, checked_at = excluded.checked_at`,
+  );
   return {
     tx: (fn) => db.transaction(() => fn(t)).immediate(),
+    pulls: {
+      get(sessionId) {
+        const r = getPull.get(sessionId);
+        return r ? { number: r.number, state: r.state, checkedAt: r.checked_at } : null;
+      },
+      set(sessionId, p) {
+        setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt });
+      },
+    },
     close: () => db.close(),
   };
 }
@@ -96,7 +124,43 @@ type JournalRow = {
   args: string;
   state: "intent" | "done";
   result: string | null;
+  intent_at: number;
+  result_at: number | null;
 };
+
+const toJournal = (r: JournalRow): JournalRecord => ({
+  sessionId: r.session_id,
+  callId: r.call_id,
+  tool: r.tool,
+  args: JSON.parse(r.args),
+  state: r.state,
+  result: r.result === null ? null : (JSON.parse(r.result) as ToolResult),
+  intentAt: r.intent_at,
+  resultAt: r.result_at,
+});
+
+const toSession = (r: SessionRow): Session => ({
+  id: r.id,
+  inboxId: r.inbox_id,
+  status: r.status,
+  pending: r.pending,
+  runtimeRef: r.runtime_ref,
+  workdir: r.workdir,
+  lastRun: r.last_run,
+  createdAt: r.created_at,
+  tainted: r.tainted === 1,
+});
+
+const toDeferred = (r: DeferredRow): PendingCall => ({
+  callId: r.call_id,
+  sessionId: r.session_id,
+  inboxId: r.inbox_id,
+  tool: r.tool,
+  args: JSON.parse(r.args),
+  kind: r.kind,
+  requestedAt: r.requested_at,
+  expiresAt: r.expires_at,
+});
 
 type TimerRow = {
   id: string;
@@ -221,6 +285,7 @@ function createTx(db: Database): Tx {
     ),
     insertSession: db.query("INSERT INTO sessions (id, inbox_id, created_at) VALUES ($id, $inbox, $at)"),
     getSession: db.query<SessionRow, [string]>("SELECT * FROM sessions WHERE id = ?"),
+    listSessions: db.query<SessionRow, [string]>("SELECT * FROM sessions WHERE inbox_id = ? ORDER BY created_at, rowid"),
     recordSessionRun: db.query("UPDATE sessions SET last_run = $run, runtime_ref = $ref WHERE id = $id"),
     setSessionWorkdir: db.query("UPDATE sessions SET workdir = $workdir WHERE id = $id"),
     setSessionStatus: db.query("UPDATE sessions SET status = $status WHERE id = $id"),
@@ -235,6 +300,7 @@ function createTx(db: Database): Tx {
     getJournal: db.query<JournalRow, [string, string]>(
       "SELECT * FROM tool_journal WHERE session_id = ? AND call_id = ?",
     ),
+    listJournal: db.query<JournalRow, [string]>("SELECT * FROM tool_journal WHERE session_id = ? ORDER BY intent_at, rowid"),
     recordIntent: db.query(
       `INSERT INTO tool_journal (session_id, call_id, inbox_id, tool, args, state, intent_at)
        VALUES ($session, $call, $inbox, $tool, $args, 'intent', $at)`,
@@ -306,6 +372,7 @@ function createTx(db: Database): Tx {
        VALUES ($call, $session, $inbox, $tool, $args, $kind, $requested, $expires)`,
     ),
     getDeferred: db.query<DeferredRow, [string]>("SELECT * FROM deferred WHERE call_id = ?"),
+    listDeferred: db.query<DeferredRow, [string]>("SELECT * FROM deferred WHERE inbox_id = ? ORDER BY requested_at, rowid"),
     deleteDeferred: db.query("DELETE FROM deferred WHERE call_id = $call"),
     recordDecision: db.query(
       `INSERT INTO decisions (call_id, session_id, tool, decision, basis, at)
@@ -370,19 +437,9 @@ function createTx(db: Database): Tx {
     },
     getSession(id): Session | null {
       const r = q.getSession.get(id);
-      if (!r) return null;
-      return {
-        id: r.id,
-        inboxId: r.inbox_id,
-        status: r.status,
-        pending: r.pending,
-        runtimeRef: r.runtime_ref,
-        workdir: r.workdir,
-        lastRun: r.last_run,
-        createdAt: r.created_at,
-        tainted: r.tainted === 1,
-      };
+      return r ? toSession(r) : null;
     },
+    listSessions: (inboxId) => q.listSessions.all(inboxId).map(toSession),
     recordSessionRun(id, run, runtimeRef) {
       q.recordSessionRun.run({ id, run, ref: runtimeRef });
     },
@@ -418,15 +475,10 @@ function createTx(db: Database): Tx {
     getJournal(session, call): JournalEntry | null {
       const r = q.getJournal.get(session, call);
       if (!r) return null;
-      return {
-        sessionId: r.session_id,
-        callId: r.call_id,
-        tool: r.tool,
-        args: JSON.parse(r.args),
-        state: r.state,
-        result: r.result === null ? null : (JSON.parse(r.result) as ToolResult),
-      };
+      const { intentAt: _intentAt, resultAt: _resultAt, ...entry } = toJournal(r);
+      return entry;
     },
+    listJournal: (session) => q.listJournal.all(session).map(toJournal),
     recordIntent(e) {
       q.recordIntent.run({
         session: e.sessionId,
@@ -518,18 +570,9 @@ function createTx(db: Database): Tx {
     },
     getDeferred(callId): PendingCall | null {
       const r = q.getDeferred.get(callId);
-      if (!r) return null;
-      return {
-        callId: r.call_id,
-        sessionId: r.session_id,
-        inboxId: r.inbox_id,
-        tool: r.tool,
-        args: JSON.parse(r.args),
-        kind: r.kind,
-        requestedAt: r.requested_at,
-        expiresAt: r.expires_at,
-      };
+      return r ? toDeferred(r) : null;
     },
+    listDeferred: (inboxId) => q.listDeferred.all(inboxId).map(toDeferred),
     deleteDeferred(callId) {
       q.deleteDeferred.run({ call: callId });
     },

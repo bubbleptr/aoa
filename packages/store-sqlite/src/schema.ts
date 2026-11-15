@@ -145,6 +145,14 @@ const migrations: string[] = [
     PRIMARY KEY (inbox_id, source, dedupe_key)
   );
   `,
+  `
+  CREATE TABLE pull_states (
+    session_id TEXT PRIMARY KEY REFERENCES sessions (id),
+    number     INTEGER NOT NULL,
+    state      TEXT NOT NULL CHECK (state IN ('open', 'merged', 'closed')),
+    checked_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
