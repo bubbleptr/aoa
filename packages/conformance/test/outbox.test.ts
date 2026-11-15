@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { LEASE_MS, OUTBOX_MAX_ATTEMPTS, SimulatedCrash, outboxTools, type RatePolicy } from "@aoa/kernel";
-import { FakeChannel, Harness, ScriptedRuntime, crashAt, storeFactories, type ScriptedCall } from "../src/index.ts";
+import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type ScriptedCall } from "../src/index.ts";
 
 const MINUTE = 60_000;
 const unpaced: RatePolicy = { maxMsgs: 1000, windowMs: MINUTE, minIntervalMs: 0 };
@@ -82,6 +82,19 @@ for (const [name, factory] of storeFactories) {
       await dispatcher.pass();
       expect(channel.visible.map((m) => m.body)).toEqual(["second"]);
       expect(channel.calls).toHaveLength(6);
+    });
+
+    test("an approval request waits behind a held message of its own session", async () => {
+      h.append({ thread: "task-a" });
+      const runtime = new ScriptedRuntime([{ calls: [notify("call-1", "starting the deploy"), { tool: "deploy", callId: "call-2" }] }]);
+      await h.worker({ runtime, tools: [...tools(), countingTool("deploy")], policy: { risk: { notify: "low" } } }).drain();
+      const quietAllDay: RatePolicy = { ...unpaced, quietPeriod: { startMinute: 0, endMinute: 24 * 60 } };
+
+      await h.dispatcher({ channel, policy: quietAllDay }).pass();
+      expect(channel.calls).toEqual([]);
+      await h.dispatcher({ channel, policy: unpaced }).pass();
+      await h.dispatcher({ channel, policy: unpaced }).pass();
+      expect(channel.visible.map((m) => m.kind)).toEqual(["message", "approval_request"]);
     });
 
     test("serve delivers after a wake and goes back to sleep", async () => {
