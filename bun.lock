@@ -9,6 +9,13 @@
         "typescript": "5.9.3",
       },
     },
+    "packages/channel-github": {
+      "name": "@aoa/channel-github",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+      },
+    },
     "packages/conformance": {
       "name": "@aoa/conformance",
       "version": "0.0.0",
@@ -30,6 +37,8 @@
     },
   },
   "packages": {
+    "@aoa/channel-github": ["@aoa/channel-github@workspace:packages/channel-github"],
+
     "@aoa/conformance": ["@aoa/conformance@workspace:packages/conformance"],
 
     "@aoa/kernel": ["@aoa/kernel@workspace:packages/kernel"],
