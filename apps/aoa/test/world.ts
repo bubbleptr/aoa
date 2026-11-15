@@ -19,7 +19,7 @@ import { APP_ID, BOT, FakeGitHub, INSTALLATION_ID, OWNER, REPO, USER, writeAppKe
 export { BOT, OWNER, REPO, USER };
 
 export const MODEL_KEY = "sk-model-secret-5f1e9c2a7b";
-const KEY_ENV = "AOA_TEST_MODEL_KEY";
+export const KEY_ENV = "AOA_TEST_MODEL_KEY";
 const key = writeAppKey();
 const configModule = join(import.meta.dir, "../src/config.ts");
 
@@ -65,7 +65,11 @@ export class World {
   private readonly judgeModel = fauxProvider({ provider: "judge", models: [{ id: "judge" }] });
   agent!: Agent;
 
-  constructor(o: { classifier?: boolean } = {}) {
+  /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
+  readonly env: Record<string, string | undefined>;
+
+  constructor(o: { classifier?: boolean; env?: Record<string, string | undefined> } = {}) {
+    this.env = o.env ?? { [KEY_ENV]: MODEL_KEY };
     this.config = {
       dataDir: join(this.root, "data"),
       repo: { path: this.repo, base: "main" },
@@ -113,7 +117,7 @@ export class World {
       runGit: this.runGit,
       providers: [this.agentModel.provider, this.judgeModel.provider],
       clock: this.clock,
-      env: { [KEY_ENV]: MODEL_KEY },
+      env: this.env,
       log: (line: string) => this.logs.push(line),
     };
   }

@@ -82,7 +82,10 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   const channel = githubChannel(github);
   const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit });
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
-  const keyOf = (m: ModelRef) => env[m.apiKeyEnv];
+  const keys = new Map([config.model, config.classifier].filter((m) => m !== undefined).map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]));
+  // pi holds the keys in memory from here on; the agent's bash and git inherit this environment, so they go.
+  for (const name of keys.keys()) delete env[name];
+  const keyOf = (m: ModelRef) => keys.get(m.apiKeyEnv);
 
   const runtime = piRuntime({
     provider: config.model.provider,

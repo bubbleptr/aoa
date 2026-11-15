@@ -75,7 +75,15 @@ export async function main(argv: string[], io: Io): Promise<number> {
 
   let agent;
   try {
-    agent = assemble(await loadConfig(p.config, io.cwd), io.seams);
+    const config = await loadConfig(p.config, io.cwd);
+    if (p.command === "serve") {
+      validateForServe(config);
+      const env = io.seams?.env ?? process.env;
+      for (const m of [config.model, config.classifier]) {
+        if (m && !env[m.apiKeyEnv]) throw new Error(`The model API key is missing: set the environment variable ${m.apiKeyEnv}.`);
+      }
+    }
+    agent = assemble(config, io.seams);
   } catch (err) {
     io.err((err as Error).message);
     return 1;
@@ -83,10 +91,6 @@ export async function main(argv: string[], io: Io): Promise<number> {
   try {
     switch (p.command) {
       case "serve": {
-        validateForServe(agent.config);
-        const keyEnv = agent.config.model.apiKeyEnv;
-        const env = io.seams?.env ?? process.env;
-        if (!env[keyEnv]) throw new Error(`The model API key is missing: set the environment variable ${keyEnv}.`);
         await serve(agent, (io.stopSignal ?? signals)());
         return 0;
       }
