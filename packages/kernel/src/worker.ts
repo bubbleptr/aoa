@@ -1,6 +1,8 @@
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import type { AgentRuntime, Clock, Store, Tx } from "./ports.ts";
+import type { Memory } from "./memory.ts";
 import type { PolicyConfig } from "./policy.ts";
+import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
 import type { Event, InboxId, RunEnd, RunId, RunResult, Session, ToolDef } from "./types.ts";
@@ -26,6 +28,8 @@ export type WorkerOptions = {
   prepareSession?: (session: Session) => Promise<{ workdir: string }>;
   /** Decides every tool call (spec §6). Without one, every call is allowed. */
   policy?: PolicyConfig;
+  /** The inbox's memory directory, read into every run's resident context (spec §5). */
+  memory?: Memory;
 };
 
 export type DrainResult = {
@@ -48,6 +52,7 @@ export class Worker {
   private readonly debounceMs: number;
   private readonly prepareSession: WorkerOptions["prepareSession"];
   private readonly policy: PolicyConfig | undefined;
+  private readonly memory: Memory | undefined;
 
   /** Set once a crash point fires; from then on this worker behaves as a dead process. */
   private crashed: SimulatedCrash | null = null;
@@ -65,6 +70,7 @@ export class Worker {
     this.debounceMs = o.debounceMs ?? 0;
     this.prepareSession = o.prepareSession;
     this.policy = o.policy;
+    this.memory = o.memory;
   }
 
   /**
@@ -181,12 +187,14 @@ export class Worker {
         assertAlive: () => this.assertAlive(),
       };
       const answer = await resolveAnswer(c.events, this.tools, toolCtx);
+      const sent = this.store.tx((t) => t.listRecentSent(this.inboxId, RESIDENT_RECENT_MESSAGES));
+      const resident = await buildResident(this.memory, c.session.id, sent);
       this.assertAlive();
       result = await this.runtime.run({
         runId: c.runId,
         session: { id: c.session.id, resumed: c.resumed, ref: c.session.runtimeRef, workdir: c.session.workdir },
         events: c.events,
-        resident: "",
+        resident,
         tools: wrapTools(this.tools, toolCtx),
         ...(answer ? { answer } : {}),
       });

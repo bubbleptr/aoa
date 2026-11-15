@@ -41,3 +41,5 @@ export {
   type Verdict,
 } from "./policy.ts";
 export { DEFER_TTL_MS, askUserTools, type AnswerPayload } from "./deferred.ts";
+export { dirMemory, memoryTools, type Memory } from "./memory.ts";
+export { RESIDENT_FILE_LIMIT, RESIDENT_PREAMBLE, RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
