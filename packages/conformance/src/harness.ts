@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ChannelPoller,
+  Dispatcher,
   Scheduler,
   SimulatedCrash,
   Worker,
@@ -9,6 +11,8 @@ import {
   type AppendResult,
   type CrashHook,
   type CrashPoint,
+  type Channel,
+  type RatePolicy,
   type NewEvent,
   type Store,
   type WorkerOptions,
@@ -80,6 +84,18 @@ export class Harness {
 
   scheduler(o: { store?: Store; crash?: CrashHook; onFire?: () => void } = {}): Scheduler {
     return new Scheduler({ store: o.store ?? this.store, clock: this.clock, inboxId: this.inboxId, ...o });
+  }
+
+  dispatcher(o: { channel: Channel; store?: Store; crash?: CrashHook; policy?: RatePolicy }): Dispatcher {
+    return new Dispatcher({ store: o.store ?? this.store, clock: this.clock, inboxId: this.inboxId, ...o });
+  }
+
+  poller(o: { channel: Channel; store?: Store; crash?: CrashHook; onEvents?: () => void }): ChannelPoller {
+    return new ChannelPoller({ store: o.store ?? this.store, clock: this.clock, inboxId: this.inboxId, ...o });
+  }
+
+  outbox() {
+    return this.store.tx((t) => t.listOutbox(this.inboxId));
   }
 
   timerEvents() {
