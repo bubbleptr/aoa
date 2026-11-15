@@ -1,7 +1,7 @@
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import type { AgentRuntime, Clock, Store, Tx } from "./ports.ts";
 import { wrapTools } from "./tools.ts";
-import type { Event, InboxId, RunId, RunResult, Session, ToolDef } from "./types.ts";
+import type { Event, InboxId, RunEnd, RunId, RunResult, Session, ToolDef } from "./types.ts";
 
 export const LEASE_MS = 5 * 60_000;
 export const LEASE_RENEW_MS = 60_000;
@@ -199,7 +199,10 @@ export class Worker {
         t.endRun(c.runId, { error: "lost its lease before completing; the events were handed to another run" }, now);
         return;
       }
-      t.endRun(c.runId, { end: result.end }, now);
+      const msgs = t.claimRunMessages(c.session.id, c.runId);
+      // The runtime only knows silent or deferred; a run that wrote to the outbox has sent (design §3).
+      const end: RunEnd = result.end.kind === "silent" && msgs.length > 0 ? { kind: "sent", msgs } : result.end;
+      t.endRun(c.runId, { end }, now);
       t.recordSessionRun(c.session.id, c.runId, result.sessionRef ?? c.session.runtimeRef);
     });
   }

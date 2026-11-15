@@ -5,7 +5,9 @@ export type CrashPoint =
   | "after_tool_exec"
   | "after_tool_result"
   | "before_complete"
-  | "after_timer_fire";
+  | "after_timer_fire"
+  | "after_deliver"
+  | "after_poll";
 
 export type CrashHook = (point: CrashPoint) => void;
 

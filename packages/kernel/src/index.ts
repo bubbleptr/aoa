@@ -1,5 +1,5 @@
 export type * from "./types.ts";
-export type { AgentRuntime, Clock, EventInsert, Store, Tx } from "./ports.ts";
+export type { AgentRuntime, Clock, EventInsert, OutMsgInsert, QueuedMsg, Store, Tx } from "./ports.ts";
 export { systemClock } from "./ports.ts";
 export { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 export { appendEvent, type AppendDeps, type AppendResult } from "./intake.ts";
@@ -19,3 +19,14 @@ export {
   type TimerToolDeps,
 } from "./timers.ts";
 export { closeSession } from "./sessions.ts";
+export { DEFAULT_RATE_POLICY, pace, type PacePlan, type RatePolicy } from "./pace.ts";
+export {
+  DISPATCHER_MAX_SLEEP_MS,
+  Dispatcher,
+  OUTBOX_MAX_ATTEMPTS,
+  outboxTools,
+  type DispatchResult,
+  type DispatcherOptions,
+  type OutboxToolDeps,
+} from "./outbox.ts";
+export { ChannelPoller, POLL_INTERVAL_MS, type ChannelPollerOptions } from "./poller.ts";
