@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ToolDef } from "./types.ts";
 
 /** The agent's memory (spec §5): a directory of files that outlives every run. Paths are relative to its root. */
@@ -82,8 +82,10 @@ export function dirMemory(root: string): Memory {
 }
 
 /** The user's file: loaded on every run, never changed by the agent (spec §5.2). */
-const isInstructions = (path: string): boolean =>
-  posix.normalize(path.replace(/\\/g, "/")).replace(/^(\.\/)+/, "").toLowerCase() === "instructions.md";
+const isInstructions = (path: string): boolean => {
+  const parts = partsOf(path);
+  return parts.length === 1 && parts[0]!.toLowerCase() === "instructions.md";
+};
 
 /** Agent tools over the memory directory: `memory_read`, `memory_write`, `memory_list`. */
 export function memoryTools(memory: Memory): ToolDef[] {
