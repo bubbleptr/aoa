@@ -13,6 +13,8 @@ import type {
   RunResult,
   Session,
   SessionId,
+  Timer,
+  TimerId,
   ToolResult,
 } from "./types.ts";
 
@@ -73,6 +75,24 @@ export interface Tx {
   getJournal(session: SessionId, call: CallId): JournalEntry | null;
   recordIntent(e: { inboxId: InboxId; sessionId: SessionId; callId: CallId; tool: string; args: unknown; at: number }): void;
   recordResult(session: SessionId, call: CallId, result: ToolResult, at: number): void;
+
+  /** Returns false and changes nothing if a timer with this id already exists. */
+  insertTimer(t: Omit<Timer, "status" | "lastFired">): boolean;
+  getTimer(id: TimerId): Timer | null;
+  listTimers(inboxId: InboxId): Timer[];
+  /** Armed timers with `due <= now`, earliest first. */
+  listDueTimers(inboxId: InboxId, now: number): Timer[];
+  /** The earliest `due` among armed timers, or null if none is armed. */
+  nextTimerDue(inboxId: InboxId): number | null;
+  /**
+   * Records that `occurrence` fired: `last_fired ← occurrence`, then either `done` (`nextDue` null)
+   * or `due ← nextDue`. Applies only while the timer is armed with `due = occurrence`; returns whether it did.
+   */
+  fireTimer(id: TimerId, occurrence: number, nextDue: number | null): boolean;
+  /** Cancels an armed follow-up that belongs to `session`; returns whether one was cancelled. */
+  cancelFollowUp(id: TimerId, session: SessionId): boolean;
+  /** Cancels every armed timer of the session (D-TMR-6); returns how many. */
+  cancelTimersForSession(session: SessionId): number;
 }
 
 export interface AgentRuntime {

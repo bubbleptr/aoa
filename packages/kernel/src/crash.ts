@@ -1,5 +1,11 @@
 /** Commit points where conformance tests kill the process (design §5). */
-export type CrashPoint = "after_append" | "after_claim" | "after_tool_exec" | "after_tool_result" | "before_complete";
+export type CrashPoint =
+  | "after_append"
+  | "after_claim"
+  | "after_tool_exec"
+  | "after_tool_result"
+  | "before_complete"
+  | "after_timer_fire";
 
 export type CrashHook = (point: CrashPoint) => void;
 

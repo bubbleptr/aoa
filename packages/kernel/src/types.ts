@@ -4,6 +4,7 @@ export type SessionId = string;
 export type RunId = string;
 export type CallId = string;
 export type MsgId = string;
+export type TimerId = string;
 
 export type EventSource = "user_message" | "webhook" | "timer" | "background_job" | "approval_answer";
 
@@ -121,3 +122,24 @@ export type RunInput = {
 };
 
 export type RunResult = { end: RunEnd; sessionRef?: string };
+
+export type TimerKind = "follow_up" | "schedule";
+
+export type TimerStatus = "armed" | "done" | "cancelled";
+
+/** Fixed-interval recurrence: occurrences sit on the grid `anchor + k * everyMs`. */
+export type Recurrence = { everyMs: number; anchor: number };
+
+/** A row of `timers` (spec §4.2). `kind = "schedule"` iff `recurrence` is set. */
+export type Timer = {
+  id: TimerId;
+  inboxId: InboxId;
+  kind: TimerKind;
+  /** The session its event resumes; null means the event opens a new session. */
+  sessionId: SessionId | null;
+  due: number;
+  recurrence: Recurrence | null;
+  payload: unknown;
+  status: TimerStatus;
+  lastFired: number | null;
+};

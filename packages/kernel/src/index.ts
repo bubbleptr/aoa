@@ -5,3 +5,16 @@ export { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 export { appendEvent, type AppendDeps, type AppendResult } from "./intake.ts";
 export { LEASE_MS, LEASE_RENEW_MS, MAX_ATTEMPTS, Worker, type DrainResult, type WorkerOptions } from "./worker.ts";
 export type { Channel, MsgKind, MsgStatus, OutMsg } from "./channel.ts";
+export {
+  SCHEDULER_MAX_SLEEP_MS,
+  Scheduler,
+  addFollowUp,
+  addSchedule,
+  nextSlot,
+  timerTools,
+  type FollowUpInput,
+  type PassResult,
+  type ScheduleInput,
+  type SchedulerOptions,
+  type TimerToolDeps,
+} from "./timers.ts";
