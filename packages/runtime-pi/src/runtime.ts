@@ -86,7 +86,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     sessionManager,
     settingsManager: SettingsManager.inMemory(),
     noTools: "builtin",
-    customTools: input.tools.map((t) => toPiTool(t, stop)),
+    customTools: input.tools.map((t) => toPiTool(t, input.session.id, stop)),
   });
   stop.session = session;
 
@@ -152,8 +152,15 @@ class Stop {
   }
 }
 
+/**
+ * The kernel keys deferred calls and answers by call id across the whole inbox, but providers do not all
+ * make ids unique: some send none or derive one from the call's position. The session prefix keeps one
+ * session's ids from colliding with another's; it is the same on every run, so a replay finds its journal entry.
+ */
+const kernelCallId = (sessionId: string, toolCallId: string): CallId => `${sessionId}:${toolCallId}`;
+
 /** A kernel tool as a pi tool: the only way pi can execute anything is through `invoke`. */
-function toPiTool(tool: Tool, stop: Stop): ToolDefinition {
+function toPiTool(tool: Tool, sessionId: string, stop: Stop): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
@@ -161,9 +168,10 @@ function toPiTool(tool: Tool, stop: Stop): ToolDefinition {
     // pi validates tool arguments as plain JSON Schema whatever built it (docs/extensions.md); TSchema is only its type.
     parameters: tool.schema as TSchema,
     async execute(toolCallId, params) {
+      const callId = kernelCallId(sessionId, toolCallId);
       let result: ToolResult;
       try {
-        result = await tool.invoke(toolCallId, params);
+        result = await tool.invoke(callId, params);
       } catch (err) {
         stop.fail(err);
         throw err;
@@ -177,7 +185,7 @@ function toPiTool(tool: Tool, stop: Stop): ToolDefinition {
         case "unknown":
           return { details: undefined, ...text(result.message) };
         case "deferred":
-          stop.defer(toolCallId);
+          stop.defer(callId);
           return { details: undefined, ...text(DEFERRED_PLACEHOLDER) };
       }
     },

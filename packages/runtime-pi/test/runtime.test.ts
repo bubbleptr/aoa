@@ -40,12 +40,24 @@ describe("piRuntime", () => {
 
     const result = await h.runtime.run(runInput({ tools: [lookup.tool] }));
 
-    expect(lookup.calls).toEqual([{ callId: "call-1", args: { value: "apples" } }]);
+    expect(lookup.calls).toEqual([{ callId: "session-1:call-1", args: { value: "apples" } }]);
     const seen = toolResultFor(h.requests[1]!, "call-1");
     expect(seen && textOf(seen)).toBe("found apples");
     expect(seen?.isError).toBe(false);
     expect(result.end).toEqual({ kind: "silent" });
     expect(result.sessionRef && existsSync(result.sessionRef)).toBe(true);
+  });
+
+  test("two sessions whose model repeats a call id hand the kernel distinct call ids", async () => {
+    // Some providers return no id or one derived from the call's position (openai-compatible servers, Mistral).
+    const h = setup();
+    const lookup = recordingTool("lookup", () => ({ status: "ok", output: "x" }));
+    h.script([callTool("lookup", "a", "call_0"), reply("done"), callTool("lookup", "b", "call_0"), reply("done")]);
+
+    await h.runtime.run(runInput({ session: { id: "session-a", resumed: false, ref: null, workdir: null }, tools: [lookup.tool] }));
+    await h.runtime.run(runInput({ session: { id: "session-b", resumed: false, ref: null, workdir: null }, tools: [lookup.tool] }));
+
+    expect(lookup.calls.map((c) => c.callId)).toEqual(["session-a:call_0", "session-b:call_0"]);
   });
 
   test("an error result reaches the model as an error tool result", async () => {
@@ -159,7 +171,7 @@ describe("piRuntime", () => {
 
     const first = await h.runtime.run(runInput({ tools: [push.tool] }));
 
-    expect(first.end).toEqual({ kind: "deferred", callId: "call-d" });
+    expect(first.end).toEqual({ kind: "deferred", callId: "session-1:call-d" });
     expect(h.pending()).toBe(1);
 
     h.script([reply("pushed, opening the PR next")]);
@@ -170,7 +182,7 @@ describe("piRuntime", () => {
         events: [event({ verdict: "yes" }, { source: "approval_answer" })],
         tools: [push.tool],
         answer: {
-          callId: "call-d",
+          callId: "session-1:call-d",
           tool: "git_push",
           args: { value: "feature" },
           verdict: "approve",
@@ -212,11 +224,11 @@ describe("piRuntime", () => {
       runInput({
         session: { id: "session-1", resumed: true, ref: first.sessionRef ?? null, workdir: null },
         tools: [push.tool, lookup.tool],
-        answer: { callId: "call-d", tool: "git_push", args: { value: "feature" }, verdict: "deny" },
+        answer: { callId: "session-1:call-d", tool: "git_push", args: { value: "feature" }, verdict: "deny" },
       }),
     );
 
-    expect(first.end).toEqual({ kind: "deferred", callId: "call-d" });
+    expect(first.end).toEqual({ kind: "deferred", callId: "session-1:call-d" });
     // pi starts every call of a parallel batch before any of them returns, and keeps each executed result.
     expect(lookup.calls).toHaveLength(1);
     const sibling = toolResultFor(h.requests.at(-1)!, "call-s");
