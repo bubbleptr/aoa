@@ -9,6 +9,23 @@
         "typescript": "5.9.3",
       },
     },
+    "apps/aoa": {
+      "name": "@aoa/cli",
+      "version": "0.0.0",
+      "bin": {
+        "aoa": "./src/main.ts",
+      },
+      "dependencies": {
+        "@aoa/channel-github": "workspace:*",
+        "@aoa/kernel": "workspace:*",
+        "@aoa/runtime-pi": "workspace:*",
+        "@aoa/store-sqlite": "workspace:*",
+        "@earendil-works/pi-ai": "1.5.2",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+      },
+    },
     "packages/channel-github": {
       "name": "@aoa/channel-github",
       "version": "0.0.0",
@@ -50,6 +67,8 @@
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.129.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw=="],
 
     "@aoa/channel-github": ["@aoa/channel-github@workspace:packages/channel-github"],
+
+    "@aoa/cli": ["@aoa/cli@workspace:apps/aoa"],
 
     "@aoa/conformance": ["@aoa/conformance@workspace:packages/conformance"],
 

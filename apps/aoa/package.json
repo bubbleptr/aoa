@@ -1,0 +1,18 @@
+{
+  "name": "@aoa/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "aoa": "./src/main.ts" },
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@aoa/channel-github": "workspace:*",
+    "@aoa/kernel": "workspace:*",
+    "@aoa/runtime-pi": "workspace:*",
+    "@aoa/store-sqlite": "workspace:*",
+    "@earendil-works/pi-ai": "1.5.2"
+  },
+  "devDependencies": {
+    "@aoa/conformance": "workspace:*"
+  }
+}
