@@ -1,6 +1,8 @@
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import type { AgentRuntime, Clock, Store, Tx } from "./ports.ts";
-import { wrapTools } from "./tools.ts";
+import type { PolicyConfig } from "./policy.ts";
+import { answers, resolveAnswer } from "./resume.ts";
+import { wrapTools, type ToolContext } from "./tools.ts";
 import type { Event, InboxId, RunEnd, RunId, RunResult, Session, ToolDef } from "./types.ts";
 
 export const LEASE_MS = 5 * 60_000;
@@ -22,6 +24,8 @@ export type WorkerOptions = {
    * so it must be idempotent: return the same workdir when it already exists.
    */
   prepareSession?: (session: Session) => Promise<{ workdir: string }>;
+  /** Decides every tool call (spec §6). Without one, every call is allowed. */
+  policy?: PolicyConfig;
 };
 
 export type DrainResult = {
@@ -43,6 +47,7 @@ export class Worker {
   private readonly crashHook: CrashHook;
   private readonly debounceMs: number;
   private readonly prepareSession: WorkerOptions["prepareSession"];
+  private readonly policy: PolicyConfig | undefined;
 
   /** Set once a crash point fires; from then on this worker behaves as a dead process. */
   private crashed: SimulatedCrash | null = null;
@@ -59,6 +64,7 @@ export class Worker {
     this.crashHook = o.crash ?? (() => {});
     this.debounceMs = o.debounceMs ?? 0;
     this.prepareSession = o.prepareSession;
+    this.policy = o.policy;
   }
 
   /**
@@ -119,7 +125,8 @@ export class Worker {
     for (const group of groupPending(t.listPending(this.inboxId))) {
       const head = group[0]!;
       const existing = head.resume === null ? null : t.getSession(head.resume);
-      if (existing?.status === "paused" && !group.some((e) => e.source === "approval_answer")) continue;
+      // A session waiting on a call runs again only with the answer to that call (I-PRM-4).
+      if (existing?.status === "paused" && !group.some((e) => answers(e, existing.pending))) continue;
 
       const readyAt = Math.max(...group.map((e) => e.receivedAt)) + this.debounceMs;
       if (readyAt > now) {
@@ -135,6 +142,7 @@ export class Worker {
         throw new Error(`claim of ${ids.length} events failed inside the selecting transaction`);
       }
       if (session.status === "closed") t.setSessionStatus(session.id, "open");
+      if (group.some((e) => !e.trusted)) t.markTainted(session.id);
       t.insertRun({ id: runId, inboxId: this.inboxId, sessionId: session.id, events: ids, startedAt: now });
       return {
         claim: { runId, session: t.getSession(session.id)!, resumed: existing !== null, events: ids.map((id) => t.getEvent(id)!) },
@@ -162,20 +170,25 @@ export class Worker {
         this.store.tx((t) => t.setSessionWorkdir(c.session.id, workdir));
         c.session = { ...c.session, workdir };
       }
+      const toolCtx: ToolContext = {
+        store: this.store,
+        clock: this.clock,
+        inboxId: this.inboxId,
+        sessionId: c.session.id,
+        workdir: c.session.workdir,
+        policy: this.policy,
+        crash: (p) => this.crashAt(p),
+        assertAlive: () => this.assertAlive(),
+      };
+      const answer = await resolveAnswer(c.events, this.tools, toolCtx);
+      this.assertAlive();
       result = await this.runtime.run({
         runId: c.runId,
         session: { id: c.session.id, resumed: c.resumed, ref: c.session.runtimeRef, workdir: c.session.workdir },
         events: c.events,
         resident: "",
-        tools: wrapTools(this.tools, {
-          store: this.store,
-          clock: this.clock,
-          inboxId: this.inboxId,
-          sessionId: c.session.id,
-          workdir: c.session.workdir,
-          crash: (p) => this.crashAt(p),
-          assertAlive: () => this.assertAlive(),
-        }),
+        tools: wrapTools(this.tools, toolCtx),
+        ...(answer ? { answer } : {}),
       });
     } catch (err) {
       // A crash stands in for the process dying: write nothing on the way out.
@@ -200,8 +213,14 @@ export class Worker {
         return;
       }
       const msgs = t.claimRunMessages(c.session.id, c.runId);
-      // The runtime only knows silent or deferred; a run that wrote to the outbox has sent (design §3).
-      const end: RunEnd = result.end.kind === "silent" && msgs.length > 0 ? { kind: "sent", msgs } : result.end;
+      const pending = t.getSession(c.session.id)!.pending;
+      // The store, not the runtime, knows whether the session waits on a call; a run that wrote to the outbox has sent (design §3).
+      const end: RunEnd =
+        pending !== null
+          ? { kind: "deferred", callId: pending }
+          : result.end.kind === "silent" && msgs.length > 0
+            ? { kind: "sent", msgs }
+            : result.end;
       t.endRun(c.runId, { end }, now);
       t.recordSessionRun(c.session.id, c.runId, result.sessionRef ?? c.session.runtimeRef);
     });
