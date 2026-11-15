@@ -1,6 +1,6 @@
 // Copy to aoa.config.ts and fill in. Secrets stay out of this file: the model API key is read from the
 // environment variable named in apiKeyEnv, and the GitHub App key from privateKeyPath.
-import { defineAgent } from "./apps/aoa/src/config.ts";
+import { defineAgent } from "./apps/aoa/src/index.ts";
 
 export default defineAgent({
   dataDir: "~/.aoa",
