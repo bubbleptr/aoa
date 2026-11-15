@@ -44,27 +44,33 @@ aoa status             # 各任务的结局、被问次数、提交到 PR 的时
 
 ## 3. 结构
 
-内核只认三个端口，不知道 GitHub、worktree 和具体模型。
+内核只认三个端口，不知道 GitHub、worktree 和具体模型。runtime 拿到的工具是内核包好的，裁决（§6）和日志（§5）都在 `invoke` 里，适配器绕不过去。
 
 ```ts
 interface Store { tx<T>(fn: (t: Tx) => T): T }   // 一个事务 = 规范里的 ATOMIC
 
-interface AgentRuntime { run(input: RunInput): Promise<RunEnd> }
+interface AgentRuntime { run(input: RunInput): Promise<RunResult> }
 
 type RunInput = {
   runId: RunId;
   session: { id: SessionId; resumed: boolean; ref: string | null };
   events: Event[];                 // 转义后的摘要加指针
   resident: string;                // 指令 + 索引，前缀稳定
-  tools: Tool[];
-  check(call: ToolCall): Promise<"allow" | "block" | "defer">;
+  tools: Tool[];                   // 内核包好的：invoke 里先裁决、再记日志、再执行
   answer?: { callId: CallId; verdict: "approve" | "deny"; text?: string };
+};
+
+type Tool = {
+  name: string; description: string; schema: unknown;
+  invoke(callId: CallId, args: unknown): Promise<ToolResult>;
 };
 
 type RunEnd =
   | { kind: "sent"; msgs: MsgId[] }
   | { kind: "silent" }
   | { kind: "deferred"; callId: CallId };
+
+type RunResult = { end: RunEnd; sessionRef?: string };   // sessionRef 指向适配器保管的 transcript
 
 interface Channel {
   deliver(m: OutMsg): Promise<void>;
@@ -105,13 +111,17 @@ interface Channel {
 
 沿用 早先的项目：事件带 `thread`（例如 `github:owner/repo#12`），`threads` 表把它映射到 session。开出任务的事件自带的 thread 在建 session 时登记；之后才出现的（agent 开的 PR）由 agent 调 `follow` 工具登记。对得上就设 `resume`，对不上就开新 session。这个判断只读数据库，不读 worker 内存（§3.2）。
 
+组批的键是 `resume`；没有 `resume` 的事件按 `thread` 分组，两者都没有的才共用一个新 session。规范的 I-EVT-6 让所有首次出现的事件共用一个新 session，这里收紧了：两个不同的 issue 不该进同一项任务。一次 run 仍然只在一个 session 里。
+
+事件状态比规范多一个 `dead`：重试超过 `MAX_ATTEMPTS` 的事件停在这里，不再被取走，在 `aoa status` 里可见。
+
 ## 5. 流程
 
 ### worker
 
-照 §8.2。每个 inbox 一个 worker，每次醒来都重新从 `events` 拉取，不信唤醒信号里带的内容。
+照 §8.2。每个 inbox 一个 worker，每次醒来都重新从 `events` 拉取，不信唤醒信号里带的内容。互斥由数据库保证，不靠进程里的锁：claim 是一个事务，只有这个 inbox 没有未过期的租约时才成功。run 的结局、session 的更新和事件标 `done` 在同一个事务里提交。
 
-每个提交点都有名字：`after_append`、`after_claim`、`after_tool`、`before_complete`。一致性测试靠这些名字在指定位置杀进程。
+每个提交点都有名字：`after_append`、`after_claim`、`after_tool_exec`、`after_tool_result`、`before_complete`。一致性测试靠这些名字在指定位置杀进程。
 
 一项任务停在延后调用上时，session 标 `paused`，run 结束，worker 接着取下一项（I-PRM-4）。每项任务有自己的 worktree，互不干扰。
 
