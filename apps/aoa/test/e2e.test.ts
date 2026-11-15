@@ -198,18 +198,42 @@ describe("end to end", () => {
     const w = await world();
     const { session } = await happyPath(w);
     const pr = w.gh.openPulls()[0]!;
-    expect(existsSync(session.workdir!)).toBe(true);
+    const branch = `aoa/${session.id.slice(0, 8)}`;
+    // Preparing again, as the kernel does after a crash, reuses the worktree.
+    expect(await w.agent.worktrees.prepare(session)).toEqual({ workdir: session.workdir! });
 
     await w.agent.checkPulls();
     expect(w.sessions()[0]).toMatchObject({ status: "open" });
 
-    w.gh.closePull(pr.number);
+    // A check that lands while the session's run is in flight leaves its worktree alone.
+    w.gh.addComment(pr.number, USER, "Never mind, closing this.");
+    w.script([
+      async () => {
+        w.gh.closePull(pr.number);
+        await w.agent.checkPulls();
+        return say("Okay.");
+      },
+    ]);
+    await w.poll();
+    await w.drain();
+    expect(w.sessions()[0]).toMatchObject({ status: "open", workdir: session.workdir });
+    expect(existsSync(session.workdir!)).toBe(true);
+
     await w.agent.checkPulls();
     expect(w.sessions()[0]).toMatchObject({ status: "closed", workdir: null });
     expect(existsSync(session.workdir!)).toBe(false);
 
     const report = JSON.parse((await w.cli("status", "--json", "--refresh")).out);
     expect(report.sessions[0]).toMatchObject({ state: "closed", outcome: "discarded", pull: { state: "closed" } });
+
+    // A later comment reopens the session in a new worktree on the same branch, commits included.
+    w.gh.addComment(pr.number, USER, "Reopening: one more change.");
+    w.script([call("bash", { command: "git branch --show-current && cat greeting.txt" }), say("Back on it.")]);
+    w.advance(1000);
+    await w.poll();
+    await w.drain();
+    expect(w.sessions()[0]).toMatchObject({ status: "open", workdir: session.workdir });
+    expect(JSON.stringify(w.modelRequests.at(-1))).toContain(`${branch}\\nhello`);
   });
 
   test("C13: the installation token, the App key and the model key appear nowhere the agent can see", async () => {

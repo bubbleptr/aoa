@@ -23,7 +23,7 @@ const KEY_ENV = "AOA_TEST_MODEL_KEY";
 const key = writeAppKey();
 const configModule = join(import.meta.dir, "../src/config.ts");
 
-export type Step = AssistantMessage | ((messages: Message[]) => AssistantMessage);
+export type Step = AssistantMessage | ((messages: Message[]) => AssistantMessage | Promise<AssistantMessage>);
 
 export const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
   fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });

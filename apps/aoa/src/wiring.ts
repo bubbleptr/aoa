@@ -35,7 +35,6 @@ export type Seams = {
   clock?: Clock;
   env?: Record<string, string | undefined>;
   log?: (line: string) => void;
-  home?: string;
 };
 
 export type Agent = {
@@ -64,7 +63,7 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 
 /** The one assembly of the agent: `serve`, the other commands and the end-to-end test all go through it. */
 export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
-  const paths = derivePaths(config, seams.home);
+  const paths = derivePaths(config);
   const clock = seams.clock ?? systemClock;
   const env = seams.env ?? process.env;
   const log = seams.log ?? defaultLog;
@@ -145,6 +144,9 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   const scheduler = new Scheduler({ ...deps, onFire: () => worker.wake() });
   const poller = new ChannelPoller({ ...deps, channel: logged, onEvents: () => worker.wake() });
 
+  const inRun = (sessionId: string) =>
+    store.tx((t) => t.listEvents(inboxId)).some((e) => e.status === "in_run" && e.resume === sessionId);
+
   async function lookUp(closeFinished: boolean): Promise<void> {
     const sessions = store.tx((t) => t.listSessions(inboxId));
     for (const s of sessions) {
@@ -160,6 +162,8 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
       }
       store.pulls.set(s.id, { number: pr.number, state, checkedAt: clock.now() });
       if (!closeFinished || state === "open") continue;
+      // Closing would pull the worktree out from under a run in flight; a later check gets it.
+      if (inRun(s.id)) continue;
       closeSession(store, s.id);
       if (s.workdir !== null) {
         try {
