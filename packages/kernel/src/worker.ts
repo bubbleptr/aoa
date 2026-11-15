@@ -148,7 +148,7 @@ export class Worker {
     try {
       result = await this.runtime.run({
         runId: c.runId,
-        session: { id: c.session.id, resumed: c.resumed, ref: c.session.runtimeRef },
+        session: { id: c.session.id, resumed: c.resumed, ref: c.session.runtimeRef, workdir: c.session.workdir },
         events: c.events,
         resident: "",
         tools: wrapTools(this.tools, {
@@ -156,6 +156,7 @@ export class Worker {
           clock: this.clock,
           inboxId: this.inboxId,
           sessionId: c.session.id,
+          workdir: c.session.workdir,
           crash: (p) => this.crashAt(p),
           assertAlive: () => this.assertAlive(),
         }),

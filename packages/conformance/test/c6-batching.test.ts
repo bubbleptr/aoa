@@ -32,7 +32,7 @@ for (const [name, factory] of storeFactories) {
       const reply = h.append({ thread: "github:o/r#1" });
       expect(reply.resume).toBe(one!.id);
       expect((await worker.drain()).runs).toBe(1);
-      expect(runtime.runs[2]!.input.session).toEqual({ id: one!.id, resumed: true, ref: "transcript-1" });
+      expect(runtime.runs[2]!.input.session).toEqual({ id: one!.id, resumed: true, ref: "transcript-1", workdir: null });
     });
   });
 }

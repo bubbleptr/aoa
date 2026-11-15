@@ -68,7 +68,9 @@ export type ToolResult =
   | { status: "ok"; output: unknown }
   | { status: "error"; error: string }
   /** The call may have run before a crash and its result was never recorded; check before acting again. */
-  | { status: "unknown"; message: string };
+  | { status: "unknown"; message: string }
+  /** The call waits for the user. The runtime must stop the loop and end the run as `deferred` with this call id. */
+  | { status: "deferred" };
 
 export type JournalEntry = {
   sessionId: SessionId;
@@ -86,7 +88,15 @@ export type ToolDef = {
   schema: unknown;
   /** Safe to execute again when a crash left its outcome unknown (it carries its own idempotency key). */
   idempotent?: boolean;
-  execute(args: unknown): Promise<unknown>;
+  execute(args: unknown, ctx: ToolExecContext): Promise<unknown>;
+};
+
+/** What a tool's `execute` learns about the call it serves. */
+export type ToolExecContext = {
+  sessionId: SessionId;
+  callId: CallId;
+  /** The session's working directory (for a coding task, its worktree), if it has one. */
+  workdir: string | null;
 };
 
 /** A tool as handed to the runtime: every call goes through the kernel's journal. */
@@ -99,11 +109,15 @@ export type Tool = {
 
 export type RunInput = {
   runId: RunId;
-  session: { id: SessionId; resumed: boolean; ref: string | null };
+  session: { id: SessionId; resumed: boolean; ref: string | null; workdir: string | null };
   events: Event[];
   resident: string;
   tools: Tool[];
-  answer?: { callId: CallId; verdict: "approve" | "deny"; text?: string };
+  /**
+   * Set when this run resumes a session that stopped on a deferred call. On `approve` the kernel has
+   * already executed the call and `result` holds its outcome; the runtime tells the model, it does not call again.
+   */
+  answer?: { callId: CallId; tool: string; args: unknown; verdict: "approve" | "deny"; text?: string; result?: ToolResult };
 };
 
 export type RunResult = { end: RunEnd; sessionRef?: string };

@@ -1,12 +1,13 @@
 import type { CrashHook } from "./crash.ts";
 import type { Clock, Store } from "./ports.ts";
-import type { CallId, InboxId, SessionId, Tool, ToolDef, ToolResult } from "./types.ts";
+import type { CallId, InboxId, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
 
 export type ToolContext = {
   store: Store;
   clock: Clock;
   inboxId: InboxId;
   sessionId: SessionId;
+  workdir: string | null;
   crash: CrashHook;
   /** Throws if this process has (simulated) crashed, so nothing more is written. */
   assertAlive: () => void;
@@ -32,7 +33,7 @@ export function wrapTools(defs: ToolDef[], ctx: ToolContext): Tool[] {
 }
 
 async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unknown): Promise<ToolResult> {
-  const { store, clock, inboxId, sessionId, crash, assertAlive } = ctx;
+  const { store, clock, inboxId, sessionId, workdir, crash, assertAlive } = ctx;
 
   assertAlive();
   const prior = store.tx((t) => t.getJournal(sessionId, callId));
@@ -45,7 +46,7 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
   if (!prior) {
     store.tx((t) => t.recordIntent({ inboxId, sessionId, callId, tool: def.name, args, at: clock.now() }));
   }
-  const result = await execute(def, args);
+  const result = await execute(def, args, { sessionId, callId, workdir });
   crash("after_tool_exec");
   assertAlive();
   store.tx((t) => t.recordResult(sessionId, callId, result, clock.now()));
@@ -58,9 +59,9 @@ function authorize(_def: ToolDef, _args: unknown): ToolResult | null {
   return null;
 }
 
-async function execute(def: ToolDef, args: unknown): Promise<ToolResult> {
+async function execute(def: ToolDef, args: unknown, ctx: ToolExecContext): Promise<ToolResult> {
   try {
-    return { status: "ok", output: await def.execute(args) };
+    return { status: "ok", output: await def.execute(args, ctx) };
   } catch (err) {
     return { status: "error", error: err instanceof Error ? err.message : String(err) };
   }
