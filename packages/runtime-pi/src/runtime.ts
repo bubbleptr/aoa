@@ -1,10 +1,10 @@
 import type { AgentRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
-import { InMemoryCredentialStore, type Provider } from "@earendil-works/pi-ai";
+import type { Provider } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
   createAgentSession,
   createExtensionRuntime,
-  ModelRuntime,
+  type ModelRuntime,
   type ResourceLoader,
   SessionManager,
   SettingsManager,
@@ -13,6 +13,7 @@ import {
 import type { TSchema } from "typebox";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { createModelRuntime, redact } from "./models.ts";
 import { eventMarker, renderUserMessage } from "./prompt.ts";
 import { okToPi, text } from "./results.ts";
 
@@ -44,25 +45,10 @@ export function piRuntime(config: PiRuntimeConfig): AgentRuntime {
       try {
         return await run(config, await modelRuntime(), input);
       } catch (err) {
-        // Rethrow as is when there is nothing to hide: the kernel tells a simulated crash by its class.
-        const message = err instanceof Error ? err.message : String(err);
-        if (config.apiKey && message.includes(config.apiKey)) throw new Error(message.split(config.apiKey).join("[redacted]"));
-        throw err;
+        throw redact(err, config.apiKey);
       }
     },
   };
-}
-
-async function createModelRuntime(config: PiRuntimeConfig): Promise<ModelRuntime> {
-  // In-memory credentials and no models.json: nothing is read from or written to the user's ~/.pi.
-  const runtime = await ModelRuntime.create({
-    credentials: new InMemoryCredentialStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-  });
-  for (const p of config.providers ?? []) runtime.registerNativeProvider(p);
-  if (config.apiKey) await runtime.setRuntimeApiKey(config.provider, config.apiKey);
-  return runtime;
 }
 
 async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInput): Promise<RunResult> {
