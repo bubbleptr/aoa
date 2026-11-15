@@ -9,6 +9,7 @@ import type {
   Session,
   SessionStatus,
   Store,
+  Timer,
   ToolResult,
   Tx,
 } from "@aoa/kernel";
@@ -93,6 +94,30 @@ type JournalRow = {
   result: string | null;
 };
 
+type TimerRow = {
+  id: string;
+  inbox_id: string;
+  kind: Timer["kind"];
+  session_id: string | null;
+  due: number;
+  recurrence: string | null;
+  payload: string;
+  status: Timer["status"];
+  last_fired: number | null;
+};
+
+const toTimer = (r: TimerRow): Timer => ({
+  id: r.id,
+  inboxId: r.inbox_id,
+  kind: r.kind,
+  sessionId: r.session_id,
+  due: r.due,
+  recurrence: r.recurrence === null ? null : JSON.parse(r.recurrence),
+  payload: JSON.parse(r.payload),
+  status: r.status,
+  lastFired: r.last_fired,
+});
+
 const json = (v: unknown): string => JSON.stringify(v ?? null);
 
 function createTx(db: Database): Tx {
@@ -155,6 +180,29 @@ function createTx(db: Database): Tx {
     recordResult: db.query(
       "UPDATE tool_journal SET state = 'done', result = $result, result_at = $at WHERE session_id = $session AND call_id = $call",
     ),
+    insertTimer: db.query(
+      `INSERT OR IGNORE INTO timers (id, inbox_id, kind, session_id, due, recurrence, payload)
+       VALUES ($id, $inbox, $kind, $session, $due, $recurrence, $payload)`,
+    ),
+    getTimer: db.query<TimerRow, [string]>("SELECT * FROM timers WHERE id = ?"),
+    listTimers: db.query<TimerRow, [string]>("SELECT * FROM timers WHERE inbox_id = ? ORDER BY due, rowid"),
+    listDueTimers: db.query<TimerRow, [string, number]>(
+      "SELECT * FROM timers WHERE inbox_id = ? AND status = 'armed' AND due <= ? ORDER BY due, rowid",
+    ),
+    nextTimerDue: db.query<{ due: number | null }, [string]>(
+      "SELECT min(due) AS due FROM timers WHERE inbox_id = ? AND status = 'armed'",
+    ),
+    fireTimer: db.query(
+      `UPDATE timers
+       SET last_fired = $occurrence,
+           status = CASE WHEN $next IS NULL THEN 'done' ELSE 'armed' END,
+           due = coalesce($next, due)
+       WHERE id = $id AND status = 'armed' AND due = $occurrence`,
+    ),
+    cancelFollowUp: db.query(
+      "UPDATE timers SET status = 'cancelled' WHERE id = $id AND session_id = $session AND kind = 'follow_up' AND status = 'armed'",
+    ),
+    cancelTimersForSession: db.query("UPDATE timers SET status = 'cancelled' WHERE session_id = $session AND status = 'armed'"),
   };
 
   const activeLease = (inboxId: string, now: number) => q.activeLease.get(inboxId, now)?.until ?? null;
@@ -267,5 +315,25 @@ function createTx(db: Database): Tx {
     recordResult(session, call, result, at) {
       q.recordResult.run({ session, call, result: json(result), at });
     },
+    insertTimer: (tm) =>
+      q.insertTimer.run({
+        id: tm.id,
+        inbox: tm.inboxId,
+        kind: tm.kind,
+        session: tm.sessionId,
+        due: tm.due,
+        recurrence: tm.recurrence === null ? null : json(tm.recurrence),
+        payload: json(tm.payload),
+      }).changes > 0,
+    getTimer: (id) => {
+      const r = q.getTimer.get(id);
+      return r ? toTimer(r) : null;
+    },
+    listTimers: (inboxId) => q.listTimers.all(inboxId).map(toTimer),
+    listDueTimers: (inboxId, now) => q.listDueTimers.all(inboxId, now).map(toTimer),
+    nextTimerDue: (inboxId) => q.nextTimerDue.get(inboxId)?.due ?? null,
+    fireTimer: (id, occurrence, nextDue) => q.fireTimer.run({ id, occurrence, next: nextDue }).changes > 0,
+    cancelFollowUp: (id, session) => q.cancelFollowUp.run({ id, session }).changes > 0,
+    cancelTimersForSession: (session) => q.cancelTimersForSession.run({ session }).changes,
   };
 }

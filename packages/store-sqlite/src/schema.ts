@@ -66,6 +66,22 @@ const migrations: string[] = [
     PRIMARY KEY (session_id, call_id)
   );
   `,
+  `
+  CREATE TABLE timers (
+    id         TEXT PRIMARY KEY,
+    inbox_id   TEXT NOT NULL,
+    kind       TEXT NOT NULL CHECK (kind IN ('follow_up', 'schedule')),
+    session_id TEXT REFERENCES sessions (id),
+    due        INTEGER NOT NULL,
+    recurrence TEXT,
+    payload    TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'armed' CHECK (status IN ('armed', 'done', 'cancelled')),
+    last_fired INTEGER,
+    CHECK ((kind = 'schedule') = (recurrence IS NOT NULL))
+  );
+  CREATE INDEX timers_due ON timers (inbox_id, status, due);
+  CREATE INDEX timers_session ON timers (session_id, status);
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
