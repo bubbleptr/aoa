@@ -39,6 +39,7 @@ const ANSWER_LINE = "Reply `/approve` to let this go ahead, or `/deny` followed 
 export type GitHubChannel = Channel & {
   /** Creates a labelled issue as the App and returns its thread key. */
   openThread(title: string, body: string): Promise<string>;
+  pullState(number: number): Promise<"open" | "merged" | "closed">;
 };
 
 export function githubChannel(config: GitHubConfig): GitHubChannel {
@@ -120,6 +121,11 @@ export function githubChannel(config: GitHubConfig): GitHubChannel {
     async openThread(title, body) {
       const issue = await client.request<IssueJson>("POST", `${repoPath}/issues`, { title, body, labels: [cfg.label] });
       return threadKey(cfg, issue.number);
+    },
+
+    async pullState(number) {
+      const pr = await client.request<{ state: "open" | "closed"; merged: boolean }>("GET", `${repoPath}/pulls/${number}`);
+      return pr.merged ? "merged" : pr.state;
     },
   };
 }

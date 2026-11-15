@@ -18,7 +18,7 @@ type Issue = {
   body: string;
   author: string | null;
   labels: string[];
-  pr: { head: string; base: string; state: "open" | "closed" } | null;
+  pr: { head: string; base: string; state: "open" | "closed"; merged: boolean } | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -132,6 +132,15 @@ export class FakeGitHub {
     return this.issues.get(number);
   }
 
+  /** Closes a pull request, merging it first when `merged`. */
+  closePull(number: number, merged = false): void {
+    const pr = this.issues.get(number)?.pr;
+    if (!pr) throw new Error(`no pull request ${number}`);
+    pr.state = "closed";
+    pr.merged = merged;
+    this.touch(number);
+  }
+
   openPulls(): Issue[] {
     return [...this.issues.values()].filter((i) => i.pr?.state === "open");
   }
@@ -239,12 +248,16 @@ export class FakeGitHub {
         .filter((i) => branch === null || i.pr?.head === branch);
       return this.page(url, items, (i) => this.pullJson(i));
     }
+    if ((m = rest.match(/^\/pulls\/(\d+)$/)) && method === "GET") {
+      const i = this.issues.get(Number(m[1]));
+      return i?.pr ? json(200, this.pullJson(i)) : json(404, { message: "Not Found" });
+    }
     if (method === "POST" && rest === "/pulls") {
       if (this.openPulls().some((p) => p.pr?.head === body.head)) {
         return json(422, { message: "Validation Failed", errors: [{ message: "A pull request already exists" }] });
       }
       const number = this.addIssue({ author: BOT, title: body.title, body: body.body });
-      this.issues.get(number)!.pr = { head: body.head, base: body.base, state: "open" };
+      this.issues.get(number)!.pr = { head: body.head, base: body.base, state: "open", merged: false };
       return json(201, this.pullJson(this.issues.get(number)!));
     }
     return json(404, { message: "Not Found" });
@@ -316,6 +329,7 @@ export class FakeGitHub {
     return {
       number: i.number,
       state: i.pr!.state,
+      merged: i.pr!.merged,
       title: i.title,
       html_url: `https://github.test/${OWNER}/${REPO}/pull/${i.number}`,
       head: { ref: i.pr!.head, label: `${OWNER}:${i.pr!.head}` },
