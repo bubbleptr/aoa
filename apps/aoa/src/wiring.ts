@@ -82,6 +82,8 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   const channel = githubChannel(github);
   const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit });
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
+  /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
+  const removals = new Map<string, Promise<void>>();
   const keys = new Map([config.model, config.classifier].filter((m) => m !== undefined).map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]));
   // pi holds the keys in memory from here on; the agent's bash and git inherit this environment, so they go.
   for (const name of keys.keys()) delete env[name];
@@ -137,7 +139,10 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     memory,
     policy: agentPolicy({ risk: config.risk, classify }),
     debounceMs: 2000,
-    prepareSession: (session) => trees.prepare(session),
+    prepareSession: async (session) => {
+      await removals.get(session.id);
+      return trees.prepare(session);
+    },
     onRunStart: (r) => log(`run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
     onRunEnd: (r) => {
       log(runEndLine(r));
@@ -167,14 +172,21 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
       if (!closeFinished || state === "open") continue;
       // Closing would pull the worktree out from under a run in flight; a later check gets it.
       if (inRun(s.id)) continue;
+      // No await from here until the removal is registered: an event that reopens the session finds no
+      // workdir, so the worker prepares one, and preparing waits for the removal to finish.
+      const workdir = store.tx((t) => {
+        const current = t.getSession(s.id)!.workdir;
+        t.setSessionWorkdir(s.id, null);
+        return current;
+      });
       closeSession(store, s.id);
-      if (s.workdir !== null) {
-        try {
-          await trees.remove(s.workdir);
-          store.tx((t) => t.setSessionWorkdir(s.id, null));
-        } catch (err) {
-          log(`removing the worktree of session ${s.id} failed: ${errorText(err)}`);
-        }
+      if (workdir !== null) {
+        const removal = trees
+          .remove(workdir)
+          .catch((err) => log(`removing the worktree of session ${s.id} failed: ${errorText(err)}`))
+          .finally(() => removals.delete(s.id));
+        removals.set(s.id, removal);
+        await removal;
       }
       log(`session ${s.id} closed: pull request #${pr.number} was ${state}`);
     }

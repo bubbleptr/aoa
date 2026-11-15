@@ -103,7 +103,11 @@ export class World {
   };
 
   /** Real git, with pushes to GitHub's clone URL sent to the local bare repo instead. */
+  /** Awaited before every git command, so a test can hold one at a chosen point. */
+  beforeGit: (args: string[]) => Promise<void> = async () => {};
+
   readonly runGit: GitRunner = async (args, opts) => {
+    await this.beforeGit(args);
     if (args[0] === "push") {
       this.pushes.push({ args, env: opts.env });
       args = ["push", this.origin, ...args.slice(2)];

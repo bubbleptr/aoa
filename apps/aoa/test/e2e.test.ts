@@ -236,6 +236,38 @@ describe("end to end", () => {
     expect(JSON.stringify(w.modelRequests.at(-1))).toContain(`${branch}\\nhello`);
   });
 
+  test("a session reopened while the PR check removes its worktree waits for the removal and gets a new one", async () => {
+    const w = await world();
+    const { session } = await happyPath(w);
+    const pr = w.gh.openPulls()[0]!;
+    w.gh.closePull(pr.number);
+
+    let reached = () => {};
+    const removing = new Promise<void>((resolve) => (reached = resolve));
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    w.beforeGit = async (args) => {
+      if (args[0] !== "worktree" || args[1] !== "remove") return;
+      reached();
+      await held;
+    };
+    const checking = w.agent.checkPulls();
+    await removing;
+
+    // The user comments while the removal is in progress; the worker picks the session up right then.
+    w.gh.addComment(pr.number, USER, "Reopening: one more change.");
+    w.script([call("bash", { command: "cat greeting.txt" }), say("Back on it.")]);
+    await w.poll();
+    const draining = w.drain();
+    release();
+    await Promise.all([checking, draining]);
+
+    expect(w.runs().map((r) => r.error)).toEqual([null, null]);
+    expect(w.sessions()[0]).toMatchObject({ status: "open", workdir: session.workdir });
+    expect(existsSync(join(session.workdir!, "greeting.txt"))).toBe(true);
+    expect(JSON.stringify(w.modelRequests.at(-1))).toContain("hello");
+  });
+
   test("C13: the installation token, the App key and the model key appear nowhere the agent can see", async () => {
     const w = await world();
     w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
