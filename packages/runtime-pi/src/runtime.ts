@@ -63,6 +63,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
   const retry = input.events.some((e) => transcriptHolds(sessionManager, eventMarker(e)));
 
   const stop = new Stop();
+  const ids = new CallIds(input.session.id, sessionManager);
   const { session } = await createAgentSession({
     cwd,
     agentDir: config.agentDir,
@@ -72,7 +73,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     sessionManager,
     settingsManager: SettingsManager.inMemory(),
     noTools: "builtin",
-    customTools: input.tools.map((t) => toPiTool(t, input.session.id, stop)),
+    customTools: input.tools.map((t) => toPiTool(t, ids, stop)),
   });
   stop.session = session;
 
@@ -139,14 +140,39 @@ class Stop {
 }
 
 /**
- * The kernel keys deferred calls and answers by call id across the whole inbox, but providers do not all
- * make ids unique: some send none or derive one from the call's position. The session prefix keeps one
- * session's ids from colliding with another's; it is the same on every run, so a replay finds its journal entry.
+ * Kernel call ids for one run. The kernel keys journal entries, deferred calls and answers by call id, but
+ * providers do not all make ids unique: some send none, some derive one from the call's position. So the
+ * id is prefixed with the session, and a provider id that is empty or already appeared earlier in this
+ * session's transcript gets its occurrence number. Numbering follows the transcript and the order pi starts
+ * calls, so it is the same whenever the same transcript is replayed; a unique id keeps its plain form.
  */
-const kernelCallId = (sessionId: string, toolCallId: string): CallId => `${sessionId}:${toolCallId}`;
+class CallIds {
+  private readonly seen = new Map<string, number>();
+
+  constructor(
+    private readonly sessionId: string,
+    sessionManager: SessionManager,
+  ) {
+    for (const entry of sessionManager.getEntries()) {
+      if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+      for (const c of entry.message.content) if (c.type === "toolCall") this.count(c.id);
+    }
+  }
+
+  next(toolCallId: string): CallId {
+    const n = this.count(toolCallId);
+    return n === 0 && toolCallId !== "" ? `${this.sessionId}:${toolCallId}` : `${this.sessionId}:${toolCallId}#${n}`;
+  }
+
+  private count(id: string): number {
+    const n = this.seen.get(id) ?? 0;
+    this.seen.set(id, n + 1);
+    return n;
+  }
+}
 
 /** A kernel tool as a pi tool: the only way pi can execute anything is through `invoke`. */
-function toPiTool(tool: Tool, sessionId: string, stop: Stop): ToolDefinition {
+function toPiTool(tool: Tool, ids: CallIds, stop: Stop): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
@@ -154,7 +180,7 @@ function toPiTool(tool: Tool, sessionId: string, stop: Stop): ToolDefinition {
     // pi validates tool arguments as plain JSON Schema whatever built it (docs/extensions.md); TSchema is only its type.
     parameters: tool.schema as TSchema,
     async execute(toolCallId, params) {
-      const callId = kernelCallId(sessionId, toolCallId);
+      const callId = ids.next(toolCallId);
       let result: ToolResult;
       try {
         result = await tool.invoke(callId, params);

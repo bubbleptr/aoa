@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { RETRY_NOTICE } from "../src/prompt.ts";
 import { fauxAssistantMessage, fauxToolCall, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Tool, ToolResult } from "@aoa/kernel";
 import {
   API_KEY,
   event,
@@ -58,6 +59,53 @@ describe("piRuntime", () => {
     await h.runtime.run(runInput({ session: { id: "session-b", resumed: false, ref: null, workdir: null }, tools: [lookup.tool] }));
 
     expect(lookup.calls.map((c) => c.callId)).toEqual(["session-a:call_0", "session-b:call_0"]);
+  });
+
+  describe("a provider id that repeats within one session", () => {
+    /** Answers like the kernel's journal: a call id it has seen gets its recorded result back, unexecuted. */
+    function journaled() {
+      const results = new Map<string, ToolResult>();
+      const executed: unknown[] = [];
+      const tool: Tool = {
+        name: "lookup",
+        description: "Test tool lookup.",
+        schema: { type: "object", properties: { value: { type: "string" } }, required: ["value"] },
+        async invoke(callId, args) {
+          const prior = results.get(callId);
+          if (prior) return prior;
+          executed.push(args);
+          const result: ToolResult = { status: "ok", output: `found ${(args as { value: string }).value}` };
+          results.set(callId, result);
+          return result;
+        },
+      };
+      return { tool, executed, ids: () => [...results.keys()] };
+    }
+
+    test.each([["call_0"], [""]])("%j for two different calls: both execute, each once, in one run and the next", async (id) => {
+      const h = setup();
+      const lookup = journaled();
+      h.script([callTool("lookup", "a", id), callTool("lookup", "b", id), reply("done"), callTool("lookup", "c", id), reply("done")]);
+
+      const first = await h.runtime.run(runInput({ tools: [lookup.tool] }));
+      await h.runtime.run(
+        runInput({ session: { id: "session-1", resumed: true, ref: first.sessionRef ?? null, workdir: null }, tools: [lookup.tool] }),
+      );
+
+      expect(lookup.executed).toEqual([{ value: "a" }, { value: "b" }, { value: "c" }]);
+      expect(new Set(lookup.ids()).size).toBe(3);
+      const shown = h.requests.flat().filter((m): m is ToolResultMessage => m.role === "toolResult").map(textOf);
+      expect(shown).toContain("found b");
+      expect(shown).toContain("found c");
+    });
+
+    test("a unique provider id keeps its plain form", async () => {
+      const h = setup();
+      const lookup = journaled();
+      h.script([callTool("lookup", "a", "toolu_1"), callTool("lookup", "b", "toolu_2"), reply("done")]);
+      await h.runtime.run(runInput({ tools: [lookup.tool] }));
+      expect(lookup.ids()).toEqual(["session-1:toolu_1", "session-1:toolu_2"]);
+    });
   });
 
   test("an error result reaches the model as an error tool result", async () => {
