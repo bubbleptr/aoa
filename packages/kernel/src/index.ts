@@ -18,3 +18,4 @@ export {
   type SchedulerOptions,
   type TimerToolDeps,
 } from "./timers.ts";
+export { closeSession } from "./sessions.ts";

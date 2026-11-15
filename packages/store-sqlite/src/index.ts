@@ -165,6 +165,11 @@ function createTx(db: Database): Tx {
     insertSession: db.query("INSERT INTO sessions (id, inbox_id, created_at) VALUES ($id, $inbox, $at)"),
     getSession: db.query<SessionRow, [string]>("SELECT * FROM sessions WHERE id = ?"),
     recordSessionRun: db.query("UPDATE sessions SET last_run = $run, runtime_ref = $ref WHERE id = $id"),
+    setSessionWorkdir: db.query("UPDATE sessions SET workdir = $workdir WHERE id = $id"),
+    setSessionStatus: db.query("UPDATE sessions SET status = $status WHERE id = $id"),
+    primaryThread: db.query<{ thread_key: string }, [string]>(
+      "SELECT thread_key FROM threads WHERE session_id = ? ORDER BY rowid LIMIT 1",
+    ),
     insertRun: db.query(
       "INSERT INTO runs (id, inbox_id, session_id, events, started_at) VALUES ($id, $inbox, $session, $events, $at)",
     ),
@@ -268,6 +273,13 @@ function createTx(db: Database): Tx {
     recordSessionRun(id, run, runtimeRef) {
       q.recordSessionRun.run({ id, run, ref: runtimeRef });
     },
+    setSessionWorkdir(id, workdir) {
+      q.setSessionWorkdir.run({ id, workdir });
+    },
+    setSessionStatus(id, status) {
+      q.setSessionStatus.run({ id, status });
+    },
+    primaryThread: (session) => q.primaryThread.get(session)?.thread_key ?? null,
     insertRun(r) {
       q.insertRun.run({ id: r.id, inbox: r.inboxId, session: r.sessionId, events: json(r.events), at: r.startedAt });
     },

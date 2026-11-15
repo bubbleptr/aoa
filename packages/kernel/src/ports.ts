@@ -13,6 +13,7 @@ import type {
   RunResult,
   Session,
   SessionId,
+  SessionStatus,
   Timer,
   TimerId,
   ToolResult,
@@ -67,6 +68,10 @@ export interface Tx {
   insertSession(s: { id: SessionId; inboxId: InboxId; createdAt: number }): void;
   getSession(id: SessionId): Session | null;
   recordSessionRun(id: SessionId, run: RunId, runtimeRef: string | null): void;
+  setSessionWorkdir(id: SessionId, workdir: string): void;
+  setSessionStatus(id: SessionId, status: Extract<SessionStatus, "open" | "closed">): void;
+  /** The first thread registered for the session: where its messages go. Null if it has none. */
+  primaryThread(session: SessionId): string | null;
 
   insertRun(r: { id: RunId; inboxId: InboxId; sessionId: SessionId; events: EventId[]; startedAt: number }): void;
   endRun(id: RunId, outcome: { end: RunEnd } | { error: string }, endedAt: number): void;

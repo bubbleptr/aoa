@@ -16,6 +16,12 @@ export type WorkerOptions = {
   crash?: CrashHook;
   /** A group is ready only once its newest event is at least this old (D-EVT-3). */
   debounceMs?: number;
+  /**
+   * Gives a session without a workdir its working directory (for a coding task, a worktree) before its run.
+   * A crash between this call and storing its result makes the kernel call it again for the same session,
+   * so it must be idempotent: return the same workdir when it already exists.
+   */
+  prepareSession?: (session: Session) => Promise<{ workdir: string }>;
 };
 
 export type DrainResult = {
@@ -36,6 +42,7 @@ export class Worker {
   private readonly tools: ToolDef[];
   private readonly crashHook: CrashHook;
   private readonly debounceMs: number;
+  private readonly prepareSession: WorkerOptions["prepareSession"];
 
   /** Set once a crash point fires; from then on this worker behaves as a dead process. */
   private crashed: SimulatedCrash | null = null;
@@ -51,6 +58,7 @@ export class Worker {
     this.tools = o.tools ?? [];
     this.crashHook = o.crash ?? (() => {});
     this.debounceMs = o.debounceMs ?? 0;
+    this.prepareSession = o.prepareSession;
   }
 
   /**
@@ -126,9 +134,10 @@ export class Worker {
       if (!t.claimEvents(this.inboxId, ids, runId, session.id, now, now + LEASE_MS)) {
         throw new Error(`claim of ${ids.length} events failed inside the selecting transaction`);
       }
+      if (session.status === "closed") t.setSessionStatus(session.id, "open");
       t.insertRun({ id: runId, inboxId: this.inboxId, sessionId: session.id, events: ids, startedAt: now });
       return {
-        claim: { runId, session, resumed: existing !== null, events: ids.map((id) => t.getEvent(id)!) },
+        claim: { runId, session: t.getSession(session.id)!, resumed: existing !== null, events: ids.map((id) => t.getEvent(id)!) },
       };
     }
     return { claim: null, nextReadyAt };
@@ -141,11 +150,18 @@ export class Worker {
     return t.getSession(id)!;
   }
 
-  private async execute(c: Claim): Promise<void> {
+  private async execute(claim: Claim): Promise<void> {
     this.crashAt("after_claim");
-    const stopRenewal = this.renewLease(c.runId);
+    const stopRenewal = this.renewLease(claim.runId);
+    const c = { ...claim };
     let result: RunResult;
     try {
+      if (c.session.workdir === null && this.prepareSession) {
+        const { workdir } = await this.prepareSession(c.session);
+        this.assertAlive();
+        this.store.tx((t) => t.setSessionWorkdir(c.session.id, workdir));
+        c.session = { ...c.session, workdir };
+      }
       result = await this.runtime.run({
         runId: c.runId,
         session: { id: c.session.id, resumed: c.resumed, ref: c.session.runtimeRef, workdir: c.session.workdir },

@@ -6,13 +6,12 @@ import {
   SimulatedCrash,
   Worker,
   appendEvent,
-  type AgentRuntime,
   type AppendResult,
   type CrashHook,
   type CrashPoint,
   type NewEvent,
   type Store,
-  type ToolDef,
+  type WorkerOptions,
 } from "@aoa/kernel";
 import { sqliteStore } from "@aoa/store-sqlite";
 import { FakeClock } from "./fake-clock.ts";
@@ -51,13 +50,7 @@ export function crashAt(point: CrashPoint, times = 1): CrashHook {
   };
 }
 
-export type WorkerSetup = {
-  runtime: AgentRuntime;
-  store?: Store;
-  tools?: ToolDef[];
-  crash?: CrashHook;
-  debounceMs?: number;
-};
+export type WorkerSetup = Omit<WorkerOptions, "store" | "clock" | "inboxId"> & { store?: Store };
 
 export class Harness {
   readonly clock = new FakeClock();
