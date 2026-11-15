@@ -1,6 +1,8 @@
 import { Database } from "bun:sqlite";
 import type {
+  DecisionRecord,
   OutMsg,
+  PendingCall,
   Event,
   EventInsert,
   EventStatus,
@@ -73,6 +75,7 @@ type SessionRow = {
   workdir: string | null;
   last_run: string | null;
   created_at: number;
+  tainted: number;
 };
 
 type RunRow = {
@@ -147,6 +150,26 @@ const toOutMsg = (r: OutboxRow): OutMsg => ({
   status: r.status,
   attempts: r.attempts,
 });
+
+type DeferredRow = {
+  call_id: string;
+  session_id: string;
+  inbox_id: string;
+  tool: string;
+  args: string;
+  kind: PendingCall["kind"];
+  requested_at: number;
+  expires_at: number;
+};
+
+type DecisionRow = {
+  call_id: string;
+  session_id: string;
+  tool: string;
+  decision: DecisionRecord["decision"];
+  basis: string;
+  at: number;
+};
 
 const json = (v: unknown): string => JSON.stringify(v ?? null);
 
@@ -265,6 +288,21 @@ function createTx(db: Database): Tx {
     claimRunMessages: db.query<{ id: string; seq: number }, [string, string]>(
       "UPDATE outbox SET run_id = ?2 WHERE session_id = ?1 AND kind = 'message' AND run_id IS NULL RETURNING id, seq",
     ),
+    markTainted: db.query("UPDATE sessions SET tainted = 1 WHERE id = $id"),
+    setSessionPending: db.query(
+      "UPDATE sessions SET pending = $call, status = CASE WHEN $call IS NULL THEN 'open' ELSE 'paused' END WHERE id = $id",
+    ),
+    insertDeferred: db.query(
+      `INSERT INTO deferred (call_id, session_id, inbox_id, tool, args, kind, requested_at, expires_at)
+       VALUES ($call, $session, $inbox, $tool, $args, $kind, $requested, $expires)`,
+    ),
+    getDeferred: db.query<DeferredRow, [string]>("SELECT * FROM deferred WHERE call_id = ?"),
+    deleteDeferred: db.query("DELETE FROM deferred WHERE call_id = $call"),
+    recordDecision: db.query(
+      `INSERT INTO decisions (call_id, session_id, tool, decision, basis, at)
+       VALUES ($call, $session, $tool, $decision, $basis, $at)`,
+    ),
+    listDecisions: db.query<DecisionRow, [string]>("SELECT * FROM decisions WHERE session_id = ? ORDER BY seq"),
     getCursor: db.query<{ value: string }, [string, string]>("SELECT value FROM cursors WHERE inbox_id = ? AND name = ?"),
     setCursor: db.query(
       `INSERT INTO cursors (inbox_id, name, value) VALUES ($inbox, $name, $value)
@@ -330,6 +368,7 @@ function createTx(db: Database): Tx {
         workdir: r.workdir,
         lastRun: r.last_run,
         createdAt: r.created_at,
+        tainted: r.tainted === 1,
       };
     },
     recordSessionRun(id, run, runtimeRef) {
@@ -447,6 +486,53 @@ function createTx(db: Database): Tx {
         .all(session, run)
         .sort((a, b) => a.seq - b.seq)
         .map((r) => r.id),
+    markTainted(id) {
+      q.markTainted.run({ id });
+    },
+    setSessionPending(id, callId) {
+      q.setSessionPending.run({ id, call: callId });
+    },
+    insertDeferred(d) {
+      q.insertDeferred.run({
+        call: d.callId,
+        session: d.sessionId,
+        inbox: d.inboxId,
+        tool: d.tool,
+        args: json(d.args),
+        kind: d.kind,
+        requested: d.requestedAt,
+        expires: d.expiresAt,
+      });
+    },
+    getDeferred(callId): PendingCall | null {
+      const r = q.getDeferred.get(callId);
+      if (!r) return null;
+      return {
+        callId: r.call_id,
+        sessionId: r.session_id,
+        inboxId: r.inbox_id,
+        tool: r.tool,
+        args: JSON.parse(r.args),
+        kind: r.kind,
+        requestedAt: r.requested_at,
+        expiresAt: r.expires_at,
+      };
+    },
+    deleteDeferred(callId) {
+      q.deleteDeferred.run({ call: callId });
+    },
+    recordDecision(d) {
+      q.recordDecision.run({ call: d.callId, session: d.sessionId, tool: d.tool, decision: d.decision, basis: d.basis, at: d.at });
+    },
+    listDecisions: (session) =>
+      q.listDecisions.all(session).map((r) => ({
+        callId: r.call_id,
+        sessionId: r.session_id,
+        tool: r.tool,
+        decision: r.decision,
+        basis: r.basis,
+        at: r.at,
+      })),
     getCursor: (inboxId, name) => q.getCursor.get(inboxId, name)?.value ?? null,
     setCursor(inboxId, name, value) {
       q.setCursor.run({ inbox: inboxId, name, value });

@@ -47,6 +47,8 @@ export type Session = {
   workdir: string | null;
   lastRun: RunId | null;
   createdAt: number;
+  /** Set once any run of the session has taken an untrusted event; it never clears (design §6). */
+  tainted: boolean;
 };
 
 export type RunEnd =
@@ -142,4 +144,28 @@ export type Timer = {
   payload: unknown;
   status: TimerStatus;
   lastFired: number | null;
+};
+
+export type Decision = "allow" | "block" | "defer";
+
+/** A row of `deferred` (spec §6.2 `PendingCall`). A `question` is an `ask_user` call: the answer is its result. */
+export type PendingCall = {
+  callId: CallId;
+  sessionId: SessionId;
+  inboxId: InboxId;
+  tool: string;
+  args: unknown;
+  kind: "approval" | "question";
+  requestedAt: number;
+  expiresAt: number;
+};
+
+/** A row of `decisions` (I-PRM-7). `basis` names the rule, risk tier, classifier verdict or answer behind it. */
+export type DecisionRecord = {
+  callId: CallId;
+  sessionId: SessionId;
+  tool: string;
+  decision: Decision;
+  basis: string;
+  at: number;
 };

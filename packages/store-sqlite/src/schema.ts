@@ -112,6 +112,31 @@ const migrations: string[] = [
     PRIMARY KEY (inbox_id, name)
   );
   `,
+  `
+  ALTER TABLE sessions ADD COLUMN tainted INTEGER NOT NULL DEFAULT 0;
+
+  CREATE TABLE deferred (
+    call_id      TEXT PRIMARY KEY,
+    session_id   TEXT NOT NULL REFERENCES sessions (id),
+    inbox_id     TEXT NOT NULL,
+    tool         TEXT NOT NULL,
+    args         TEXT NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('approval', 'question')),
+    requested_at INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL
+  );
+
+  CREATE TABLE decisions (
+    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_id    TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    tool       TEXT NOT NULL,
+    decision   TEXT NOT NULL CHECK (decision IN ('allow', 'block', 'defer')),
+    basis      TEXT NOT NULL,
+    at         INTEGER NOT NULL
+  );
+  CREATE INDEX decisions_session ON decisions (session_id);
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */

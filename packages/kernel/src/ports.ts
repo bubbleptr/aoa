@@ -1,6 +1,8 @@
 import type { OutMsg } from "./channel.ts";
 import type {
   CallId,
+  DecisionRecord,
+  PendingCall,
   Event,
   EventId,
   EventSource,
@@ -79,6 +81,16 @@ export interface Tx {
   setSessionStatus(id: SessionId, status: Extract<SessionStatus, "open" | "closed">): void;
   /** The first thread registered for the session: where its messages go. Null if it has none. */
   primaryThread(session: SessionId): string | null;
+  markTainted(id: SessionId): void;
+  /** Pauses the session on `callId`, or reopens it with nothing pending when `callId` is null. */
+  setSessionPending(id: SessionId, callId: CallId | null): void;
+
+  insertDeferred(d: PendingCall): void;
+  getDeferred(callId: CallId): PendingCall | null;
+  deleteDeferred(callId: CallId): void;
+  recordDecision(d: DecisionRecord): void;
+  /** Oldest first. */
+  listDecisions(session: SessionId): DecisionRecord[];
 
   insertRun(r: { id: RunId; inboxId: InboxId; sessionId: SessionId; events: EventId[]; startedAt: number }): void;
   endRun(id: RunId, outcome: { end: RunEnd } | { error: string }, endedAt: number): void;
