@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  Scheduler,
   SimulatedCrash,
   Worker,
   appendEvent,
@@ -82,6 +83,14 @@ export class Harness {
       { store: this.store, clock: this.clock, inboxId: this.inboxId },
       { source: "user_message", dedupeKey: `msg-${++this.seq}`, payload: { text: `message ${this.seq}` }, trusted: true, ...e },
     );
+  }
+
+  scheduler(o: { store?: Store; crash?: CrashHook; onFire?: () => void } = {}): Scheduler {
+    return new Scheduler({ store: o.store ?? this.store, clock: this.clock, inboxId: this.inboxId, ...o });
+  }
+
+  timerEvents() {
+    return this.events().filter((e) => e.source === "timer");
   }
 
   worker(o: WorkerSetup): Worker {
