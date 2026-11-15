@@ -16,7 +16,7 @@ export function appendEvent(deps: AppendDeps, e: NewEvent): AppendResult {
   const result = store.tx((t): AppendResult => {
     const id = crypto.randomUUID();
     const thread = e.thread ?? null;
-    const status = t.isAccepted(e.source, e.dedupeKey) ? "dropped" : "pending";
+    const status = t.isAccepted(inboxId, e.source, e.dedupeKey) ? "dropped" : "pending";
     const resume = status === "pending" && thread !== null ? t.sessionForThread(inboxId, thread) : null;
     t.insertEvent({
       id,

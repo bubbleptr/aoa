@@ -19,7 +19,7 @@ const migrations: string[] = [
     attempts    INTEGER NOT NULL DEFAULT 0,
     run         TEXT
   );
-  CREATE UNIQUE INDEX events_dedupe ON events (source, dedupe_key) WHERE status <> 'dropped';
+  CREATE UNIQUE INDEX events_dedupe ON events (inbox_id, source, dedupe_key) WHERE status <> 'dropped';
   CREATE INDEX events_inbox_status ON events (inbox_id, status);
   CREATE INDEX events_run ON events (run);
 
@@ -68,12 +68,11 @@ const migrations: string[] = [
   `,
 ];
 
+/** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
 export function migrate(db: Database): void {
-  const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
-  for (let v = user_version; v < migrations.length; v++) {
-    db.transaction(() => {
-      db.exec(migrations[v]!);
-      db.exec(`PRAGMA user_version = ${v + 1}`);
-    }).immediate();
-  }
+  db.transaction(() => {
+    const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
+    for (let v = user_version; v < migrations.length; v++) db.exec(migrations[v]!);
+    db.exec(`PRAGMA user_version = ${migrations.length}`);
+  }).immediate();
 }

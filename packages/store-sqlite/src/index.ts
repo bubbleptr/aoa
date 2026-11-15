@@ -97,8 +97,8 @@ const json = (v: unknown): string => JSON.stringify(v ?? null);
 
 function createTx(db: Database): Tx {
   const q = {
-    isAccepted: db.query<{ n: number }, [string, string]>(
-      "SELECT count(*) AS n FROM events WHERE source = ? AND dedupe_key = ? AND status <> 'dropped'",
+    isAccepted: db.query<{ n: number }, [string, string, string]>(
+      "SELECT count(*) AS n FROM events WHERE inbox_id = ? AND source = ? AND dedupe_key = ? AND status <> 'dropped'",
     ),
     insertEvent: db.query(
       `INSERT INTO events (id, inbox_id, source, dedupe_key, received_at, payload, thread, resume, trusted, status)
@@ -160,7 +160,7 @@ function createTx(db: Database): Tx {
   const activeLease = (inboxId: string, now: number) => q.activeLease.get(inboxId, now)?.until ?? null;
 
   return {
-    isAccepted: (source, dedupeKey) => q.isAccepted.get(source, dedupeKey)!.n > 0,
+    isAccepted: (inboxId, source, dedupeKey) => q.isAccepted.get(inboxId, source, dedupeKey)!.n > 0,
     insertEvent(e: EventInsert) {
       q.insertEvent.run({
         id: e.id,

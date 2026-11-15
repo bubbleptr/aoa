@@ -35,8 +35,8 @@ export type EventInsert = {
 };
 
 export interface Tx {
-  /** True if a non-dropped event with this `(source, dedupeKey)` exists. */
-  isAccepted(source: EventSource, dedupeKey: string): boolean;
+  /** True if this inbox holds a non-dropped event with this `(source, dedupeKey)`. */
+  isAccepted(inboxId: InboxId, source: EventSource, dedupeKey: string): boolean;
   insertEvent(e: EventInsert): void;
   getEvent(id: EventId): Event | null;
   listEvents(inboxId: InboxId): Event[];
