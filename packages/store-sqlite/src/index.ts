@@ -63,6 +63,7 @@ export function sqliteStore(path: string): SqliteStore {
 }
 
 type EventRow = {
+  seq: number;
   id: string;
   inbox_id: string;
   source: Event["source"];
@@ -259,7 +260,8 @@ function createTx(db: Database): Tx {
       `UPDATE events
        SET status = CASE WHEN attempts + 1 >= $max THEN 'dead' ELSE 'pending' END,
            attempts = attempts + 1, lease_until = NULL
-       WHERE inbox_id = $inbox AND status = 'in_run' AND lease_until <= $now`,
+       WHERE inbox_id = $inbox AND status = 'in_run' AND lease_until <= $now
+       RETURNING id, status`,
     ),
     activeLease: db.query<{ until: number | null }, [string, number]>(
       "SELECT max(lease_until) AS until FROM events WHERE inbox_id = ? AND status = 'in_run' AND lease_until > ?",
@@ -275,7 +277,8 @@ function createTx(db: Database): Tx {
       `UPDATE events
        SET status = CASE WHEN attempts + 1 >= $max THEN 'dead' ELSE 'pending' END,
            attempts = attempts + 1, lease_until = NULL
-       WHERE run = $run AND status = 'in_run'`,
+       WHERE run = $run AND status = 'in_run'
+       RETURNING id, status`,
     ),
     sessionForThread: db.query<{ session_id: string }, [string, string]>(
       "SELECT session_id FROM threads WHERE inbox_id = ? AND thread_key = ?",
@@ -332,8 +335,8 @@ function createTx(db: Database): Tx {
     ),
     cancelTimersForSession: db.query("UPDATE timers SET status = 'cancelled' WHERE session_id = $session AND status = 'armed'"),
     insertOutMsg: db.query(
-      `INSERT OR IGNORE INTO outbox (id, inbox_id, session_id, thread, kind, body, call_id, dedupe_key, created_at, next_attempt_at)
-       VALUES ($id, $inbox, $session, $thread, $kind, $body, $call, $dedupe, $at, $at)`,
+      `INSERT OR IGNORE INTO outbox (id, inbox_id, session_id, thread, kind, body, call_id, dedupe_key, created_at, next_attempt_at, run_id)
+       VALUES ($id, $inbox, $session, $thread, $kind, $body, $call, $dedupe, $at, $at, $run)`,
     ),
     outMsgByKey: db.query<{ id: string }, [string, string]>("SELECT id FROM outbox WHERE inbox_id = ? AND dedupe_key = ?"),
     listOutbox: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? ORDER BY seq"),
@@ -386,6 +389,14 @@ function createTx(db: Database): Tx {
     ),
   };
 
+  /** The rows an update moved to `dead`, as events in insertion order. */
+  const dead = (changed: unknown[]): Event[] =>
+    (changed as { id: string; status: EventStatus }[])
+      .filter((r) => r.status === "dead")
+      .map((r) => q.getEvent.get(r.id)!)
+      .sort((a, b) => a.seq - b.seq)
+      .map(toEvent);
+
   const activeLease = (inboxId: string, now: number) => q.activeLease.get(inboxId, now)?.until ?? null;
 
   return {
@@ -413,9 +424,7 @@ function createTx(db: Database): Tx {
     },
     listEvents: (inboxId) => q.listEvents.all(inboxId).map(toEvent),
     listPending: (inboxId) => q.listPending.all(inboxId).map(toEvent),
-    expireLeases(inboxId, now, maxAttempts) {
-      q.expireLeases.run({ inbox: inboxId, now, max: maxAttempts });
-    },
+    expireLeases: (inboxId, now, maxAttempts) => dead(q.expireLeases.all({ inbox: inboxId, now, max: maxAttempts })),
     activeLease,
     claimEvents(inboxId, ids, run, session, now, leaseUntil) {
       if (activeLease(inboxId, now) !== null) return false;
@@ -425,9 +434,7 @@ function createTx(db: Database): Tx {
     },
     renewLease: (run, leaseUntil) => q.renewLease.run({ run, lease: leaseUntil }).changes > 0,
     completeEvents: (run) => q.completeEvents.run({ run }).changes,
-    releaseEvents(run, maxAttempts) {
-      q.releaseEvents.run({ run, max: maxAttempts });
-    },
+    releaseEvents: (run, maxAttempts) => dead(q.releaseEvents.all({ run, max: maxAttempts })),
     sessionForThread: (inboxId, thread) => q.sessionForThread.get(inboxId, thread)?.session_id ?? null,
     registerThread(inboxId, thread, session) {
       q.registerThread.run({ inbox: inboxId, thread, session });
@@ -521,6 +528,7 @@ function createTx(db: Database): Tx {
         call: m.callId,
         dedupe: m.dedupeKey,
         at: m.createdAt,
+        run: m.runId ?? null,
       });
       return q.outMsgByKey.get(m.inboxId, m.dedupeKey)!.id;
     },

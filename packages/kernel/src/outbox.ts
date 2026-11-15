@@ -2,7 +2,8 @@ import type { Channel, OutMsg } from "./channel.ts";
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import { DEFAULT_RATE_POLICY, pace, type RatePolicy } from "./pace.ts";
 import type { Clock, Store } from "./ports.ts";
-import type { InboxId, ToolDef } from "./types.ts";
+import type { Tx } from "./ports.ts";
+import type { Event, InboxId, ToolDef } from "./types.ts";
 
 /** Delivery attempts before a message is `failed` (MAX_ATTEMPTS for messages, D-OUT-5). */
 export const OUTBOX_MAX_ATTEMPTS = 5;
@@ -49,6 +50,44 @@ export function outboxTools({ store, clock, inboxId }: OutboxToolDeps): ToolDef[
     },
   };
   return [notify];
+}
+
+/** How much of a failed run's error the user is shown. */
+export const DEAD_ERROR_LIMIT = 500;
+
+/**
+ * Tells the user that a task gave up (design §8: a failed task is one of the three times the agent speaks).
+ * Runs inside the transaction that moved these events to `dead`, one message per session. `error` is the last
+ * run's error, already scrubbed by the runtime; it is null when the run died without one (its lease ran out).
+ */
+export function reportDead(t: Tx, inboxId: InboxId, dead: Event[], error: string | null, now: number): void {
+  const bySession = new Map<string, Event[]>();
+  for (const e of dead) {
+    if (e.resume === null) continue;
+    bySession.set(e.resume, [...(bySession.get(e.resume) ?? []), e]);
+  }
+  for (const [sessionId, events] of bySession) {
+    const oldest = events[0]!;
+    const lines = ["This task stopped after repeated failures and will not be retried on its own."];
+    if (error) {
+      const shown = error.length > DEAD_ERROR_LIMIT ? `${error.slice(0, DEAD_ERROR_LIMIT)}…` : error;
+      lines.push("", `The last error was: ${shown}`);
+    }
+    lines.push("", "Run `aoa status` for the details.");
+    t.insertOutMsg({
+      id: crypto.randomUUID(),
+      inboxId,
+      sessionId,
+      thread: t.primaryThread(sessionId),
+      kind: "message",
+      body: lines.join("\n"),
+      callId: null,
+      dedupeKey: `dead:${sessionId}:${oldest.id}`,
+      createdAt: now,
+      // Owned by the run that died, so the session's next run does not count it as its own message.
+      ...(oldest.run === null ? {} : { runId: oldest.run }),
+    });
+  }
 }
 
 export type DispatcherOptions = {

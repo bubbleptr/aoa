@@ -1,6 +1,7 @@
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import type { AgentRuntime, Clock, Store, Tx } from "./ports.ts";
 import type { Memory } from "./memory.ts";
+import { reportDead } from "./outbox.ts";
 import type { PolicyConfig } from "./policy.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
@@ -133,7 +134,7 @@ export class Worker {
   }
 
   private select(t: Tx, now: number): Selection {
-    t.expireLeases(this.inboxId, now, MAX_ATTEMPTS);
+    reportDead(t, this.inboxId, t.expireLeases(this.inboxId, now, MAX_ATTEMPTS), null, now);
     const lease = t.activeLease(this.inboxId, now);
     if (lease !== null) return { claim: null, nextReadyAt: lease };
 
@@ -215,8 +216,9 @@ export class Worker {
       if (err instanceof SimulatedCrash) throw err;
       const error = err instanceof Error ? err.message : String(err);
       this.store.tx((t) => {
-        t.endRun(c.runId, { error }, this.clock.now());
-        t.releaseEvents(c.runId, MAX_ATTEMPTS);
+        const now = this.clock.now();
+        t.endRun(c.runId, { error }, now);
+        reportDead(t, this.inboxId, t.releaseEvents(c.runId, MAX_ATTEMPTS), error, now);
       });
       this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
       return;

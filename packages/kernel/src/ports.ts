@@ -43,7 +43,10 @@ export type EventInsert = {
 
 export type JournalRecord = JournalEntry & { intentAt: number; resultAt: number | null };
 
-export type OutMsgInsert = Omit<OutMsg, "status" | "attempts">;
+export type OutMsgInsert = Omit<OutMsg, "status" | "attempts"> & {
+  /** The run the message belongs to, when it is known at insert time; otherwise the session's next run claims it. */
+  runId?: RunId;
+};
 
 /** An undelivered message and the earliest time it may be tried. */
 export type QueuedMsg = { msg: OutMsg; nextAttemptAt: number };
@@ -59,8 +62,11 @@ export interface Tx {
   /** Pending events, oldest first by insertion order. */
   listPending(inboxId: InboxId): Event[];
 
-  /** `in_run` events whose lease ended go back to `pending` with `attempts + 1`, or to `dead` at `maxAttempts`. */
-  expireLeases(inboxId: InboxId, now: number, maxAttempts: number): void;
+  /**
+   * `in_run` events whose lease ended go back to `pending` with `attempts + 1`, or to `dead` at `maxAttempts`.
+   * Returns the events that went `dead`, oldest first.
+   */
+  expireLeases(inboxId: InboxId, now: number, maxAttempts: number): Event[];
   /** The latest unexpired lease held in this inbox, or null if no run holds one. */
   activeLease(inboxId: InboxId, now: number): number | null;
   /**
@@ -73,8 +79,11 @@ export interface Tx {
   renewLease(run: RunId, leaseUntil: number): boolean;
   /** `in_run → done` for the events this run still holds; returns how many. */
   completeEvents(run: RunId): number;
-  /** A failed attempt: the run's events go back to `pending` with `attempts + 1`, or to `dead` at `maxAttempts`. */
-  releaseEvents(run: RunId, maxAttempts: number): void;
+  /**
+   * A failed attempt: the run's events go back to `pending` with `attempts + 1`, or to `dead` at `maxAttempts`.
+   * Returns the events that went `dead`, oldest first.
+   */
+  releaseEvents(run: RunId, maxAttempts: number): Event[];
 
   sessionForThread(inboxId: InboxId, thread: string): SessionId | null;
   registerThread(inboxId: InboxId, thread: string, session: SessionId): void;
