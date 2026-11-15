@@ -16,7 +16,8 @@ type RepoJson = { default_branch: string; clone_url: string };
 type PullJson = { number: number; html_url: string; head: { ref: string } };
 type CommentJson = { id: number; html_url: string };
 
-const runGitWithBun: GitRunner = async (args, { cwd, env }) => {
+/** Runs the `git` on the host's PATH. */
+export const runGitWithBun: GitRunner = async (args, { cwd, env }) => {
   const proc = Bun.spawn(["git", ...args], {
     cwd,
     env: { ...process.env, ...env },
