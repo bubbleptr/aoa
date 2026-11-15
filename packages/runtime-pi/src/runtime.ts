@@ -1,4 +1,4 @@
-import type { AgentRuntime, CallId, RunInput, RunResult, Tool } from "@aoa/kernel";
+import type { AgentRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
 import { InMemoryCredentialStore, type Provider } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
@@ -42,7 +42,10 @@ export function piRuntime(config: PiRuntimeConfig): AgentRuntime {
       try {
         return await run(config, await modelRuntime(), input);
       } catch (err) {
-        throw new Error(redact(err instanceof Error ? err.message : String(err), config.apiKey));
+        // Rethrow as is when there is nothing to hide: the kernel tells a simulated crash by its class.
+        const message = err instanceof Error ? err.message : String(err);
+        if (config.apiKey && message.includes(config.apiKey)) throw new Error(message.split(config.apiKey).join("[redacted]"));
+        throw err;
       }
     },
   };
@@ -70,18 +73,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
       ? SessionManager.create(cwd, config.sessionsDir)
       : SessionManager.open(input.session.ref, config.sessionsDir, cwd);
 
-  const state: { session: AgentSession | null; deferred: CallId | null; stopping: Promise<void> | null } = {
-    session: null,
-    deferred: null,
-    stopping: null,
-  };
-  const onDeferred = (callId: CallId) => {
-    if (state.deferred !== null) return;
-    state.deferred = callId;
-    // Not awaited here: abort() waits for the session to go idle, which needs this tool call to return first.
-    state.stopping = state.session?.abort() ?? null;
-  };
-
+  const stop = new Stop();
   const { session } = await createAgentSession({
     cwd,
     agentDir: config.agentDir,
@@ -91,17 +83,18 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     sessionManager,
     settingsManager: SettingsManager.inMemory(),
     noTools: "builtin",
-    customTools: input.tools.map((t) => toPiTool(t, onDeferred)),
+    customTools: input.tools.map((t) => toPiTool(t, stop)),
   });
-  state.session = session;
+  stop.session = session;
 
   try {
     await session.prompt(renderUserMessage(input), { expandPromptTemplates: false });
-    await state.stopping;
+    await stop.stopping;
+    if (stop.failure) throw stop.failure.error;
 
     const sessionRef = session.sessionFile;
     if (sessionRef === undefined) throw new Error("pi did not persist the session");
-    if (state.deferred !== null) return { end: { kind: "deferred", callId: state.deferred }, sessionRef };
+    if (stop.deferred !== null) return { end: { kind: "deferred", callId: stop.deferred }, sessionRef };
 
     const failure = modelFailure(session);
     if (failure !== null) throw new Error(`the model request failed: ${failure}`);
@@ -111,8 +104,33 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
   }
 }
 
+/** Ends a pi run early from inside a tool call, for a deferred call or a failed `invoke`. */
+class Stop {
+  session: AgentSession | null = null;
+  deferred: CallId | null = null;
+  failure: { error: unknown } | null = null;
+  stopping: Promise<void> | null = null;
+
+  /** Only the first deferred call of a run counts. */
+  defer(callId: CallId): void {
+    this.deferred ??= callId;
+    this.abort();
+  }
+
+  /** `invoke` itself failed (the kernel's store, or the process is going down): no more model turns. */
+  fail(error: unknown): void {
+    this.failure ??= { error };
+    this.abort();
+  }
+
+  private abort(): void {
+    // Not awaited here: abort() waits for the session to go idle, which needs this tool call to return first.
+    this.stopping ??= this.session?.abort() ?? null;
+  }
+}
+
 /** A kernel tool as a pi tool: the only way pi can execute anything is through `invoke`. */
-function toPiTool(tool: Tool, onDeferred: (callId: CallId) => void): ToolDefinition {
+function toPiTool(tool: Tool, stop: Stop): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
@@ -120,7 +138,13 @@ function toPiTool(tool: Tool, onDeferred: (callId: CallId) => void): ToolDefinit
     // pi validates tool arguments as plain JSON Schema whatever built it (docs/extensions.md); TSchema is only its type.
     parameters: tool.schema as TSchema,
     async execute(toolCallId, params) {
-      const result = await tool.invoke(toolCallId, params);
+      let result: ToolResult;
+      try {
+        result = await tool.invoke(toolCallId, params);
+      } catch (err) {
+        stop.fail(err);
+        throw err;
+      }
       switch (result.status) {
         case "ok":
           return { details: undefined, ...okToPi(result.output) };
@@ -130,7 +154,7 @@ function toPiTool(tool: Tool, onDeferred: (callId: CallId) => void): ToolDefinit
         case "unknown":
           return { details: undefined, ...text(result.message) };
         case "deferred":
-          onDeferred(toolCallId);
+          stop.defer(toolCallId);
           return { details: undefined, ...text(DEFERRED_PLACEHOLDER) };
       }
     },
@@ -159,8 +183,4 @@ function modelFailure(session: AgentSession): string | null {
   const last = session.messages.findLast((m) => m.role === "assistant");
   if (last?.role !== "assistant" || last.stopReason !== "error") return null;
   return last.errorMessage ?? "unknown error";
-}
-
-function redact(message: string, secret: string | undefined): string {
-  return secret ? message.split(secret).join("[redacted]") : message;
 }

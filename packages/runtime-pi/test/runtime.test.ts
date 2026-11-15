@@ -135,6 +135,37 @@ describe("piRuntime", () => {
     expect(text.indexOf("<answer")).toBeLessThan(text.indexOf("<event"));
   });
 
+  test("a call next to a deferred one is executed and its result kept in the transcript", async () => {
+    const h = setup();
+    const push = recordingTool("git_push", () => ({ status: "deferred" }));
+    const lookup = recordingTool("lookup", () => ({ status: "ok", output: "sibling result" }));
+    h.script([
+      fauxAssistantMessage(
+        [
+          fauxToolCall("git_push", { value: "feature" }, { id: "call-d" }),
+          fauxToolCall("lookup", { value: "x" }, { id: "call-s" }),
+        ],
+        { stopReason: "toolUse" },
+      ),
+    ]);
+
+    const first = await h.runtime.run(runInput({ tools: [push.tool, lookup.tool] }));
+    h.script([reply("ok")]);
+    await h.runtime.run(
+      runInput({
+        session: { id: "session-1", resumed: true, ref: first.sessionRef ?? null, workdir: null },
+        tools: [push.tool, lookup.tool],
+        answer: { callId: "call-d", tool: "git_push", args: { value: "feature" }, verdict: "deny" },
+      }),
+    );
+
+    expect(first.end).toEqual({ kind: "deferred", callId: "call-d" });
+    // pi starts every call of a parallel batch before any of them returns, and keeps each executed result.
+    expect(lookup.calls).toHaveLength(1);
+    const sibling = toolResultFor(h.requests.at(-1)!, "call-s");
+    expect(sibling && textOf(sibling)).toBe("sibling result");
+  });
+
   test("a denied call tells the model it was denied, with the user's text", async () => {
     const h = setup();
     const push = recordingTool("git_push", () => ({ status: "deferred" }));
@@ -184,6 +215,26 @@ describe("piRuntime", () => {
     expect(lastUserText(request).startsWith("INSTRUCTIONS: keep PRs small.")).toBe(true);
     const system = request.filter((m) => m.role === "system").map((m) => JSON.stringify(m)).join("");
     expect(system).not.toContain("keep PRs small");
+  });
+
+  test("a rejected invoke stops the run and rejects it with the same error", async () => {
+    const h = setup();
+    class ProcessDied extends Error {}
+    const died = new ProcessDied("simulated crash after tool exec");
+    const tool = {
+      name: "lookup",
+      description: "Test tool.",
+      schema: { type: "object", properties: { value: { type: "string" } } },
+      invoke: async () => {
+        throw died;
+      },
+    };
+    h.script([callTool("lookup", "x", "call-1"), reply("must not be reached")]);
+
+    const run = h.runtime.run(runInput({ tools: [tool] }));
+
+    await expect(run).rejects.toBe(died);
+    expect(h.pending()).toBe(1);
   });
 
   test("a model failure rejects the run instead of ending it silent, without the API key", async () => {

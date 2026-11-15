@@ -14,7 +14,6 @@ type PiTool = {
   name: string;
   description: string;
   parameters: unknown;
-  prepareArguments?: (args: unknown) => unknown;
   // `any`: each built-in types its own params, and pi has already validated them against `parameters`.
   execute(toolCallId: string, params: any): Promise<unknown>;
 };
@@ -46,9 +45,7 @@ export function codingTools(): ToolDef[] {
         if (ctx.workdir === null) {
           throw new Error(`${template.name} needs a working directory, and this session has none`);
         }
-        const tool = create(ctx.workdir);
-        const params = tool.prepareArguments ? tool.prepareArguments(args) : args;
-        return tool.execute(ctx.callId, params);
+        return create(ctx.workdir).execute(ctx.callId, args);
       },
     };
   });
