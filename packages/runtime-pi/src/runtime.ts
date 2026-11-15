@@ -11,7 +11,9 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
-import { renderUserMessage } from "./prompt.ts";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { eventMarker, renderUserMessage } from "./prompt.ts";
 import { okToPi, text } from "./results.ts";
 
 export type PiRuntimeConfig = {
@@ -21,7 +23,7 @@ export type PiRuntimeConfig = {
   /** Held in memory by pi's model runtime; never written to disk or shown to the model. */
   apiKey?: string;
   agentDir: string;
-  /** Where the JSONL transcripts live; a run's `sessionRef` is its file path. */
+  /** Where the JSONL transcripts live, one directory per kernel session; a run's `sessionRef` is its file path. */
   sessionsDir: string;
   /** Working directory for sessions that have no workdir of their own. */
   cwd: string;
@@ -68,10 +70,11 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
   if (!model) throw new Error(`pi has no model ${config.provider}/${config.modelId}`);
 
   const cwd = input.session.workdir ?? config.cwd;
-  const sessionManager =
-    input.session.ref === null
-      ? SessionManager.create(cwd, config.sessionsDir)
-      : SessionManager.open(input.session.ref, config.sessionsDir, cwd);
+  const dir = join(config.sessionsDir, encodeURIComponent(input.session.id));
+  // With no ref, an earlier attempt may still have left a transcript: it failed or crashed before the kernel recorded it.
+  const ref = input.session.ref ?? latestTranscript(dir);
+  const sessionManager = ref === null ? SessionManager.create(cwd, dir) : SessionManager.open(ref, dir, cwd);
+  const retry = input.events.some((e) => transcriptHolds(sessionManager, eventMarker(e)));
 
   const stop = new Stop();
   const { session } = await createAgentSession({
@@ -88,7 +91,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
   stop.session = session;
 
   try {
-    await session.prompt(renderUserMessage(input), { expandPromptTemplates: false });
+    await session.prompt(renderUserMessage(input, retry), { expandPromptTemplates: false });
     await stop.stopping;
     if (stop.failure) throw stop.failure.error;
 
@@ -102,6 +105,26 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
   } finally {
     session.dispose();
   }
+}
+
+/** The newest transcript in a kernel session's directory; pi names files by creation time. */
+function latestTranscript(dir: string): string | null {
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .sort();
+  const last = files.at(-1);
+  return last === undefined ? null : join(dir, last);
+}
+
+/** Whether a user message already in the transcript contains `marker`. */
+function transcriptHolds(sessionManager: SessionManager, marker: string): boolean {
+  return sessionManager.getEntries().some((entry) => {
+    if (entry.type !== "message" || entry.message.role !== "user") return false;
+    const content = entry.message.content;
+    const text = typeof content === "string" ? content : content.map((c) => (c.type === "text" ? c.text : "")).join("");
+    return text.includes(marker);
+  });
 }
 
 /** Ends a pi run early from inside a tool call, for a deferred call or a failed `invoke`. */

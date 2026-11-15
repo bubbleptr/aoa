@@ -3,6 +3,15 @@ import { resultText } from "./results.ts";
 
 type Answer = NonNullable<RunInput["answer"]>;
 
+/** Put before events the transcript already holds: an earlier attempt at them stopped before it finished. */
+export const RETRY_NOTICE =
+  "The previous attempt at the following events was interrupted. Tool results earlier in this conversation still stand; check the current state before repeating any action.";
+
+/** How an event's block marks its id, so a retry can tell which events the transcript already holds. */
+export function eventMarker(e: Event): string {
+  return `<event id=${encode(e.id)} `;
+}
+
 /**
  * JSON with `<`, `>` and `&` written as \u escapes: still valid JSON that decodes to the same value,
  * but no content can spell a tag, so nothing inside a block can close it or open another.
@@ -12,16 +21,17 @@ export function encode(value: unknown): string {
 }
 
 /** The run's one user message: resident text, then the answer to a deferred call, then one block per event. */
-export function renderUserMessage(input: RunInput): string {
+export function renderUserMessage(input: RunInput, retry: boolean): string {
   const parts: string[] = [];
   if (input.resident !== "") parts.push(input.resident);
   if (input.answer) parts.push(renderAnswer(input.answer));
+  if (retry && input.events.length > 0) parts.push(RETRY_NOTICE);
   for (const e of input.events) parts.push(renderEvent(e));
   return parts.join("\n\n");
 }
 
 function renderEvent(e: Event): string {
-  return `<event source=${encode(e.source)} trusted=${e.trusted} thread=${encode(e.thread)}>\n${encode(e.payload)}\n</event>`;
+  return `${eventMarker(e)}source=${encode(e.source)} trusted=${e.trusted} thread=${encode(e.thread)}>\n${encode(e.payload)}\n</event>`;
 }
 
 function renderAnswer(a: Answer): string {

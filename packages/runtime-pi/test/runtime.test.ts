@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { RETRY_NOTICE } from "../src/prompt.ts";
 import { fauxAssistantMessage, fauxToolCall, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
 import {
   API_KEY,
@@ -80,6 +82,61 @@ describe("piRuntime", () => {
     expect(resumed.slice(0, firstRunContext.length)).toEqual(firstRunContext);
     expect(lastUserText(resumed)).toContain("and now?");
     expect(second.end).toEqual({ kind: "silent" });
+  });
+
+  test("a retry after a failed first run finds and continues that run's transcript", async () => {
+    const h = setup();
+    const lookup = recordingTool("lookup", () => ({ status: "ok", output: "first attempt result" }));
+    h.script([
+      callTool("lookup", "x", "call-1"),
+      fauxAssistantMessage([], { stopReason: "error", errorMessage: "upstream unavailable" }),
+    ]);
+    const events = [event({ text: "fix the bug" })];
+
+    await expect(h.runtime.run(runInput({ events, tools: [lookup.tool] }))).rejects.toThrow("upstream unavailable");
+
+    h.script([reply("done")]);
+    const retry = await h.runtime.run(
+      runInput({ runId: "run-2", session: { id: "session-1", resumed: true, ref: null, workdir: null }, events, tools: [lookup.tool] }),
+    );
+
+    const dir = join(h.root, "sessions", "session-1");
+    const files = readdirSync(dir);
+    expect(files).toHaveLength(1);
+    expect(retry.sessionRef).toBe(join(dir, files[0]!));
+    expect(lookup.calls).toHaveLength(1);
+    const request = h.requests.at(-1)!;
+    expect(toolResultFor(request, "call-1") && textOf(toolResultFor(request, "call-1")!)).toBe("first attempt result");
+    const users = request.filter((m) => m.role === "user").map(textOf);
+    expect(users).toHaveLength(2);
+    expect(users[0]).not.toContain(RETRY_NOTICE);
+    expect(users[1]).toContain(RETRY_NOTICE);
+  });
+
+  test("a resumed run repeating events already in its transcript gets the retry notice", async () => {
+    const h = setup();
+    h.script([reply("one"), reply("two"), reply("three")]);
+    const events = [event({ text: "same event" })];
+
+    const first = await h.runtime.run(runInput({ events }));
+    const session = { id: "session-1", resumed: true, ref: first.sessionRef ?? null, workdir: null };
+    await h.runtime.run(runInput({ session, events }));
+    await h.runtime.run(runInput({ session, events: [event({ text: "new event" })] }));
+
+    expect(lastUserText(h.requests[1]!)).toContain(RETRY_NOTICE);
+    expect(lastUserText(h.requests[2]!)).not.toContain(RETRY_NOTICE);
+  });
+
+  test("two kernel sessions never share a transcript directory or file", async () => {
+    const h = setup();
+    h.script([reply("a"), reply("b")]);
+
+    const a = await h.runtime.run(runInput({ session: { id: "session-a", resumed: false, ref: null, workdir: null } }));
+    const b = await h.runtime.run(runInput({ session: { id: "session-b", resumed: false, ref: null, workdir: null } }));
+
+    expect(dirname(a.sessionRef!)).not.toBe(dirname(b.sessionRef!));
+    expect(readdirSync(dirname(a.sessionRef!))).toEqual([basename(a.sessionRef!)]);
+    expect(readdirSync(dirname(b.sessionRef!))).toEqual([basename(b.sessionRef!)]);
   });
 
   test("a run without a session ref starts a new transcript even when resumed", async () => {
