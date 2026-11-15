@@ -72,6 +72,7 @@ export function githubChannel(config: GitHubConfig): GitHubChannel {
             number: issue.number,
             title: issue.title,
             body: issue.body ?? "",
+            text: `${issue.title}\n\n${issue.body ?? ""}`,
             author: issue.user?.login ?? null,
             url: issue.html_url,
           }),
@@ -91,6 +92,8 @@ export function githubChannel(config: GitHubConfig): GitHubChannel {
             number,
             id: comment.id,
             body: comment.body ?? "",
+            // The kernel reads `text`, not `body`, when it takes the user's reply as an answer to a deferred call.
+            text: comment.body ?? "",
             author: comment.user?.login ?? null,
             url: comment.html_url,
           }),

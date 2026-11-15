@@ -57,6 +57,7 @@ describe("poll", () => {
         number: mine,
         title: "Fix the build",
         body: "it is red",
+        text: "Fix the build\n\nit is red",
         author: USER,
         url: `https://github.test/${OWNER}/${REPO}/issues/${mine}`,
       },
@@ -65,7 +66,7 @@ describe("poll", () => {
       source: "user_message",
       trusted: true,
       thread: thread(mine),
-      payload: { kind: "comment", number: mine, id: fromUser, body: "/approve", author: USER },
+      payload: { kind: "comment", number: mine, id: fromUser, body: "/approve", text: "/approve", author: USER },
     });
     expect(events.get(`issue:${theirs}`)).toMatchObject({ source: "webhook", trusted: false });
     expect(events.get(`comment:${fromStranger}`)).toMatchObject({ source: "webhook", trusted: false });
