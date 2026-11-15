@@ -1,6 +1,6 @@
 # aoa 设计文档
 
-- 状态：定稿，未实现
+- 状态：已实现，只在本地的假 GitHub 和脚本模型上跑过；还没接过真实的 GitHub App 和真实模型
 - 日期：2026-11-16
 - 规范：[spec.md](spec.md)（下文的 §、I-*、C*、D-* 编号都指它）
 - 决策记录：<（链接已删除）>
@@ -229,29 +229,56 @@ agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 
 
 ## 11. 测试
 
-`packages/conformance` 对内核跑规范 §9 的 C1–C20，用假 runtime（按脚本返回三种结局、在命名的提交点崩溃）和假时钟。每个原语先写失败的测试再实现。
+规范 §9 的验收项和它们的测试在哪：
 
-C13 只检查上下文和调用参数里没有凭据；「shell 读不到凭据」不在保证范围内（§6）。C19 检查宿主放进上下文的最近消息，不检查 `reported.md`（§7）。
+| 验收项 | 测试在哪 | 说明 |
+| --- | --- | --- |
+| C1–C10、C14–C20 | `packages/conformance` | 真内核、真 SQLite，假 runtime 和假时钟，在命名的提交点崩溃 |
+| C11 | 没有 | 压缩由 pi 自己做，内核看不到；靠常驻上下文里要求 agent 随时更新 `progress/` |
+| C12 | `packages/runtime-pi` | 恢复 transcript 后不重跑旧调用 |
+| C13 | `apps/aoa` 的端到端测试 | 扫描模型收到的每个请求、每张表的每一行、数据目录下的每个文件、日志 |
+
+C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve` 读入后会从环境变量里删掉，所以 agent 的 shell 继承不到它；GitHub App 的私钥文件和 `~/.aoa` 仍然靠规则把关。C19 检查宿主放进上下文的最近消息，不检查 `reported.md`（§7）。
+
+端到端测试经过和 `serve` 同一个装配函数，用内存里的假 GitHub、脚本模型、真 git 加本地裸仓库：issue 进到 PR 出、经 GitHub 评论审批、外部内容标记、`aoa answer`、PR 关闭后收尾。
 
 标为 `POLICY` 的条目（`PointerNotCopy`、I-CTX-2）没法机械验证，测试通过不等于符合规范。
 
-## 12. 步骤
+## 12. 实现中定下的
 
-开始阶段直接推 `main`，每步一组提交，测试随实现一起进。
+写代码时定的、前面各节没写到的：
 
-1. inbox、worker、假 runtime，C1–C6
-2. timers，C7–C9
-3. memory 和 pi 适配器，C10–C12
-4. permissions 和延后调用，C13–C16
-5. outbox 和 GitHub 通道，C17–C20
-6. `apps/aoa`，在一个真实仓库上跑通 issue 到 PR，开始两周自用
+- 去重键按 inbox 算：`(inbox_id, source, dedupe_key)`。
+- 被当成答复的评论，它原本的去重键另记在 `consumed_keys` 里，重复投递不会再变成新消息或回答下一个问题。
+- call id 交给内核前加上 session id 前缀；同一 session 里 provider 给出空的或重复的 id 时，适配器按出现次数区分。
+- 通道给事件的 payload 带 `text` 字段，内核只从它读答复的内容。
+- 每个 session 一个 transcript 目录。run 失败后重试时接着已有的 transcript 写，并提醒模型上一次被打断过、先查现状再重复操作。
+- 常驻上下文里进度那一段总是出现，文件还没写时显示「还没写」；否则 agent 不知道自己的 session id。
+- 一个 session 同时只能有一个待答的调用；这次 run 里之后的调用也返回延后，但不再发请求。
+- 事件重试到上限进 `dead` 时，同一个事务里给这项任务写一条失败通知（§8 的第三种消息）。
+- `serve` 必须配分类器。`bash` 是中风险，没有分类器时，只读白名单之外的每条命令都会停下来等你，写代码的循环转不起来。
+- 文件工具的路径落在任务的 worktree 之外时延后。
+- PR 的状态存在 `pull_states` 表里，由存储层直接提供，内核不知道 PR。`serve` 每 5 分钟查一次；PR 合并或关闭后关掉 session、删掉 worktree。之后再来事件会重开 session，在原分支上重建 worktree。
+- `aoa status --refresh` 只更新 PR 状态，不关 session。
+- `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉；另外每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
 
-## 13. 没定的
+## 13. 没验证的
 
-- GitHub App 要你来建并装到目标仓库，第 5 步开始时做。
-- pi 适配器的具体接法：transcript 存在哪、怎么按 `runtime_ref` 恢复、压缩前的钩子，要读过 `pi-coding-agent` 的 API 才能定。第 3 步定。
-- 分类器用哪个模型、规则表的完整内容。第 4 步定。
-- 跑在哪台机器上。
+下面这些只能接上真实服务才知道，现在都只是按文档写的：
+
+- GitHub App 的 JWT 和 installation token 交换，经 HTTPS 带 token 的 `git push`。
+- GitHub 接口的细节：`since` 的语义、按创建时间排序、带标签的 PR 是否出现在 issues 列表里、`head=owner:branch` 过滤、经 issues 接口给 PR 加标签、真实的分页和限流。
+- 真实模型会不会照系统提示的流程走；分类器会不会只回答一个词。
+- 宿主时钟要和 GitHub 相差一分钟以内，否则换 token 会失败。
+
+已知的局限：
+
+- 失败的 run 立刻重试，不退避。pi 自己会在一次 run 里对限流、过载和网络错误重试 3 次（2 秒起，翻倍），所以一次限流不会直接耗掉一次尝试；分类器没有重试，出错时那次调用会交给你。
+- 同一批里有一个调用被延后时，同批的其他调用照常执行。
+- agent 的工作目录里的 `pre-push` 钩子或 `url.insteadOf` 规则能看到或改走推送用的凭据；和 §6 接受的同用户风险是一回事。
+- 给 issue 打标签之前的评论不会进来，只有 issue 本身会。
+
+还要你来做的：建 GitHub App 并装到目标仓库，定下跑在哪台机器上，然后才是在真实仓库上跑通和两周自用。
 
 ## 14. 暂缓
 
