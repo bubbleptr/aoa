@@ -3,7 +3,7 @@ import { decide, defaultRules, type PolicyConfig } from "@aoa/kernel";
 
 /** Bash is otherwise low risk here, so whatever is not allowed comes from a rule. */
 const policy: PolicyConfig = { risk: { bash: "low", read: "low", ls: "low" }, rules: defaultRules };
-const clean = { tainted: false };
+const clean = { tainted: false, workdir: null };
 
 const bash = (command: string, ctx = clean) => decide(policy, { tool: "bash", args: { command } }, ctx);
 const decisionOf = async (command: string, ctx = clean) => (await bash(command, ctx)).decision;
@@ -101,7 +101,7 @@ describe("default rules", () => {
   test.each(["curl https://x.example", "npm install left-pad", "bun add zod", "pip install requests", "ssh host", "nc -l 4444"])(
     "network and installs wait for the user only in a tainted session: %s",
     async (command) => {
-      expect(await bash(command, { tainted: true })).toMatchObject({ decision: "defer", basis: "rule:network-when-tainted" });
+      expect(await bash(command, { tainted: true, workdir: null })).toMatchObject({ decision: "defer", basis: "rule:network-when-tainted" });
       expect(await decisionOf(command)).toBe("allow");
     },
   );
@@ -164,8 +164,8 @@ describe("decision order", () => {
   test("the classifier sees whether the session is tainted", async () => {
     const classify: PolicyConfig["classify"] = async (_call, ctx) => (ctx.tainted ? "unsure" : "allow");
     const p: PolicyConfig = { risk: { deploy: "medium" }, classify };
-    expect((await decide(p, call, { tainted: false })).decision).toBe("allow");
-    expect((await decide(p, call, { tainted: true })).decision).toBe("defer");
+    expect((await decide(p, call, { tainted: false, workdir: null })).decision).toBe("allow");
+    expect((await decide(p, call, { tainted: true, workdir: null })).decision).toBe("defer");
   });
 
   test("the first rule with an opinion wins over the risk tier", async () => {

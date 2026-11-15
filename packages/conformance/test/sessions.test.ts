@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash, addFollowUp, closeSession, type Session, type ToolDef } from "@aoa/kernel";
+import { LEASE_MS, SimulatedCrash, addFollowUp, closeSession, type Rule, type Session, type ToolDef } from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const whereAmI: ToolDef = {
@@ -130,6 +130,23 @@ for (const [name, factory] of storeFactories) {
 
       expect(channel.calls).toEqual([]);
       expect(h.outbox().map((m) => [m.kind, m.status])).toEqual([["approval_request", "cancelled"]]);
+    });
+
+    test("policy rules see the session's workdir", async () => {
+      const seen: (string | null)[] = [];
+      const rule: Rule = {
+        name: "spy",
+        match(_call, ctx) {
+          seen.push(ctx.workdir);
+          return null;
+        },
+      };
+      const runtime = new ScriptedRuntime([{ calls: [{ tool: "where_am_i", callId: "call-1" }] }]);
+      const prepareSession = async (s: Session) => ({ workdir: `/work/${s.id}` });
+      h.append();
+      await h.worker({ runtime, tools: [whereAmI], prepareSession, policy: { risk: { where_am_i: "low" }, rules: [rule] } }).drain();
+
+      expect(seen).toEqual([`/work/${runtime.runs[0]!.input.session.id}`]);
     });
   });
 }

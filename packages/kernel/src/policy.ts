@@ -8,6 +8,8 @@ export type ToolCall = { tool: string; args: unknown };
 export type PolicyContext = {
   /** The session has taken content from someone other than the user (design §6). */
   tainted: boolean;
+  /** The session's working directory, so a rule can tell paths inside it from paths outside. */
+  workdir: string | null;
 };
 
 /** A rule with an opinion returns a decision; `null` passes the call to the next rule. */
