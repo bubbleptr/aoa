@@ -21,21 +21,30 @@ import { sqliteStore } from "@aoa/store-sqlite";
 import { FakeClock } from "./fake-clock.ts";
 
 /** One database per test. `connect` opens another connection to it, as a second process would. */
-export type TestDatabase = { connect(): Store; dispose(): void };
+export type TestDatabase = {
+  connect(): Store;
+  /** Closes every connection, as a process exit would; the data stays. */
+  closeAll(): void;
+  dispose(): void;
+};
 
 export type StoreFactory = () => TestDatabase;
 
 export const sqliteFactory: StoreFactory = () => {
   const dir = mkdtempSync(join(tmpdir(), "aoa-conformance-"));
   const opened: { close(): void }[] = [];
+  const closeAll = () => {
+    for (const s of opened.splice(0)) s.close();
+  };
   return {
     connect() {
       const store = sqliteStore(join(dir, "aoa.db"));
       opened.push(store);
       return store;
     },
+    closeAll,
     dispose() {
-      for (const s of opened) s.close();
+      closeAll();
       rmSync(dir, { recursive: true, force: true });
     },
   };
@@ -59,11 +68,20 @@ export type WorkerSetup = Omit<WorkerOptions, "store" | "clock" | "inboxId"> & {
 export class Harness {
   readonly clock = new FakeClock();
   readonly inboxId = "inbox-1";
-  readonly store: Store;
+  store: Store;
+  /** A directory that outlives `restart`, for memory. */
+  readonly memoryDir: string;
   private seq = 0;
 
   constructor(private readonly db: TestDatabase) {
     this.store = db.connect();
+    this.memoryDir = mkdtempSync(join(tmpdir(), "aoa-memory-"));
+  }
+
+  /** Closes every connection and opens a fresh one, as a restarted process would. */
+  restart(): void {
+    this.db.closeAll();
+    this.store = this.db.connect();
   }
 
   connect(): Store {
@@ -72,6 +90,7 @@ export class Harness {
 
   dispose(): void {
     this.db.dispose();
+    rmSync(this.memoryDir, { recursive: true, force: true });
   }
 
   /** Appends a trusted user message unless `e` says otherwise; dedupe keys are unique by default. */

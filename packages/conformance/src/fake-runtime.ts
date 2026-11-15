@@ -1,6 +1,7 @@
 import type { AgentRuntime, CallId, RunEnd, RunInput, RunResult, ToolResult } from "@aoa/kernel";
 
-export type ScriptedCall = { tool: string; callId: CallId; args?: unknown };
+/** `args` may be computed from the run's input, e.g. to name the session's own progress file. */
+export type ScriptedCall = { tool: string; callId: CallId; args?: object | ((input: RunInput) => unknown) };
 
 /** What one run does. Fixed call ids make a rerun replay the same ids, as a resumed transcript would. */
 export type RunScript = {
@@ -36,7 +37,8 @@ export class ScriptedRuntime implements AgentRuntime {
       for (const call of script.calls ?? []) {
         const tool = input.tools.find((t) => t.name === call.tool);
         if (!tool) throw new Error(`script calls unknown tool ${call.tool}`);
-        observed.toolResults.push(await tool.invoke(call.callId, call.args ?? {}));
+        const args = typeof call.args === "function" ? call.args(input) : (call.args ?? {});
+        observed.toolResults.push(await tool.invoke(call.callId, args));
       }
       if (script.fail) throw script.fail;
       return { end: script.end ?? { kind: "silent" }, sessionRef: script.sessionRef };
