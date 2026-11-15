@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { appendEvent } from "@aoa/kernel";
 import { Harness, ScriptedRuntime, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {
@@ -31,9 +32,14 @@ for (const [name, factory] of storeFactories) {
       expect(h.runs()).toHaveLength(1);
     });
 
-    test("the same key from a different source is a different event", () => {
+    test("the same key from a different source, or in a different inbox, is a different event", () => {
       h.append({ source: "webhook", dedupeKey: "42" });
       expect(h.append({ source: "timer", dedupeKey: "42" }).status).toBe("pending");
+      const other = appendEvent(
+        { store: h.store, clock: h.clock, inboxId: "inbox-2" },
+        { source: "webhook", dedupeKey: "42", payload: null, trusted: true },
+      );
+      expect(other.status).toBe("pending");
     });
   });
 }

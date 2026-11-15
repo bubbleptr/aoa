@@ -13,7 +13,7 @@ for (const [name, factory] of storeFactories) {
       h.append();
       const hold = gate();
       const runtime = new ScriptedRuntime([{ gate: hold.promise }]);
-      const draining = h.worker({ runtime }).drain();
+      const draining = h.worker({ runtime, store: h.connect() }).drain();
       await runtime.started(1);
 
       const appended = h.append();
