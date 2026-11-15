@@ -47,8 +47,10 @@ export type OutMsgInsert = Omit<OutMsg, "status" | "attempts">;
 export type QueuedMsg = { msg: OutMsg; nextAttemptAt: number };
 
 export interface Tx {
-  /** True if this inbox holds a non-dropped event with this `(source, dedupeKey)`. */
+  /** True if this inbox holds a non-dropped event with this `(source, dedupeKey)`, or consumed the key as an answer. */
   isAccepted(inboxId: InboxId, source: EventSource, dedupeKey: string): boolean;
+  /** Records that an event with this key was taken in as an answer under another key, so a redelivery is dropped. */
+  consumeKey(inboxId: InboxId, source: EventSource, dedupeKey: string): void;
   insertEvent(e: EventInsert): void;
   getEvent(id: EventId): Event | null;
   listEvents(inboxId: InboxId): Event[];
@@ -120,7 +122,6 @@ export interface Tx {
 
   /** Inserts a pending message. If the inbox already holds its `dedupeKey`, inserts nothing and returns the existing id. */
   insertOutMsg(m: OutMsgInsert): MsgId;
-  getOutMsg(id: MsgId): OutMsg | null;
   listOutbox(inboxId: InboxId): OutMsg[];
   /** `sending → pending`: what a dispatcher that died mid-delivery left behind. */
   resetSending(inboxId: InboxId): void;

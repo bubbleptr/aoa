@@ -25,12 +25,15 @@ export function appendEvent(deps: AppendDeps, e: NewEvent): AppendResult {
  * under one key per call, so only the first answer counts (I-PRM-5), whether it is a reply or the expiry.
  */
 export function appendInTx(t: Tx, inboxId: InboxId, now: number, incoming: NewEvent, resumeHint?: SessionId): AppendResult {
-  const answer = asAnswer(t, inboxId, incoming, resumeHint);
+  const seen = t.isAccepted(inboxId, incoming.source, incoming.dedupeKey);
+  const answer = seen ? null : asAnswer(t, inboxId, incoming, resumeHint);
+  // The answer is stored under its own key; the incoming key is kept too, so a redelivered reply cannot answer a later call.
+  if (answer) t.consumeKey(inboxId, incoming.source, incoming.dedupeKey);
   const e = answer?.event ?? incoming;
   const resume = answer?.resume ?? resumeHint;
   const id = crypto.randomUUID();
   const thread = e.thread ?? null;
-  const status = t.isAccepted(inboxId, e.source, e.dedupeKey) ? "dropped" : "pending";
+  const status = (answer ? t.isAccepted(inboxId, e.source, e.dedupeKey) : seen) ? "dropped" : "pending";
   const target =
     status === "dropped" ? null : (resume ?? (thread !== null ? t.sessionForThread(inboxId, thread) : null));
   t.insertEvent({

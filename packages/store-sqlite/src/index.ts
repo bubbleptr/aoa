@@ -176,7 +176,11 @@ const json = (v: unknown): string => JSON.stringify(v ?? null);
 function createTx(db: Database): Tx {
   const q = {
     isAccepted: db.query<{ n: number }, [string, string, string]>(
-      "SELECT count(*) AS n FROM events WHERE inbox_id = ? AND source = ? AND dedupe_key = ? AND status <> 'dropped'",
+      `SELECT (SELECT count(*) FROM events WHERE inbox_id = ?1 AND source = ?2 AND dedupe_key = ?3 AND status <> 'dropped')
+            + (SELECT count(*) FROM consumed_keys WHERE inbox_id = ?1 AND source = ?2 AND dedupe_key = ?3) AS n`,
+    ),
+    consumeKey: db.query(
+      "INSERT OR IGNORE INTO consumed_keys (inbox_id, source, dedupe_key) VALUES ($inbox, $source, $dedupe)",
     ),
     insertEvent: db.query(
       `INSERT INTO events (id, inbox_id, source, dedupe_key, received_at, payload, thread, resume, trusted, status)
@@ -266,7 +270,6 @@ function createTx(db: Database): Tx {
        VALUES ($id, $inbox, $session, $thread, $kind, $body, $call, $dedupe, $at, $at)`,
     ),
     outMsgByKey: db.query<{ id: string }, [string, string]>("SELECT id FROM outbox WHERE inbox_id = ? AND dedupe_key = ?"),
-    getOutMsg: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE id = ?"),
     listOutbox: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? ORDER BY seq"),
     resetSending: db.query("UPDATE outbox SET status = 'pending' WHERE inbox_id = $inbox AND status = 'sending'"),
     listUndelivered: db.query<OutboxRow, [string]>(
@@ -317,6 +320,9 @@ function createTx(db: Database): Tx {
 
   return {
     isAccepted: (inboxId, source, dedupeKey) => q.isAccepted.get(inboxId, source, dedupeKey)!.n > 0,
+    consumeKey(inboxId, source, dedupeKey) {
+      q.consumeKey.run({ inbox: inboxId, source, dedupe: dedupeKey });
+    },
     insertEvent(e: EventInsert) {
       q.insertEvent.run({
         id: e.id,
@@ -464,10 +470,6 @@ function createTx(db: Database): Tx {
         at: m.createdAt,
       });
       return q.outMsgByKey.get(m.inboxId, m.dedupeKey)!.id;
-    },
-    getOutMsg: (id) => {
-      const r = q.getOutMsg.get(id);
-      return r ? toOutMsg(r) : null;
     },
     listOutbox: (inboxId) => q.listOutbox.all(inboxId).map(toOutMsg),
     resetSending(inboxId) {

@@ -57,6 +57,25 @@ for (const [name, factory] of storeFactories) {
       expect(h.runs().map((r) => r.end)).toEqual([{ kind: "deferred", callId: "call-1" }, { kind: "silent" }]);
     });
 
+    test("a redelivered reply is dropped: it cannot answer a later call, nor come back as a new message", async () => {
+      const deployAgain: RunScript = { calls: [{ tool: "deploy", callId: "call-2" }] };
+      const runtime = new ScriptedRuntime([deployCall, deployAgain, {}]);
+      const session = await deferDeploy(runtime);
+      const reply = { thread: THREAD, dedupeKey: "github:comment:55", payload: { text: "/approve" } };
+
+      expect(h.append(reply).status).toBe("pending");
+      await worker(runtime).drain();
+      expect(h.store.tx((t) => t.getSession(session))).toMatchObject({ status: "paused", pending: "call-2" });
+      expect(h.append(reply).status).toBe("dropped");
+      expect(h.store.tx((t) => t.getSession(session))?.pending).toBe("call-2");
+
+      h.append({ thread: THREAD, payload: { text: "/deny" } });
+      await worker(runtime).drain();
+      expect(h.store.tx((t) => t.getSession(session))?.status).toBe("open");
+      expect(h.append(reply).status).toBe("dropped");
+      expect(deploy.effects).toHaveLength(1);
+    });
+
     test("a crash between executing the approved call and recording it: never executed twice", async () => {
       const runtime = new ScriptedRuntime([deployCall, deployCall]);
       await deferDeploy(runtime);

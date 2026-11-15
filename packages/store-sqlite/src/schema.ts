@@ -137,6 +137,14 @@ const migrations: string[] = [
   );
   CREATE INDEX decisions_session ON decisions (session_id);
   `,
+  `
+  CREATE TABLE consumed_keys (
+    inbox_id   TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL,
+    PRIMARY KEY (inbox_id, source, dedupe_key)
+  );
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
