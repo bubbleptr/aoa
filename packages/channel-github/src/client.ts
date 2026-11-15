@@ -28,11 +28,11 @@ export type Reply<T> = { data: T; serverTime: number; next: string | null };
 
 export function resolve(config: GitHubConfig): Resolved {
   return {
-    label: "aoa",
-    apiBase: "https://api.github.com",
-    fetch: (input, init) => fetch(input, init),
-    now: () => Date.now(),
     ...config,
+    label: config.label ?? "aoa",
+    apiBase: config.apiBase ?? "https://api.github.com",
+    fetch: config.fetch ?? ((input, init) => fetch(input, init)),
+    now: config.now ?? (() => Date.now()),
   };
 }
 
@@ -147,7 +147,9 @@ export class GitHubClient {
       throw new GitHubError(this.scrub(`${where} failed: ${err instanceof Error ? err.message : String(err)}`), null);
     }
     if (!response.ok) {
-      throw new GitHubError(this.scrub(`${where} failed with ${response.status}: ${text.slice(0, 1000)}`), response.status);
+      // Scrub before truncating: a secret cut in half would no longer match.
+      const detail = this.scrub(text).slice(0, 1000);
+      throw new GitHubError(this.scrub(`${where} failed with ${response.status}: ${detail}`), response.status);
     }
     const date = Date.parse(response.headers.get("date") ?? "");
     return {

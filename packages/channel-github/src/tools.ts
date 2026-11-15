@@ -58,13 +58,16 @@ export function githubTools(config: GitHubToolsConfig): ToolDef[] {
       client.addSecret(basic);
       const ref = `refs/heads/${branch}`;
       // The credential goes in through git's env config for this one process: not in argv (visible in
-      // `ps`), not in the remote URL, not in any git config file.
+      // `ps`), not in the remote URL, not in any git config file. The empty credential helper stops a
+      // rejected token from falling back to the host user's own GitHub credentials.
       const result = await runGit(["push", clone_url, `${ref}:${ref}`], {
         cwd: ctx.workdir,
         env: {
-          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_COUNT: "2",
           GIT_CONFIG_KEY_0: "http.extraheader",
           GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+          GIT_CONFIG_KEY_1: "credential.helper",
+          GIT_CONFIG_VALUE_1: "",
           GIT_TERMINAL_PROMPT: "0",
         },
       });

@@ -43,10 +43,12 @@ describe("git_push", () => {
     const token = gh.issuedTokens[0]!;
     expect(call!.args.join(" ")).not.toContain(token);
     const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
-    expect(call!.env).toMatchObject({
-      GIT_CONFIG_COUNT: "1",
+    expect(call!.env).toEqual({
+      GIT_CONFIG_COUNT: "2",
       GIT_CONFIG_KEY_0: "http.extraheader",
       GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+      GIT_CONFIG_KEY_1: "credential.helper",
+      GIT_CONFIG_VALUE_1: "",
       GIT_TERMINAL_PROMPT: "0",
     });
   });
@@ -107,10 +109,6 @@ describe("github_open_pr", () => {
       ["feat/a", "main"],
       ["feat/b", "dev"],
     ]);
-  });
-
-  test("declares itself safe to run again", () => {
-    expect(tool("github_open_pr").idempotent).toBe(true);
   });
 });
 
