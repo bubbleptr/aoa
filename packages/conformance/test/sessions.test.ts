@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { LEASE_MS, SimulatedCrash, addFollowUp, closeSession, type Session, type ToolDef } from "@aoa/kernel";
-import { Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
+import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const whereAmI: ToolDef = {
   name: "where_am_i",
@@ -117,6 +117,19 @@ for (const [name, factory] of storeFactories) {
       expect(runtime.runs[1]!.input.events.map((e) => e.source)).toEqual(["user_message"]);
       expect(runtime.runs[1]!.toolResults).toEqual([{ status: "ok", output: { done: 1 } }]);
       expect(h.store.tx((t) => t.getSession(session))).toMatchObject({ status: "open", pending: null });
+    });
+
+    test("closing a session before its approval request went out cancels the request", async () => {
+      const runtime = new ScriptedRuntime([{ calls: [{ tool: "deploy", callId: "call-1" }] }]);
+      h.append({ thread: "task-1" });
+      await h.worker({ runtime, tools: [countingTool("deploy")], policy: { risk: {} } }).drain();
+
+      closeSession(h.store, runtime.runs[0]!.input.session.id);
+      const channel = new FakeChannel();
+      await h.dispatcher({ channel }).pass();
+
+      expect(channel.calls).toEqual([]);
+      expect(h.outbox().map((m) => [m.kind, m.status])).toEqual([["approval_request", "cancelled"]]);
     });
   });
 }

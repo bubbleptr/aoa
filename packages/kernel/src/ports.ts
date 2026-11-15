@@ -123,6 +123,8 @@ export interface Tx {
   /** Inserts a pending message. If the inbox already holds its `dedupeKey`, inserts nothing and returns the existing id. */
   insertOutMsg(m: OutMsgInsert): MsgId;
   listOutbox(inboxId: InboxId): OutMsg[];
+  /** An undelivered approval request for `callId` becomes `cancelled`, so it is never sent. */
+  cancelApprovalRequest(callId: CallId): void;
   /** `sending → pending`: what a dispatcher that died mid-delivery left behind. */
   resetSending(inboxId: InboxId): void;
   /** Pending and sending messages, oldest first. */

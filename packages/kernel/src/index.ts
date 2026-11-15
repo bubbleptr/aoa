@@ -18,7 +18,7 @@ export {
   type SchedulerOptions,
   type TimerToolDeps,
 } from "./timers.ts";
-export { closeSession } from "./sessions.ts";
+export { closeSession, followTools, type FollowToolDeps } from "./sessions.ts";
 export { DEFAULT_RATE_POLICY, pace, type PacePlan, type RatePolicy } from "./pace.ts";
 export {
   DISPATCHER_MAX_SLEEP_MS,

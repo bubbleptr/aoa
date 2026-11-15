@@ -271,6 +271,9 @@ function createTx(db: Database): Tx {
     ),
     outMsgByKey: db.query<{ id: string }, [string, string]>("SELECT id FROM outbox WHERE inbox_id = ? AND dedupe_key = ?"),
     listOutbox: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? ORDER BY seq"),
+    cancelApprovalRequest: db.query(
+      "UPDATE outbox SET status = 'cancelled' WHERE call_id = $call AND kind = 'approval_request' AND status IN ('pending', 'sending')",
+    ),
     resetSending: db.query("UPDATE outbox SET status = 'pending' WHERE inbox_id = $inbox AND status = 'sending'"),
     listUndelivered: db.query<OutboxRow, [string]>(
       "SELECT * FROM outbox WHERE inbox_id = ? AND status IN ('pending', 'sending') ORDER BY seq",
@@ -472,6 +475,9 @@ function createTx(db: Database): Tx {
       return q.outMsgByKey.get(m.inboxId, m.dedupeKey)!.id;
     },
     listOutbox: (inboxId) => q.listOutbox.all(inboxId).map(toOutMsg),
+    cancelApprovalRequest(callId) {
+      q.cancelApprovalRequest.run({ call: callId });
+    },
     resetSending(inboxId) {
       q.resetSending.run({ inbox: inboxId });
     },
