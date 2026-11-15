@@ -1,3 +1,4 @@
+import type { OutMsg } from "./channel.ts";
 import type {
   CallId,
   Event,
@@ -6,6 +7,7 @@ import type {
   EventStatus,
   InboxId,
   JournalEntry,
+  MsgId,
   RunEnd,
   RunId,
   RunInput,
@@ -36,6 +38,11 @@ export type EventInsert = {
   trusted: boolean;
   status: Extract<EventStatus, "pending" | "dropped">;
 };
+
+export type OutMsgInsert = Omit<OutMsg, "status" | "attempts">;
+
+/** An undelivered message and the earliest time it may be tried. */
+export type QueuedMsg = { msg: OutMsg; nextAttemptAt: number };
 
 export interface Tx {
   /** True if this inbox holds a non-dropped event with this `(source, dedupeKey)`. */
@@ -98,6 +105,28 @@ export interface Tx {
   cancelFollowUp(id: TimerId, session: SessionId): boolean;
   /** Cancels every armed timer of the session (D-TMR-6); returns how many. */
   cancelTimersForSession(session: SessionId): number;
+
+  /** Inserts a pending message. If the inbox already holds its `dedupeKey`, inserts nothing and returns the existing id. */
+  insertOutMsg(m: OutMsgInsert): MsgId;
+  getOutMsg(id: MsgId): OutMsg | null;
+  listOutbox(inboxId: InboxId): OutMsg[];
+  /** `sending → pending`: what a dispatcher that died mid-delivery left behind. */
+  resetSending(inboxId: InboxId): void;
+  /** Pending and sending messages, oldest first. */
+  listUndelivered(inboxId: InboxId): QueuedMsg[];
+  /** `pending → sending`; returns false if the message is not pending. */
+  markSending(id: MsgId): boolean;
+  markSent(id: MsgId, at: number): void;
+  /** `attempts + 1`, then back to `pending` until `nextAttemptAt`, or `failed` when it is null. */
+  markDeliveryFailed(id: MsgId, nextAttemptAt: number | null): void;
+  /** When messages of kind `message` were sent at or after `since`. */
+  listSentTimes(inboxId: InboxId, since: number): number[];
+  listFailed(inboxId: InboxId): OutMsg[];
+  /** Attributes the session's messages that no run has claimed yet to `run`; returns their ids, oldest first. */
+  claimRunMessages(session: SessionId, run: RunId): MsgId[];
+
+  getCursor(inboxId: InboxId, name: string): string | null;
+  setCursor(inboxId: InboxId, name: string, value: string): void;
 }
 
 export interface AgentRuntime {

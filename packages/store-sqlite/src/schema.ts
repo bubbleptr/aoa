@@ -82,6 +82,36 @@ const migrations: string[] = [
   CREATE INDEX timers_due ON timers (inbox_id, status, due);
   CREATE INDEX timers_session ON timers (session_id, status);
   `,
+  `
+  CREATE TABLE outbox (
+    seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              TEXT NOT NULL UNIQUE,
+    inbox_id        TEXT NOT NULL,
+    session_id      TEXT NOT NULL REFERENCES sessions (id),
+    thread          TEXT,
+    kind            TEXT NOT NULL CHECK (kind IN ('message', 'approval_request')),
+    body            TEXT NOT NULL,
+    call_id         TEXT,
+    dedupe_key      TEXT NOT NULL,
+    created_at      INTEGER NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'cancelled')),
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL,
+    sent_at         INTEGER,
+    run_id          TEXT,
+    UNIQUE (inbox_id, dedupe_key)
+  );
+  CREATE INDEX outbox_status ON outbox (inbox_id, status);
+  CREATE INDEX outbox_session ON outbox (session_id, run_id);
+
+  CREATE TABLE cursors (
+    inbox_id TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    PRIMARY KEY (inbox_id, name)
+  );
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */

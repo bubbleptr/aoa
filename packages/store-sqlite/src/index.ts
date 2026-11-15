@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import type {
+  OutMsg,
   Event,
   EventInsert,
   EventStatus,
@@ -118,6 +119,35 @@ const toTimer = (r: TimerRow): Timer => ({
   lastFired: r.last_fired,
 });
 
+type OutboxRow = {
+  id: string;
+  inbox_id: string;
+  session_id: string;
+  thread: string | null;
+  kind: OutMsg["kind"];
+  body: string;
+  call_id: string | null;
+  dedupe_key: string;
+  created_at: number;
+  status: OutMsg["status"];
+  attempts: number;
+  next_attempt_at: number;
+};
+
+const toOutMsg = (r: OutboxRow): OutMsg => ({
+  id: r.id,
+  inboxId: r.inbox_id,
+  sessionId: r.session_id,
+  thread: r.thread,
+  kind: r.kind,
+  body: r.body,
+  callId: r.call_id,
+  dedupeKey: r.dedupe_key,
+  createdAt: r.created_at,
+  status: r.status,
+  attempts: r.attempts,
+});
+
 const json = (v: unknown): string => JSON.stringify(v ?? null);
 
 function createTx(db: Database): Tx {
@@ -208,6 +238,38 @@ function createTx(db: Database): Tx {
       "UPDATE timers SET status = 'cancelled' WHERE id = $id AND session_id = $session AND kind = 'follow_up' AND status = 'armed'",
     ),
     cancelTimersForSession: db.query("UPDATE timers SET status = 'cancelled' WHERE session_id = $session AND status = 'armed'"),
+    insertOutMsg: db.query(
+      `INSERT OR IGNORE INTO outbox (id, inbox_id, session_id, thread, kind, body, call_id, dedupe_key, created_at, next_attempt_at)
+       VALUES ($id, $inbox, $session, $thread, $kind, $body, $call, $dedupe, $at, $at)`,
+    ),
+    outMsgByKey: db.query<{ id: string }, [string, string]>("SELECT id FROM outbox WHERE inbox_id = ? AND dedupe_key = ?"),
+    getOutMsg: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE id = ?"),
+    listOutbox: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? ORDER BY seq"),
+    resetSending: db.query("UPDATE outbox SET status = 'pending' WHERE inbox_id = $inbox AND status = 'sending'"),
+    listUndelivered: db.query<OutboxRow, [string]>(
+      "SELECT * FROM outbox WHERE inbox_id = ? AND status IN ('pending', 'sending') ORDER BY seq",
+    ),
+    markSending: db.query("UPDATE outbox SET status = 'sending' WHERE id = $id AND status = 'pending'"),
+    markSent: db.query("UPDATE outbox SET status = 'sent', sent_at = $at WHERE id = $id"),
+    markDeliveryFailed: db.query(
+      `UPDATE outbox
+       SET attempts = attempts + 1,
+           status = CASE WHEN $next IS NULL THEN 'failed' ELSE 'pending' END,
+           next_attempt_at = coalesce($next, next_attempt_at)
+       WHERE id = $id`,
+    ),
+    listSentTimes: db.query<{ sent_at: number }, [string, number]>(
+      "SELECT sent_at FROM outbox WHERE inbox_id = ? AND kind = 'message' AND status = 'sent' AND sent_at >= ? ORDER BY sent_at",
+    ),
+    listFailed: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? AND status = 'failed' ORDER BY seq"),
+    claimRunMessages: db.query<{ id: string; seq: number }, [string, string]>(
+      "UPDATE outbox SET run_id = ?2 WHERE session_id = ?1 AND kind = 'message' AND run_id IS NULL RETURNING id, seq",
+    ),
+    getCursor: db.query<{ value: string }, [string, string]>("SELECT value FROM cursors WHERE inbox_id = ? AND name = ?"),
+    setCursor: db.query(
+      `INSERT INTO cursors (inbox_id, name, value) VALUES ($inbox, $name, $value)
+       ON CONFLICT (inbox_id, name) DO UPDATE SET value = excluded.value`,
+    ),
   };
 
   const activeLease = (inboxId: string, now: number) => q.activeLease.get(inboxId, now)?.until ?? null;
@@ -347,5 +409,47 @@ function createTx(db: Database): Tx {
     fireTimer: (id, occurrence, nextDue) => q.fireTimer.run({ id, occurrence, next: nextDue }).changes > 0,
     cancelFollowUp: (id, session) => q.cancelFollowUp.run({ id, session }).changes > 0,
     cancelTimersForSession: (session) => q.cancelTimersForSession.run({ session }).changes,
+    insertOutMsg(m) {
+      q.insertOutMsg.run({
+        id: m.id,
+        inbox: m.inboxId,
+        session: m.sessionId,
+        thread: m.thread,
+        kind: m.kind,
+        body: m.body,
+        call: m.callId,
+        dedupe: m.dedupeKey,
+        at: m.createdAt,
+      });
+      return q.outMsgByKey.get(m.inboxId, m.dedupeKey)!.id;
+    },
+    getOutMsg: (id) => {
+      const r = q.getOutMsg.get(id);
+      return r ? toOutMsg(r) : null;
+    },
+    listOutbox: (inboxId) => q.listOutbox.all(inboxId).map(toOutMsg),
+    resetSending(inboxId) {
+      q.resetSending.run({ inbox: inboxId });
+    },
+    listUndelivered: (inboxId) =>
+      q.listUndelivered.all(inboxId).map((r) => ({ msg: toOutMsg(r), nextAttemptAt: r.next_attempt_at })),
+    markSending: (id) => q.markSending.run({ id }).changes > 0,
+    markSent(id, at) {
+      q.markSent.run({ id, at });
+    },
+    markDeliveryFailed(id, nextAttemptAt) {
+      q.markDeliveryFailed.run({ id, next: nextAttemptAt });
+    },
+    listSentTimes: (inboxId, since) => q.listSentTimes.all(inboxId, since).map((r) => r.sent_at),
+    listFailed: (inboxId) => q.listFailed.all(inboxId).map(toOutMsg),
+    claimRunMessages: (session, run) =>
+      q.claimRunMessages
+        .all(session, run)
+        .sort((a, b) => a.seq - b.seq)
+        .map((r) => r.id),
+    getCursor: (inboxId, name) => q.getCursor.get(inboxId, name)?.value ?? null,
+    setCursor(inboxId, name, value) {
+      q.setCursor.run({ inbox: inboxId, name, value });
+    },
   };
 }
