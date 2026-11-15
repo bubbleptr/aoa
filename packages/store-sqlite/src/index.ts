@@ -284,6 +284,9 @@ function createTx(db: Database): Tx {
     listSentTimes: db.query<{ sent_at: number }, [string, number]>(
       "SELECT sent_at FROM outbox WHERE inbox_id = ? AND kind = 'message' AND status = 'sent' AND sent_at >= ? ORDER BY sent_at",
     ),
+    listRecentSent: db.query<OutboxRow, [string, number]>(
+      "SELECT * FROM outbox WHERE inbox_id = ? AND kind = 'message' AND status = 'sent' ORDER BY sent_at DESC, seq DESC LIMIT ?",
+    ),
     listFailed: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? AND status = 'failed' ORDER BY seq"),
     claimRunMessages: db.query<{ id: string; seq: number }, [string, string]>(
       "UPDATE outbox SET run_id = ?2 WHERE session_id = ?1 AND kind = 'message' AND run_id IS NULL RETURNING id, seq",
@@ -480,6 +483,7 @@ function createTx(db: Database): Tx {
       q.markDeliveryFailed.run({ id, next: nextAttemptAt });
     },
     listSentTimes: (inboxId, since) => q.listSentTimes.all(inboxId, since).map((r) => r.sent_at),
+    listRecentSent: (inboxId, limit) => q.listRecentSent.all(inboxId, limit).map(toOutMsg).reverse(),
     listFailed: (inboxId) => q.listFailed.all(inboxId).map(toOutMsg),
     claimRunMessages: (session, run) =>
       q.claimRunMessages

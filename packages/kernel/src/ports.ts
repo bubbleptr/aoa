@@ -134,6 +134,8 @@ export interface Tx {
   /** When messages of kind `message` were sent at or after `since`. */
   listSentTimes(inboxId: InboxId, since: number): number[];
   listFailed(inboxId: InboxId): OutMsg[];
+  /** The last `limit` delivered messages of kind `message`, oldest first. */
+  listRecentSent(inboxId: InboxId, limit: number): OutMsg[];
   /** Attributes the session's messages that no run has claimed yet to `run`; returns their ids, oldest first. */
   claimRunMessages(session: SessionId, run: RunId): MsgId[];
 
