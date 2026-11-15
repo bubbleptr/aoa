@@ -80,6 +80,8 @@ describe("default rules", () => {
     "ls ~/.aoa",
     "head -n 1 /home/me/.npmrc",
     "cat auth.json",
+    "cat /Users/me/.SSH/id_ED25519",
+    "cat .ENV",
   ])("a command touching credentials waits for the user even when read-only: %s", async (command) => {
     expect(await bash(command)).toMatchObject({ decision: "defer", basis: "rule:credential-paths" });
   });
@@ -89,6 +91,7 @@ describe("default rules", () => {
       ["read", { path: "/Users/me/.ssh/id_rsa" }],
       ["ls", { path: "~/.aoa/memory" }],
       ["read", { path: "secrets.json" }],
+      ["read", { path: "/Users/me/.SSH/config" }],
     ] as const) {
       expect(await decide(policy, { tool, args }, clean)).toMatchObject({ decision: "defer", basis: "rule:credential-paths" });
     }

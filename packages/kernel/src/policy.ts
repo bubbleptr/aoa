@@ -150,8 +150,9 @@ const noRmRoot = bashRule("no-rm-root", (command) =>
     : null,
 );
 
+// Case-insensitive because the default macOS file system is: `.SSH` opens `.ssh`.
 const CREDENTIAL_PATH =
-  /(?:^|[^\w.-])\.(?:ssh|aoa|npmrc|netrc|gnupg|aws|kube|docker|git-credentials|env)(?![\w-])|\.config\/gh(?![\w-])|id_rsa|id_ed25519|secrets\.json|auth\.json/;
+  /(?:^|[^\w.-])\.(?:ssh|aoa|npmrc|netrc|gnupg|aws|kube|docker|git-credentials|env)(?![\w-])|\.config\/gh(?![\w-])|id_rsa|id_ed25519|secrets\.json|auth\.json/i;
 
 const FILE_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 
