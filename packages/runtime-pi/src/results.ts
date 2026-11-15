@@ -1,0 +1,37 @@
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+
+/** The result shape pi's own tools return; `codingTools()` outputs carry it through the kernel journal. */
+export type PiToolResult = {
+  content: (TextContent | ImageContent)[];
+  details?: unknown;
+  isError?: boolean;
+};
+
+/** Checked structurally because a replayed result comes back from the journal as parsed JSON. */
+export function isPiToolResult(value: unknown): value is PiToolResult {
+  if (typeof value !== "object" || value === null) return false;
+  const content = (value as { content?: unknown }).content;
+  return (
+    Array.isArray(content) &&
+    content.every((c) => typeof c === "object" && c !== null && (c.type === "text" || c.type === "image"))
+  );
+}
+
+/** A tool output as text for the model: a string as is, pi's text blocks joined, anything else as JSON. */
+export function resultText(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (isPiToolResult(output)) {
+    return output.content.map((c) => (c.type === "text" ? c.text : `[${c.mimeType} image]`)).join("\n");
+  }
+  return JSON.stringify(output) ?? "";
+}
+
+/** An `ok` output as the result pi hands to the model. */
+export function okToPi(output: unknown): PiToolResult {
+  if (isPiToolResult(output)) return { content: output.content, details: output.details, isError: output.isError };
+  return text(resultText(output));
+}
+
+export function text(t: string): PiToolResult {
+  return { content: [{ type: "text", text: t }] };
+}
