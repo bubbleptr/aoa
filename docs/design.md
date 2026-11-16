@@ -310,6 +310,8 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 不需要模型的 key：和 `status` 一样，只有 `serve` 检查 key。
 - 边的计数：`in` 是非定时器、未被去重丢掉的事件；`fires` 是定时器事件，审批过期变成的 `approval_answer` 也算在 `fires` 里，因为它是定时器触发的。`calls` 是工具日志里的 intent，所以延后的调用在被批准之前不算；`set` 和 `memory` 是其中 `wake_me_at`/`cancel_wake` 和 `memory_*` 的部分。`says` 是 outbox 新增的行，`delivered` 是送出的行（送达时间来自存储层新加的 `sentTimes`，`OutMsg` 不带它）。
 - 每次重读都在一个事务里扫全表（事件、run、日志、决定、outbox、定时器），对单人用的库够快；以后慢了再改成专门的聚合查询。记忆目录在事务外遍历，跳过写到一半的 `.tmp` 文件。24 小时窗口只在重读时更新，没写入时会稍有滞后。
+- 布局：主栏上面是流程图，没有「你」这个节点，进来的边从 `send · answer` 起，`delivered` 的边越过 Outbox 出去；下面是 Event inbox、Permissions、Outbox 三个列表。右栏放 Timers 和 Memory，直接给内容：每个定时器一张卡片，写触发时间、种类、哪个 session 设的、唤醒哪个 thread，以及 agent 会收到的完整 payload（`note` 原样，别的 payload 按 JSON；审批过期的定时器没有 payload 文本，它变成的是一个答复）。最近结束的定时器按 `lastFired`、没触发过的取消项按 `due` 排，因为表里没有取消时间。
+- 记忆文件的全文也在快照里：最新改动的文件先占额度，每个文件最多 64 KB、总共最多 512 KB，超出的只带开头并标 `truncated`，截断点退回到完整字符。不是合法 UTF-8 的文件不带文本，只标 `binary`；只检查读到的那部分。记忆写入会在工具日志里提交，WAL 的监视因此看得到，不用另外盯记忆目录。页面上每个文件是一个 `<details>`，按路径复用，所以推送更新后用户展开的文件保持展开，滚动位置也不变。
 
 ## 13. 没验证的
 
