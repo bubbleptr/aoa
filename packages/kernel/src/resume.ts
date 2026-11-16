@@ -9,7 +9,8 @@ export const answers = (e: Event, callId: string | null): boolean =>
 /**
  * Applies the answer in this batch before the run starts (design §6, "批准之后谁执行"): an approved call is
  * executed by the kernel through the journal under its own call id, a question takes the reply as its result,
- * a denial is journaled as the call's result. Then the session reopens.
+ * a denial is journaled as the call's result. A harness call is not executed: approving it records a grant, and its
+ * result asks the model to repeat the call (design §12). Then the session reopens.
  *
  * The answer handed to the runtime is rebuilt from the journal, so a retry after a crash anywhere in here
  * gets the same answer and never executes the call a second time.

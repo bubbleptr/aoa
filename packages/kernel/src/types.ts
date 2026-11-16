@@ -122,6 +122,8 @@ export type RunInput = {
   /**
    * Set when this run resumes a session that stopped on a deferred call. On `approve` the kernel has
    * already executed the call and `result` holds its outcome; the runtime tells the model, it does not call again.
+   * The exception is a call the harness asked about through `ask`: the kernel ran nothing and granted it, and
+   * `result` tells the model to make the same call again, which `ask` then allows once.
    */
   answer?: { callId: CallId; tool: string; args: unknown; verdict: "approve" | "deny"; text?: string; result?: ToolResult };
   /**
