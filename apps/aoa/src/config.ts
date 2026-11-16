@@ -18,6 +18,8 @@ export type AgentConfig = {
   model: ModelRef;
   /** Judges `medium` calls; without one they wait for the user. Required by `serve`. */
   classifier?: ModelRef;
+  /** Scores every classifier call with TypeSafe Jev but never changes the decision (design §12). */
+  shadowJudge?: ModelRef;
   /** Absent: local mode, where tasks come from `aoa send` and work stays on local branches. */
   github?: {
     owner: string;
@@ -125,7 +127,7 @@ function github(value: unknown): GitHubConfig {
 
 /** Checks a loaded config; the error names the first bad field. */
 export function validateConfig(raw: unknown): AgentConfig {
-  const c = object(raw, "config", ["dataDir", "repo", "model", "classifier", "github", "risk", "rate"]);
+  const c = object(raw, "config", ["dataDir", "repo", "model", "classifier", "shadowJudge", "github", "risk", "rate"]);
   const repo = object(c.repo, "repo", ["path", "base"]);
   const config: AgentConfig = {
     dataDir: str(c, "dataDir", ""),
@@ -134,6 +136,11 @@ export function validateConfig(raw: unknown): AgentConfig {
   };
   if (c.github !== undefined) config.github = github(c.github);
   if (c.classifier !== undefined) config.classifier = modelRef(c.classifier, "classifier");
+  if (c.shadowJudge !== undefined) {
+    const judge = modelRef(c.shadowJudge, "shadowJudge");
+    if (judge.provider !== "typesafe") throw new ConfigError("shadowJudge.provider", "must be typesafe");
+    config.shadowJudge = judge;
+  }
   if (c.risk !== undefined) {
     const risk = object(c.risk, "risk", Object.keys(c.risk as Obj));
     for (const [tool, tier] of Object.entries(risk)) {

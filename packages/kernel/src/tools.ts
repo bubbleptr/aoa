@@ -53,7 +53,7 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
   const tainted = store.tx((t) => t.getSession(sessionId)!.tainted);
   const verdict: Verdict = question
     ? { decision: "defer", basis: "ask_user" }
-    : await decide(ctx.policy, { tool: def.name, args }, { tainted, workdir: ctx.workdir });
+    : await decide(ctx.policy, { tool: def.name, args }, { tainted, workdir: ctx.workdir, call: { id: callId, sessionId } });
 
   assertAlive();
   const settled = store.tx((t): ToolResult | null => {

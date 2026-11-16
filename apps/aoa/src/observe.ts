@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import type { Decision, EventSource, EventStatus, JournalRecord, OutMsg, Tx } from "@aoa/kernel";
+import type { Decision, DecisionRecord, EventSource, EventStatus, JournalRecord, OutMsg, Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
@@ -9,6 +9,8 @@ import type { Agent } from "./wiring.ts";
 export const SERVE_STALE_MS = 15_000;
 
 const DAY_MS = 24 * 60 * 60_000;
+/** The shadow judge's summary window (design §12). */
+const WEEK_MS = 7 * DAY_MS;
 const LATEST = 8;
 const OPEN_LIMIT = 20;
 
@@ -46,18 +48,47 @@ export type TimerRow = {
 
 export type MemoryFile = { path: string; size: number; mtime: number; writtenBy: string | null };
 
+/** A shadow judge's answer for one call: its probability of yes, or why it has none. */
+export type JevScore = { model: string; p: number | null; error: string | null; latencyMs: number };
+/** `high` is p >= 0.9, `mid` is 0.5 to 0.9, `low` is below 0.5. */
+export type JevBucket = "high" | "mid" | "low";
+export type ShadowSummary = {
+  /** Classifier calls Jev was asked about in the last seven days, including its failures. */
+  judged: number;
+  /** Of those, how many have no p. */
+  failed: number;
+  /** The classifier's verdict by Jev's bucket; a failed judgment is in no bucket. */
+  matrix: Record<"allow" | "block" | "unsure", Record<JevBucket, number>>;
+};
+
 export type WaitingCall = {
   callId: string;
   sessionId: string;
   tool: string;
   args: string;
   basis: string | null;
+  /** The shadow judge's score for this call, if it was configured and answered. */
+  jev: JevScore | null;
   askedAt: number;
   expiresAt: number;
   answer: string;
 };
 
-export type DecisionRow = { callId: string; sessionId: string; tool: string; args: string | null; decision: Decision; basis: string; at: number };
+export type DecisionRow = {
+  callId: string;
+  sessionId: string;
+  tool: string;
+  args: string | null;
+  decision: Decision;
+  basis: string;
+  at: number;
+  /** The classifier's verdict when this row is its decision; null for a rule, risk tier or answer. */
+  classifier: "allow" | "block" | "unsure" | null;
+  /** The shadow judge's score for this call, if it was configured and answered. */
+  jev: JevScore | null;
+  /** What the user answered, when the call was deferred to them. */
+  userAnswer: "approve" | "deny" | null;
+};
 
 export type OutboxRow = {
   id: string;
@@ -89,6 +120,8 @@ export type Snapshot = {
     /** Defers and blocks of the last 24 hours, latest first. */
     recent: DecisionRow[];
     allowsByBasis: { basis: string; count: number }[];
+    /** The shadow judge's last seven days; zero everywhere when it is not configured or has not run. */
+    shadow: ShadowSummary;
   };
   outbox: { counts: Record<OutMsg["status"], number>; rows: OutboxRow[] };
   edges: Record<Edge, Count>;
@@ -123,6 +156,20 @@ function listFiles(root: string): MemoryFile[] {
 }
 
 const startOfDay = (now: number): number => new Date(now).setHours(0, 0, 0, 0);
+
+/**
+ * The permission rows to show: defers and blocks of the last 24 hours, latest first. For a call the classifier
+ * decided, its classifier row stands for the call, so a later answer adds no second row; the caller shows the
+ * answer next to the classifier's verdict instead.
+ */
+function recentlyDecided(decisions: DecisionRecord[], isClassifier: (basis: string) => boolean): DecisionRecord[] {
+  const classifier = new Map<string, DecisionRecord>();
+  for (const d of decisions) if (isClassifier(d.basis)) classifier.set(d.callId, d);
+  return decisions
+    .filter((d) => d.decision !== "allow" && (classifier.get(d.callId) ?? d) === d)
+    .reverse()
+    .slice(0, LATEST);
+}
 
 /** Reads everything in one transaction, so the counts and totals agree with each other. */
 export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "paths">): Snapshot {
@@ -215,6 +262,39 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const journal: JournalRecord[] = sessions.flatMap((x) => t.listJournal(x.id)).sort((a, b) => a.intentAt - b.intentAt);
     const decisions = sessions.flatMap((x) => t.listDecisions(x.id)).sort((a, b) => a.at - b.at);
     const deferred = t.listDeferred(inboxId);
+    const judgments = t.listJudgments(inboxId, now - WEEK_MS);
+    const judgmentOf = new Map(judgments.map((j) => [j.callId, j]));
+    const jevOf = (callId: string): JevScore | null => {
+      const j = judgmentOf.get(callId);
+      return j ? { model: j.model, p: j.p, error: j.error, latencyMs: j.latencyMs } : null;
+    };
+    const classifierVerdict = (basis: string): "allow" | "block" | "unsure" | null => {
+      const match = /^classifier:(allow|block|unsure)$/.exec(basis);
+      return (match?.[1] as "allow" | "block" | "unsure" | undefined) ?? null;
+    };
+    const verdictOf = new Map<string, "allow" | "block" | "unsure">();
+    const userAnswerOf = new Map<string, "approve" | "deny">();
+    for (const d of decisions) {
+      const verdict = classifierVerdict(d.basis);
+      if (verdict !== null) verdictOf.set(d.callId, verdict);
+      if (d.basis === "user approved") userAnswerOf.set(d.callId, "approve");
+      else if (d.basis === "user denied" || d.basis === "expired") userAnswerOf.set(d.callId, "deny");
+    }
+    const matrix: ShadowSummary["matrix"] = {
+      allow: { high: 0, mid: 0, low: 0 },
+      block: { high: 0, mid: 0, low: 0 },
+      unsure: { high: 0, mid: 0, low: 0 },
+    };
+    for (const j of judgments) {
+      const verdict = verdictOf.get(j.callId);
+      if (verdict === undefined || j.p === null) continue;
+      matrix[verdict][j.p >= 0.9 ? "high" : j.p >= 0.5 ? "mid" : "low"]++;
+    }
+    const shadow: ShadowSummary = {
+      judged: judgments.length,
+      failed: judgments.filter((j) => j.p === null).length,
+      matrix,
+    };
     const argsOf = new Map<string, string>();
     for (const j of journal) argsOf.set(j.callId, asks(j.tool, "approval", j.args));
     for (const d of deferred) argsOf.set(d.callId, asks(d.tool, d.kind, d.args));
@@ -297,17 +377,22 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
           tool: d.tool,
           args: argsOf.get(d.callId)!,
           basis: decisions.findLast((x) => x.callId === d.callId && x.decision === "defer")?.basis ?? null,
+          jev: jevOf(d.callId),
           askedAt: d.requestedAt,
           expiresAt: d.expiresAt,
           answer: `aoa answer ${d.callId} approve|deny`,
         })),
         last24h,
-        recent: dayDecisions
-          .filter((d) => d.decision !== "allow")
-          .reverse()
-          .slice(0, LATEST)
-          .map((d) => ({ ...d, args: argsOf.get(d.callId) ?? null })),
+        recent: recentlyDecided(dayDecisions, (basis) => basis.startsWith("classifier:"))
+          .map((d) => ({
+            ...d,
+            args: argsOf.get(d.callId) ?? null,
+            classifier: classifierVerdict(d.basis),
+            jev: jevOf(d.callId),
+            userAnswer: userAnswerOf.get(d.callId) ?? null,
+          })),
         allowsByBasis: [...allowsByBasis].map(([basis, count]) => ({ basis, count })).sort((a, b) => b.count - a.count),
+        shadow,
       },
       outbox: { counts: outCounts, rows: [...undelivered, ...sent].map(outRow) },
       edges: {

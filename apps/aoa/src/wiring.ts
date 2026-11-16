@@ -27,6 +27,7 @@ import type { Provider } from "@earendil-works/pi-ai";
 import { type AgentConfig, type ModelRef, type Paths, derivePaths } from "./config.ts";
 import { agentPolicy, deferPush } from "./policy.ts";
 import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT } from "./prompt.ts";
+import { jevJudge, withShadowJudge } from "./shadow.ts";
 import { NUDGE_INTERVAL_MS, PULL_CHECK_INTERVAL_MS } from "./serve.ts";
 import { type ModeColumns, branchColumns, pullColumns, pullOf } from "./status.ts";
 import { type Worktrees, worktrees } from "./worktree.ts";
@@ -190,8 +191,12 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
   /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
   const removals = new Map<string, Promise<void>>();
-  const keys = new Map([config.model, config.classifier].filter((m) => m !== undefined).map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]));
-  // pi holds the keys in memory from here on; the agent's bash and git inherit this environment, so they go.
+  const keys = new Map(
+    [config.model, config.classifier, config.shadowJudge]
+      .filter((m): m is ModelRef => m !== undefined)
+      .map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]),
+  );
+  // The model clients hold the keys in memory from here on; the agent's bash and git inherit this environment, so they go.
   for (const name of keys.keys()) delete env[name];
   const keyOf = (m: ModelRef) => keys.get(m.apiKeyEnv);
 
@@ -206,12 +211,24 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     providers: seams.providers,
   });
   const classify = config.classifier
-    ? piClassifier({
-        provider: config.classifier.provider,
-        modelId: config.classifier.modelId,
-        apiKey: keyOf(config.classifier),
-        providers: seams.providers,
-      })
+    ? withShadowJudge(
+        piClassifier({
+          provider: config.classifier.provider,
+          modelId: config.classifier.modelId,
+          apiKey: keyOf(config.classifier),
+          providers: seams.providers,
+        }),
+        config.shadowJudge
+          ? jevJudge({
+              modelId: config.shadowJudge.modelId,
+              apiKey: keyOf(config.shadowJudge),
+              fetch: seams.fetch ?? fetch,
+              clock,
+              log,
+              record: (j) => store.tx((t) => t.recordJudgment(j)),
+            })
+          : undefined,
+      )
     : undefined;
 
   const deps = { store, clock, inboxId };

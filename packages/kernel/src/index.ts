@@ -54,6 +54,7 @@ export {
   decide,
   defaultRules,
   gitInvocations,
+  ownWorktreeRelative,
   type PolicyConfig,
   type PolicyContext,
   type Risk,

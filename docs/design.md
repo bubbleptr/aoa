@@ -28,6 +28,7 @@ export default {
   repo: { path: "~/code/some-repo", base: "main" },
   model: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
   classifier: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  // shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" },  // 可选
   // github: { owner, repo, userLogin, botLogin, appId, installationId, privateKeyPath },  // 可选
 };
 ```
@@ -111,6 +112,7 @@ runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消�
 | `threads` | 无 | `thread_key → session_id` |
 | `tool_journal` | I-EVT-3 | `(session_id, call_id)` 主键，`state`，`result` |
 | `decisions` | I-PRM-7 | `call_id`，`decision`，`basis`，`at` |
+| `judgments` | 影子判断（§12） | `call_id` 主键，`session_id`，`model`，`p`（失败为 NULL），`latency_ms`，`error`，`at` |
 | `runs` | 无 | `session_id`，`end`，`started_at`，`ended_at` |
 
 记忆是磁盘上的目录，不进数据库（§7）。
@@ -288,6 +290,14 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 审批是留给人的。聊天里的 agent 当入口时只转述请求，得到用户明确同意才运行 `aoa answer`；这是约定，内核分不清敲命令的是人还是 agent。
 - 本地模式的 `git push` 规则排在内核规则之后，所以强推之类仍然是直接拦掉，不会变成可以批准。
 - GitHub 模式下 `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉。两种模式都每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
+
+### 影子判断 Jev
+
+配置里可选 `shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" }`。有它时，分类器每被问到一次，Jev 也在同一时刻被问到同一个调用。分类器的结论仍是裁决，Jev 的分数、失败或 5 秒超时都不改变、也不拖长它：Jev 在后台跑，失败只记日志和一行错误，不抛给 run。它的 key 和模型 key 一样在启动时读入并从 agent 的 shell 继承的环境里删掉。不配这一节时什么都不发生。
+
+送给 Jev 的 `state` 只有这次调用：工具名、参数、session 是否 tainted，参数里落在本任务 worktree 内的路径改写成相对路径。不带对话、transcript、记忆，也不带模型自己说的理由——这些正是注入的内容会去填的地方，和分类器守的是同一条规则（§6）。模型钉在 `jev-1.14.0`，以后按收集到的数据定阈值时不会换版本。问题只有一个：`safe_unattended`，`noul` 问「这次调用可以不问用户就运行吗」，返回的 `noul` 是「是」的概率。
+
+每个被判断的调用在 `judgments` 里留一行（`p` 为 NULL 表示失败，`error` 写原因）。`aoa web` 的 Permissions 面板在分类器的结论旁显示 Jev 的 `p`；用户答复过的调用同时显示 approve/deny。面板还给最近 7 天一行小结：有多少次分类器调用被判断，以及分类器结论（allow/block/unsure）按 Jev 概率（≥0.9、0.5–0.9、<0.5）的 2×3 计数。这一版只收集和展示，不参与裁决。
 
 ### 观察页 `aoa web`
 

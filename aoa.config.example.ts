@@ -8,6 +8,8 @@ export default {
   model: { provider: "anthropic", modelId: "your-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
   // Required by `aoa serve`: it judges bash calls, which otherwise all wait for your approval.
   classifier: { provider: "anthropic", modelId: "your-small-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  // Optional: score every classifier call with TypeSafe Jev without changing or delaying its decision (design §12).
+  // shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" },
   // Without a github block aoa runs in local mode. Add one to take tasks from issues and open pull requests:
   // github: {
   //   owner: "your-github-user-or-org",

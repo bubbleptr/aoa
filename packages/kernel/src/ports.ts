@@ -9,6 +9,7 @@ import type {
   EventStatus,
   InboxId,
   JournalEntry,
+  Judgment,
   MsgId,
   RunEnd,
   RunId,
@@ -115,6 +116,10 @@ export interface Tx {
   recordDecision(d: DecisionRecord): void;
   /** Oldest first. */
   listDecisions(session: SessionId): DecisionRecord[];
+  /** One row per judged call; judging the same call again replaces its row. */
+  recordJudgment(j: Judgment): void;
+  /** Judgments of this inbox's sessions at or after `since`, oldest first. */
+  listJudgments(inboxId: InboxId, since: number): Judgment[];
 
   insertRun(r: { id: RunId; inboxId: InboxId; sessionId: SessionId; events: EventId[]; startedAt: number }): void;
   endRun(id: RunId, outcome: { end: RunEnd } | { error: string }, endedAt: number): void;
