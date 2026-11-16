@@ -463,7 +463,8 @@ function renderPanels(s) {
   const shadowLine = j.judged
     ? "Jev, last 7 days: " + plural(j.judged, "classifier call") + " judged" + (j.failed ? " (" + j.failed + " failed)" : "") +
       " · allow: " + buckets(j.matrix.allow) + " · block: " + buckets(j.matrix.block) + " · unsure: " + buckets(j.matrix.unsure)
-    : "Jev, last 7 days: no classifier calls judged";
+    // Without a shadow judge, or before it has judged anything, the panel says nothing about Jev.
+    : "";
   fresh.permissions = fillPanel("permissions", [
     countChip(p.waiting.length, "waiting for you", p.waiting.length ? "warn" : "quiet"), countChip(p.last24h.allow, "allowed", "ok"),
     countChip(p.last24h.defer, "deferred", p.last24h.defer ? "warn" : "quiet"), countChip(p.last24h.block, "blocked", p.last24h.block ? "bad" : "quiet"),
