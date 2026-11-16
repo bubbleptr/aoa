@@ -435,23 +435,39 @@ function renderPanels(s) {
   }]), "The memory directory is empty.");
 
   const p = s.permissions;
+  // Jev's p sits next to the classifier's verdict; a failure says why there is no p.
+  const jevText = (jev) => {
+    if (!jev) return "";
+    if (jev.p !== null) return "Jev p " + jev.p.toFixed(2);
+    return "Jev failed" + (jev.error ? ": " + clip(jev.error, 80) : "");
+  };
+  const userText = { approve: "user approved", deny: "user denied" };
   const permRows = p.waiting.map((w) => [w.callId + ":waiting", {
     at: clockTime(w.askedAt), main: w.args, mono: true,
-    sub: (w.basis || "deferred") + " · session " + short(w.sessionId) + " · expires " + clockTime(w.expiresAt),
+    sub: [w.basis || "deferred", jevText(w.jev), "session " + short(w.sessionId), "expires " + clockTime(w.expiresAt)].filter(Boolean).join(" · "),
     cmd: w.answer, tag: "waiting", tone: "warn", hl: true,
   }]).concat(p.recent.filter((d) => !p.waiting.some((w) => w.callId === d.callId)).map((d) => [d.callId + ":" + d.decision, {
-    at: clockTime(d.at), main: d.args || d.tool, mono: true, sub: d.basis,
-    tag: d.decision === "block" ? "blocked" : "deferred", tone: d.decision === "block" ? "bad" : "quiet",
+    at: clockTime(d.at), main: d.args || d.tool, mono: true,
+    sub: [d.basis, jevText(d.jev), userText[d.userAnswer] || ""].filter(Boolean).join(" · "),
+    tag: d.userAnswer === "approve" ? "approved" : d.userAnswer === "deny" ? "denied" : d.decision === "block" ? "blocked" : "deferred",
+    tone: d.userAnswer === "approve" ? "ok" : d.userAnswer === "deny" || d.decision === "block" ? "bad" : "quiet",
   }]));
   if (p.allowsByBasis.length) {
     permRows.push(["allows:" + p.last24h.allow, {
       at: "24 h", main: "allowed by basis", sub: p.allowsByBasis.map((a) => a.basis + " " + a.count).join(" · "), tag: "allow", tone: "ok",
     }]);
   }
+  // The 2x3: the classifier's verdict by where Jev's probability falls.
+  const j = p.shadow;
+  const buckets = (row) => row.high + " ≥0.9 · " + row.mid + " 0.5–0.9 · " + row.low + " <0.5";
+  const shadowLine = j.judged
+    ? "Jev, last 7 days: " + plural(j.judged, "classifier call") + " judged" + (j.failed ? " (" + j.failed + " failed)" : "") +
+      " · allow: " + buckets(j.matrix.allow) + " · block: " + buckets(j.matrix.block) + " · unsure: " + buckets(j.matrix.unsure)
+    : "Jev, last 7 days: no classifier calls judged";
   fresh.permissions = fillPanel("permissions", [
     countChip(p.waiting.length, "waiting for you", p.waiting.length ? "warn" : "quiet"), countChip(p.last24h.allow, "allowed", "ok"),
     countChip(p.last24h.defer, "deferred", p.last24h.defer ? "warn" : "quiet"), countChip(p.last24h.block, "blocked", p.last24h.block ? "bad" : "quiet"),
-  ], "", null, permRows, "No decisions in the last 24 hours.");
+  ], shadowLine, null, permRows, "No decisions in the last 24 hours.");
 
   const o = s.outbox.counts;
   const approvalText = { pending: "still waiting for an answer", answered: "answered", cancelled: "withdrawn before delivery" };
