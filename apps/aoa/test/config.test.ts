@@ -82,6 +82,25 @@ describe("local mode", () => {
   });
 });
 
+describe("shadow judge", () => {
+  const judge = { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" };
+
+  test("is optional and takes the same shape as the classifier", () => {
+    expect(validateConfig({ ...valid, shadowJudge: judge }).shadowJudge).toEqual(judge);
+    expect(validateConfig(valid).shadowJudge).toBeUndefined();
+  });
+
+  test("must be the provider this app knows how to call", () => {
+    expect(() => validateConfig({ ...valid, shadowJudge: { ...judge, provider: "other" } })).toThrow(
+      /^Invalid config: shadowJudge\.provider must be typesafe/,
+    );
+  });
+
+  test("names a missing field", () => {
+    expect(() => validateConfig({ ...valid, shadowJudge: { provider: "typesafe" } })).toThrow(/shadowJudge\.modelId/);
+  });
+});
+
 describe("where the config is found", () => {
   const dirs = () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "aoa-config-")));

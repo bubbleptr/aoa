@@ -20,6 +20,8 @@ export { BOT, OWNER, REPO, USER };
 
 export const MODEL_KEY = "sk-model-secret-5f1e9c2a7b";
 export const KEY_ENV = "AOA_TEST_MODEL_KEY";
+export const JEV_KEY = "ts-jev-secret-8c4f2a";
+export const JEV_ENV = "TYPESAFE_API_KEY";
 const key = writeAppKey();
 const configModule = join(import.meta.dir, "../src/config.ts");
 
@@ -34,6 +36,29 @@ export function lastResult(messages: Message[]): string {
   const m = messages.findLast((x) => x.role === "toolResult");
   if (!m || m.role !== "toolResult") throw new Error("no tool result yet");
   return m.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+}
+
+/** A request the fake TypeSafe API received, with its body already parsed. */
+export type JevRequest = {
+  url: string;
+  authorization: string | null;
+  body: {
+    model?: string;
+    state?: { tool?: string; args?: unknown; tainted?: boolean };
+    questions?: Record<string, { type?: string; instructions?: string; criteria?: Record<string, string> }>;
+  };
+  signal: AbortSignal | null;
+};
+
+/** Resolves `reply`, but rejects as soon as `signal` aborts, as a real fetch does. */
+function abortable(reply: Promise<Response>, signal: AbortSignal | null): Promise<Response> {
+  if (!signal) return reply;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    reply.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }
 
 async function git(args: string[], cwd: string): Promise<string> {
@@ -63,6 +88,16 @@ export class World {
   readonly local: boolean;
   /** The classifier's verdict for a call, given the text it was shown. */
   judge: (shown: string) => string = () => "allow";
+  /** The fake TypeSafe API: every request is recorded, and `respond` decides the reply. */
+  readonly jev = {
+    requests: [] as JevRequest[],
+    respond: (_request: JevRequest, _index: number): Response | Promise<Response> =>
+      Response.json({
+        model: "jev-1.14.0",
+        answers: { safe_unattended: { type: "noul", noul: 0.97 } },
+        usage: { input_tokens: 64, output_tokens: 0 },
+      }),
+  };
   readonly configPath = join(this.root, "aoa.config.ts");
   readonly config: AgentConfigInput;
   private readonly agentModel = fauxProvider({ provider: "scripted", models: [{ id: "agent" }] });
@@ -72,14 +107,15 @@ export class World {
   /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
   readonly env: Record<string, string | undefined>;
 
-  constructor(o: { classifier?: boolean; env?: Record<string, string | undefined>; local?: boolean } = {}) {
-    this.env = o.env ?? { [KEY_ENV]: MODEL_KEY };
+  constructor(o: { classifier?: boolean; shadowJudge?: boolean; env?: Record<string, string | undefined>; local?: boolean } = {}) {
+    this.env = o.env ?? { [KEY_ENV]: MODEL_KEY, ...(o.shadowJudge ? { [JEV_ENV]: JEV_KEY } : {}) };
     this.local = o.local ?? false;
     this.config = {
       dataDir: join(this.root, "data"),
       repo: { path: this.repo, base: "main" },
       model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV },
       ...(o.classifier === false ? {} : { classifier: { provider: "judge", modelId: "judge", apiKeyEnv: KEY_ENV } }),
+      ...(o.shadowJudge ? { shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: JEV_ENV } } : {}),
       ...(this.local
         ? {}
         : {
@@ -105,12 +141,25 @@ export class World {
     );
   }
 
-  /** The real GitHub API host goes to the fake; nothing leaves the process. */
+  /** The real GitHub and TypeSafe API hosts go to fakes; nothing leaves the process. */
   readonly fetch = (input: string | URL | Request, init?: RequestInit) => {
-    if (this.local) throw new Error("local mode must not use the network");
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith("https://api.typesafe.ai/")) return this.jevFetch(url, init);
+    if (this.local) throw new Error("local mode must not use the network");
     return this.gh.fetch(url.replace(/^https:\/\/api\.github\.com/, "https://api.github.test"), init);
   };
+
+  private jevFetch(url: string, init?: RequestInit): Promise<Response> {
+    const request: JevRequest = {
+      url,
+      authorization: new Headers(init?.headers).get("authorization"),
+      body: JSON.parse(String(init?.body ?? "{}")),
+      signal: init?.signal ?? null,
+    };
+    this.jev.requests.push(request);
+    const reply = Promise.resolve().then(() => this.jev.respond(request, this.jev.requests.length - 1));
+    return abortable(reply, request.signal);
+  }
 
   /** Real git, with pushes to GitHub's clone URL sent to the local bare repo instead. */
   /** Awaited before every git command, so a test can hold one at a chosen point. */
@@ -219,6 +268,10 @@ export class World {
 
   events() {
     return this.agent.store.tx((t) => t.listEvents(this.agent.inboxId));
+  }
+
+  judgments() {
+    return this.agent.store.tx((t) => t.listJudgments(this.agent.inboxId, 0));
   }
 
   originLog(ref: string): Promise<string> {
