@@ -6,7 +6,7 @@
 <title>aoa web</title>
 <style>
 :root {
-  --bg: #F6F6F4; --surface: #FFFFFF; --line: #E2E1DC; --line-soft: #EEEDE9; --node-line: #D6D4CE;
+  --bg: #F6F6F4; --surface: #FFFFFF; --line: #E2E1DC; --line-soft: #EEEDE9; --node-line: #D6D4CE; --well: #F7F7F5;
   --text: #1B1B1A; --muted: #5C5B57; --edge: #8a8378;
   --blue: #2563EB; --blue-bg: #EFF6FF; --blue-line: #93C5FD; --blue-text: #1E3A8A;
   --amber: #D97706; --amber-bg: #FFFBEB; --amber-line: #F3C66B; --amber-text: #92400E;
@@ -15,7 +15,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
-.wrap { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1480px; margin: 0 auto; }
+.wrap { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1760px; margin: 0 auto; }
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
 
@@ -28,12 +28,18 @@ header .brand { font-weight: 600; font-size: 15px; }
 #conn { margin-left: auto; }
 #conn.down { color: var(--red); font-weight: 500; }
 
-.map { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px 6px; }
-.map h1 { margin: 0; font-size: 15px; font-weight: 600; }
-.map p { margin: 2px 0 0; color: var(--muted); }
-.map svg { display: block; width: 100%; height: auto; }
-body.disconnected .map svg, body.disconnected .panels { opacity: .55; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 26vw, 440px); gap: 16px; align-items: start; }
+.main-col, .side { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+@media (max-width: 1100px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.map { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px 6px; }
+.map-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; color: var(--muted); }
+.map-head h1 { display: inline; margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.map-scroll { overflow-x: auto; }
+.map svg { display: block; width: 100%; min-width: 760px; height: auto; }
+body.disconnected .map svg, body.disconnected .panels, body.disconnected .side { opacity: .55; }
 .edge { fill: none; stroke: var(--edge); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.edge.dashed { stroke-dasharray: 6 6; }
 .edge-label { font-size: 12px; fill: var(--muted); }
 .node rect.box { fill: var(--surface); stroke: var(--node-line); stroke-width: 1; }
 .node text { font-size: 13px; fill: var(--muted); text-anchor: middle; }
@@ -56,15 +62,16 @@ body.disconnected .map svg, body.disconnected .panels { opacity: .55; }
 .chips button.waiting { background: var(--amber-bg); border-color: var(--amber-line); }
 @media (max-width: 800px) {
   .wrap { padding: 12px 16px 32px; }
-  .map svg { display: none; }
+  .map-scroll { display: none; }
   .chips { display: flex; }
 }
 
-.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start; }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; align-items: start; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; scroll-margin-top: 12px; transition: box-shadow .3s ease-out; }
 .panel.highlight { box-shadow: 0 0 0 3px var(--blue-line); }
 .panel-head { padding: 12px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .panel h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.panel-head .muted { font-size: 12px; text-align: right; }
 .counts { padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .count { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border-radius: 6px; }
 .count b { font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -72,7 +79,7 @@ body.disconnected .map svg, body.disconnected .panels { opacity: .55; }
 .extra:empty { display: none; }
 .list-title { padding: 6px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 ol { list-style: none; margin: 0; padding: 0; }
-li.row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; padding: 7px 16px; border-top: 1px solid var(--line-soft); }
+li.row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; padding: 7px 16px; border-top: 1px solid var(--line-soft); }
 li.row.hl { background: var(--amber-bg); }
 li.row.empty { display: block; color: var(--muted); }
 li.row .at { font-family: var(--mono); color: var(--muted); font-size: 12px; padding-top: 1px; }
@@ -81,7 +88,7 @@ li.row .sub { color: var(--muted); overflow-wrap: anywhere; }
 li.row .cmd { font-family: var(--mono); font-size: 12px; user-select: all; overflow-wrap: anywhere; }
 .tag { justify-self: end; align-self: start; font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
 .tag:empty { display: none; }
-li.row.flash { animation: flash 1.2s ease-out; }
+.flash { animation: flash 1.2s ease-out; }
 @keyframes flash { from { background: #DBEAFE; } }
 .ok { background: #ECFDF3; color: #166534; }
 .warn { background: #FEF3C7; color: #92400E; }
@@ -89,8 +96,26 @@ li.row.flash { animation: flash 1.2s ease-out; }
 .info { background: #E0F2FE; color: #075985; }
 .quiet { background: #F1F0EC; color: #3F3E3B; }
 
+.empty-note { padding: 10px 16px 12px; border-top: 1px solid var(--line-soft); color: var(--muted); }
+.card { padding: 10px 16px 12px; border-top: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 4px; }
+.card.ended { opacity: .6; }
+.card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.card-top b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.card .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.text-box { margin: 0; padding: 8px 10px; background: var(--well); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+details.file { border-top: 1px solid var(--line-soft); }
+details.file summary { padding: 8px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; list-style: none; }
+details.file summary::-webkit-details-marker { display: none; }
+details.file summary::before { content: "▸"; color: var(--muted); flex: none; }
+details.file[open] summary::before { content: "▾"; }
+details.file summary .path { font-family: var(--mono); overflow-wrap: anywhere; flex: 1; }
+details.file summary .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+details.file .text-box { margin: 0 16px 10px; max-height: 240px; overflow: auto; font-family: var(--mono); font-size: 12px; }
+details.file .note { margin: -4px 16px 10px; color: var(--muted); font-size: 12px; }
+details.file .note:empty { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  .node.waiting rect.halo, li.row.flash { animation: none; }
+  .node.waiting rect.halo, .flash { animation: none; }
   .panel { transition: none; }
 }
 </style>
@@ -106,34 +131,37 @@ li.row.flash { animation: flash 1.2s ease-out; }
   <div class="muted" id="conn" role="status">connecting…</div>
 </header>
 
+<div class="layout">
+<div class="main-col">
 <section class="map" aria-label="How work flows">
-  <h1>How work flows</h1>
-  <p>A dot travels an edge when something crosses it. Edge counts are the last 24 hours.</p>
-  <svg id="map" viewBox="40 116 1320 504" role="img" aria-label="Flow map of the five primitives">
+  <div class="map-head"><span><h1>How work flows</h1> · a dot runs a link when something crosses it</span><span>counts are the last 24 h</span></div>
+  <div class="map-scroll">
+  <svg id="map" viewBox="20 0 1300 440" role="img" aria-label="Flow map of the five primitives">
     <defs>
       <marker id="arrow" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible">
         <path d="M0 0 L4 2 L0 4 Z" fill="#8a8378"></path>
       </marker>
     </defs>
-    <path class="edge" id="edge-in" d="M 240 340 L 332 340" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-claim" d="M 512 340 L 604 340" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-calls" d="M 784 340 L 876 340" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-says" d="M 1056 340 L 1148 340" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-set" d="M 968 296 L 968 228" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-memory" d="M 968 384 L 968 452" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-fires" d="M 880 180 L 424 180 L 424 292" marker-end="url(#arrow)"></path>
-    <path class="edge" id="edge-delivered" d="M 1240 384 L 1240 600 L 152 600 L 152 388" marker-end="url(#arrow)"></path>
-    <text class="edge-label" id="label-in" x="288" y="328" text-anchor="middle"></text>
-    <text class="edge-label" id="label-claim" x="560" y="328" text-anchor="middle"></text>
-    <text class="edge-label" id="label-calls" x="832" y="328" text-anchor="middle"></text>
-    <text class="edge-label" id="label-says" x="1104" y="328" text-anchor="middle"></text>
-    <text class="edge-label" id="label-set" x="980" y="266"></text>
-    <text class="edge-label" id="label-memory" x="980" y="424"></text>
-    <text class="edge-label" id="label-fires" x="652" y="170" text-anchor="middle"></text>
-    <text class="edge-label" id="label-delivered" x="696" y="590" text-anchor="middle"></text>
+    <path class="edge" id="edge-in" d="M 40 220 L 176 220" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-claim" d="M 356 220 L 448 220" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-calls" d="M 628 220 L 720 220" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-says" d="M 900 220 L 992 220" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-delivered" d="M 1172 220 L 1304 220" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-set" d="M 812 176 L 812 108" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-memory" d="M 812 264 L 812 332" marker-end="url(#arrow)"></path>
+    <path class="edge dashed" id="edge-fires" d="M 724 60 L 268 60 L 268 172" marker-end="url(#arrow)"></path>
+    <text class="edge-label" id="label-in" x="104" y="208" text-anchor="middle"></text>
+    <text class="edge-label" id="label-claim" x="402" y="208" text-anchor="middle"></text>
+    <text class="edge-label" id="label-calls" x="674" y="208" text-anchor="middle"></text>
+    <text class="edge-label" id="label-says" x="946" y="208" text-anchor="middle"></text>
+    <text class="edge-label" id="label-delivered" x="1236" y="208" text-anchor="middle"></text>
+    <text class="edge-label" id="label-set" x="824" y="146"></text>
+    <text class="edge-label" id="label-memory" x="824" y="304"></text>
+    <text class="edge-label" id="label-fires" x="496" y="50" text-anchor="middle"></text>
     <g id="nodes"></g>
     <g id="dots" aria-hidden="true"></g>
   </svg>
+  </div>
   <nav class="chips" id="chips" aria-label="Primitives"></nav>
 </section>
 
@@ -142,16 +170,6 @@ li.row.flash { animation: flash 1.2s ease-out; }
     <div class="panel-head"><h2 id="h-inbox">Event inbox</h2><span class="muted">when does it wake</span></div>
     <div class="counts"></div><div class="extra"></div>
     <div class="list-title">Not yet done, then the latest</div><ol></ol>
-  </section>
-  <section class="panel" id="panel-timers" aria-labelledby="h-timers">
-    <div class="panel-head"><h2 id="h-timers">Timers</h2><span class="muted">when does it wake again</span></div>
-    <div class="counts"></div><div class="extra"></div>
-    <div class="list-title">Armed, earliest first, then recently fired</div><ol></ol>
-  </section>
-  <section class="panel" id="panel-memory" aria-labelledby="h-memory">
-    <div class="panel-head"><h2 id="h-memory">Memory</h2><span class="muted">what carries to the next run</span></div>
-    <div class="counts"></div><div class="extra"></div>
-    <div class="list-title"></div><ol></ol>
   </section>
   <section class="panel" id="panel-permissions" aria-labelledby="h-permissions">
     <div class="panel-head"><h2 id="h-permissions">Permissions</h2><span class="muted">what can it do by itself</span></div>
@@ -166,6 +184,21 @@ li.row.flash { animation: flash 1.2s ease-out; }
 </main>
 </div>
 
+<aside class="side" aria-label="What carries over">
+  <section class="panel" id="panel-timers" aria-labelledby="h-timers">
+    <div class="panel-head"><h2 id="h-timers">Timers</h2><span class="muted" id="timers-summary"></span></div>
+    <ol id="timer-list"></ol>
+  </section>
+  <section class="panel" id="panel-memory" aria-labelledby="h-memory">
+    <div class="panel-head"><h2 id="h-memory">Memory</h2><span class="muted" id="memory-summary"></span></div>
+    <div class="extra mono" id="memory-root"></div>
+    <div class="extra" id="memory-writes"></div>
+    <div id="memory-list"></div>
+  </section>
+</aside>
+</div>
+</div>
+
 <script>
 "use strict";
 // Every value from the store was written by the model or the repository: it only ever goes in through textContent.
@@ -173,23 +206,23 @@ const SVG = "http://www.w3.org/2000/svg";
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const NODES = [
-  { id: "you", name: "You", x: 64, y: 296 },
-  { id: "inbox", name: "Event inbox", x: 336, y: 296, panel: "inbox" },
-  { id: "worker", name: "Worker", x: 608, y: 296 },
-  { id: "permissions", name: "Permissions", x: 880, y: 296, panel: "permissions" },
-  { id: "outbox", name: "Outbox", x: 1152, y: 296, panel: "outbox" },
-  { id: "timers", name: "Timers", x: 880, y: 136, panel: "timers" },
-  { id: "memory", name: "Memory", x: 880, y: 456, panel: "memory" },
+  { id: "inbox", name: "Event inbox", x: 180, y: 176, panel: "inbox" },
+  { id: "worker", name: "Worker", x: 452, y: 176 },
+  { id: "permissions", name: "Permissions", x: 724, y: 176, panel: "permissions" },
+  { id: "outbox", name: "Outbox", x: 996, y: 176, panel: "outbox" },
+  { id: "timers", name: "Timers", x: 724, y: 16, panel: "timers" },
+  { id: "memory", name: "Memory", x: 724, y: 336, panel: "memory" },
 ];
+/** `to` is the panel whose new rows flash when a dot arrives; delivered leaves the map, so it has none. */
 const EDGES = {
-  in: { to: "inbox", color: "#2563EB", label: "in" },
+  in: { to: "inbox", color: "#2563EB", label: "send · answer" },
   claim: { to: "worker", color: "#2563EB", label: "claim" },
   calls: { to: "permissions", color: "#2563EB", label: "calls" },
   set: { to: "timers", color: "#8a8378", label: "set" },
   memory: { to: "memory", color: "#8a8378", label: "read · write" },
   says: { to: "outbox", color: "#D97706", label: "says" },
   fires: { to: "inbox", color: "#8a8378", label: "fires" },
-  delivered: { to: "you", color: "#15803D", label: "delivered" },
+  delivered: { to: null, color: "#15803D", label: "delivered" },
 };
 
 let current = null;
@@ -298,7 +331,6 @@ function renderMap(s) {
   const w = s.worker;
   const p = s.permissions;
   const o = s.outbox.counts;
-  setNode("you", "aoa send · answer", "");
   setNode("inbox", e.in_run + " in run · " + e.pending + " pending",
     e.retrying ? e.retrying + " retrying" : e.dead ? e.dead + " dead" : e.done + " done", e.retrying || e.dead ? "warn" : "");
   nodeEls.worker.lines[0].textContent = w ? "Worker · run" : "Worker";
@@ -313,7 +345,7 @@ function renderMap(s) {
   setNode("memory", plural(s.memory.files.length, "file") + " · " + bytes(s.memory.totalBytes),
     plural(s.memory.writesToday.reduce((n, x) => n + x.count, 0), "write") + " today");
   for (const [edge, def] of Object.entries(EDGES)) {
-    document.getElementById("label-" + edge).textContent = def.label + " · " + s.edges[edge].last24h;
+    document.getElementById("label-" + edge).textContent = def.label + " " + s.edges[edge].last24h;
   }
 }
 
@@ -339,7 +371,7 @@ function playDots(moved, onArrive) {
       if (k < 1) requestAnimationFrame(step);
       else {
         dot.remove();
-        if (!arrived.has(def.to)) {
+        if (def.to && !arrived.has(def.to)) {
           arrived.add(def.to);
           onArrive(def.to);
         }
@@ -349,9 +381,16 @@ function playDots(moved, onArrive) {
   }
 }
 
-// ---- panels ----
+// ---- lists ----
 /** Row keys each panel showed last time, to tell which rows are new. */
 const seen = {};
+
+/** Remembers a panel's keys and returns those that were not there before; none on the first render. */
+function newKeys(id, keys) {
+  const before = seen[id];
+  seen[id] = new Set(keys);
+  return before ? keys.filter((key) => !before.has(key)) : [];
+}
 
 function countChip(n, label, tone) {
   const c = el("span", "count " + tone);
@@ -372,30 +411,26 @@ function row(key, o) {
   return li;
 }
 
-/** Fills a panel and returns the keys of its rows that were not there before. */
-function fillPanel(id, counts, extra, title, rows, emptyText) {
+/** Fills a list panel and returns the keys of its rows that were not there before. */
+function fillPanel(id, counts, extra, rows, emptyText) {
   const panel = document.getElementById("panel-" + id);
   panel.querySelector(".counts").replaceChildren(...counts);
   panel.querySelector(".extra").textContent = extra || "";
-  if (title !== null) panel.querySelector(".list-title").textContent = title;
-  const list = panel.querySelector("ol");
-  const before = seen[id];
   const items = rows.map(([key, o]) => row(key, o));
-  list.replaceChildren(...(items.length ? items : [el("li", "row empty", emptyText)]));
-  seen[id] = new Set(rows.map(([key]) => key));
-  return before ? rows.map(([key]) => key).filter((key) => !before.has(key)) : [];
+  panel.querySelector("ol").replaceChildren(...(items.length ? items : [el("li", "row empty", emptyText)]));
+  return newKeys(id, rows.map(([key]) => key));
 }
 
 const eventTone = { in_run: "info", retrying: "warn", dead: "bad", pending: "quiet", done: "quiet", dropped: "quiet" };
 const outTone = { pending: "quiet", sending: "info", sent: "ok", failed: "bad", cancelled: "quiet" };
 
-function renderPanels(s) {
+function renderLists(s) {
   const fresh = {};
   const e = s.events.counts;
   fresh.inbox = fillPanel("inbox", [
     countChip(e.in_run, "in run", "info"), countChip(e.pending, "pending", "quiet"), countChip(e.retrying, "retrying", e.retrying ? "warn" : "quiet"),
     countChip(e.dead, "dead", e.dead ? "bad" : "quiet"), countChip(e.done, "done", "quiet"), countChip(e.dropped, "dropped", "quiet"),
-  ], "", null, s.events.rows.map((r) => {
+  ], "", s.events.rows.map((r) => {
     const sub = [];
     if (r.sessionId) sub.push("session " + short(r.sessionId));
     if (r.attempts) sub.push(plural(r.attempts, "failed attempt"));
@@ -406,33 +441,6 @@ function renderPanels(s) {
       tag: r.status.replace("_", " "), tone: eventTone[r.status], hl: r.status === "retrying" || r.status === "dead",
     }];
   }), "No events yet.");
-
-  const t = s.timers.counts;
-  fresh.timers = fillPanel("timers", [
-    countChip(t.armed, "armed", "info"), countChip(t.schedule, "schedule", "quiet"), countChip(t.done, "done", "quiet"), countChip(t.cancelled, "cancelled", "quiet"),
-  ], "", null, s.timers.rows.map((r) => {
-    const armed = r.status === "armed";
-    const sub = [];
-    if (r.note) sub.push("“" + clip(r.note, 140) + "”");
-    if (r.expiresCall) sub.push("denies call " + short(r.expiresCall) + " if it is still unanswered");
-    if (r.everyMs) sub.push("every " + duration(r.everyMs));
-    if (!armed && r.lastFired !== null) sub.push("fired → event appended to the inbox");
-    return [r.id + ":" + r.status + ":" + r.lastFired, {
-      at: clockTime(armed ? r.due : r.lastFired), main: r.kind + " · " + (r.sessionId ? "session " + short(r.sessionId) : "new session"),
-      sub: sub.join(" · "), tag: armed ? "armed" : r.status === "done" ? "fired" : r.status, tone: armed ? "info" : "quiet",
-    }];
-  }), "No timers.");
-
-  const m = s.memory;
-  const writes = m.writesToday.reduce((n, x) => n + x.count, 0);
-  fresh.memory = fillPanel("memory", [
-    countChip(m.files.length, m.files.length === 1 ? "file" : "files", "quiet"), countChip(bytes(m.totalBytes), "", "quiet"),
-    countChip(writes, writes === 1 ? "write today" : "writes today", writes ? "info" : "quiet"),
-  ], m.writesToday.length ? "Written today by " + m.writesToday.map((x) => "session " + short(x.sessionId) + " ×" + x.count).join(", ") : "",
-  m.root + ", latest change first", m.files.map((f) => [f.path + ":" + f.mtime, {
-    at: clockTime(f.mtime), main: f.path, mono: true,
-    sub: bytes(f.size) + (f.writtenBy ? " · written by session " + short(f.writtenBy) : ""),
-  }]), "The memory directory is empty.");
 
   const p = s.permissions;
   // Jev's p sits next to the classifier's verdict; a failure says why there is no p.
@@ -468,14 +476,14 @@ function renderPanels(s) {
   fresh.permissions = fillPanel("permissions", [
     countChip(p.waiting.length, "waiting for you", p.waiting.length ? "warn" : "quiet"), countChip(p.last24h.allow, "allowed", "ok"),
     countChip(p.last24h.defer, "deferred", p.last24h.defer ? "warn" : "quiet"), countChip(p.last24h.block, "blocked", p.last24h.block ? "bad" : "quiet"),
-  ], shadowLine, null, permRows, "No decisions in the last 24 hours.");
+  ], shadowLine, permRows, "No decisions in the last 24 hours.");
 
   const o = s.outbox.counts;
   const approvalText = { pending: "still waiting for an answer", answered: "answered", cancelled: "withdrawn before delivery" };
   fresh.outbox = fillPanel("outbox", [
     countChip(o.pending, "pending", "quiet"), countChip(o.sending, "sending", o.sending ? "info" : "quiet"), countChip(o.sent, "sent", "ok"),
     countChip(o.failed, "failed", o.failed ? "bad" : "quiet"), countChip(o.cancelled, "cancelled", "quiet"),
-  ], "", null, s.outbox.rows.map((r) => {
+  ], "", s.outbox.rows.map((r) => {
     const sub = [];
     if (r.kind === "message") sub.push("“" + clip(r.body.replace(/\s+/g, " ").trim(), 160) + "”");
     if (r.sentAt !== null) sub.push("delivered " + clockTime(r.sentAt));
@@ -489,15 +497,115 @@ function renderPanels(s) {
   return fresh;
 }
 
+// ---- timers ----
+/** Each armed card's "when" line and its timer, so the countdown can tick without rebuilding the cards. */
+let timerClocks = [];
+
+function timerWhen(r) {
+  if (r.status === "armed") {
+    return clockTime(r.due) + " · in " + duration(r.due - now()) + (r.everyMs ? " · every " + duration(r.everyMs) : "");
+  }
+  if (r.status === "done") return "fired " + clockTime(r.lastFired);
+  return "cancelled · was due " + clockTime(r.due);
+}
+
+function renderTimers(s) {
+  const t = s.timers.counts;
+  document.getElementById("timers-summary").textContent =
+    t.armed + " armed" + (t.schedule ? " (" + t.schedule + " schedule)" : "") + " · " + t.done + " done · " + t.cancelled + " cancelled";
+  timerClocks = [];
+  const cards = s.timers.rows.map((r) => {
+    const armed = r.status === "armed";
+    const li = el("li", "card" + (armed ? "" : " ended"));
+    li.dataset.key = r.id + ":" + r.status + ":" + r.lastFired;
+    const top = el("div", "card-top");
+    const when = el("b", "", timerWhen(r));
+    if (armed) timerClocks.push({ el: when, r });
+    const kind = r.kind === "schedule" ? "schedule" : r.expiresCall ? "approval expiry" : "follow-up";
+    top.append(when, el("span", "tag " + (armed ? (r.kind === "schedule" ? "quiet" : "info") : "quiet"), armed ? kind : r.status === "done" ? "fired" : r.status));
+    const meta = [];
+    if (!armed) meta.push(kind);
+    if (r.sessionId) meta.push((r.kind === "follow_up" ? "set by session " : "resumes session ") + short(r.sessionId));
+    else meta.push("opens a new session");
+    if (r.thread) meta.push("wakes " + r.thread);
+    if (r.kind === "schedule" && r.lastFired !== null) meta.push("last fired " + clockTime(r.lastFired));
+    if (r.expiresCall) meta.push("denies call " + short(r.expiresCall) + " if it is still unanswered");
+    li.append(top, el("div", "meta", meta.join(" · ")));
+    if (r.text !== null) li.appendChild(el("p", "text-box", r.text));
+    return li;
+  });
+  document.getElementById("timer-list").replaceChildren(...(cards.length ? cards : [el("li", "empty-note", "No timers.")]));
+  return newKeys("timers", cards.map((c) => c.dataset.key));
+}
+
+function tickTimers() {
+  for (const { el: when, r } of timerClocks) when.textContent = timerWhen(r);
+}
+
+// ---- memory ----
+/** One entry per file on the page, by path; kept across updates so an opened file stays open and keeps its scroll. */
+const memoryEls = new Map();
+
+function memoryFile(f) {
+  let m = memoryEls.get(f.path);
+  if (!m) {
+    const details = el("details", "file");
+    // Only on creation: after that, open or closed is the reader's choice.
+    details.open = f.path === "index.md";
+    const summary = el("summary");
+    const meta = el("span", "meta");
+    summary.append(el("span", "path", f.path), meta);
+    const box = el("div", "text-box");
+    const note = el("div", "note");
+    details.append(summary, box, note);
+    m = { details, meta, box, note, shown: null };
+    memoryEls.set(f.path, m);
+  }
+  m.meta.textContent = [bytes(f.size), clockTime(f.mtime), f.writtenBy ? "session " + short(f.writtenBy) : null].filter(Boolean).join(" · ");
+  const shown = f.binary ? "" : f.text;
+  if (m.shown !== shown) {
+    m.box.hidden = shown === "";
+    m.box.textContent = shown;
+    m.shown = shown;
+  }
+  m.note.textContent = f.binary
+    ? "Not UTF-8 text; not shown."
+    : f.truncated
+      ? "Showing the first " + bytes(new TextEncoder().encode(f.text).length) + " of " + bytes(f.size) + "; the page carries at most 64 KB a file and 512 KB in all."
+      : f.size === 0 ? "Empty." : "";
+  m.details.dataset.key = f.path + ":" + f.mtime;
+  return m.details;
+}
+
+function renderMemory(s) {
+  const m = s.memory;
+  document.getElementById("memory-summary").textContent = plural(m.files.length, "file") + " · " + bytes(m.totalBytes);
+  document.getElementById("memory-root").textContent = m.root;
+  document.getElementById("memory-writes").textContent = m.writesToday.length
+    ? "Written today by " + m.writesToday.map((x) => "session " + short(x.sessionId) + " ×" + x.count).join(", ")
+    : "";
+  const paths = new Set(m.files.map((f) => f.path));
+  for (const path of [...memoryEls.keys()]) if (!paths.has(path)) memoryEls.delete(path);
+  const items = m.files.map(memoryFile);
+  const list = document.getElementById("memory-list");
+  if (items.length === 0) list.replaceChildren(el("div", "empty-note", "The memory directory is empty."));
+  else {
+    // Moving an element resets its scroll, so only the files whose place changed are moved.
+    items.forEach((item, i) => { if (list.children[i] !== item) list.insertBefore(item, list.children[i] || null); });
+    while (list.children.length > items.length) list.lastElementChild.remove();
+  }
+  return newKeys("memory", items.map((d) => d.dataset.key));
+}
+
 /** Looks the rows up when it runs: a later update may have replaced the panel's list since. */
 function flash(id, keys) {
   if (!keys || !keys.length) return;
   const wanted = new Set(keys);
-  for (const li of document.getElementById("panel-" + id).querySelectorAll("li.row")) {
-    if (!wanted.has(li.dataset.key)) continue;
-    li.classList.remove("flash");
-    void li.offsetWidth;
-    li.classList.add("flash");
+  for (const item of document.getElementById("panel-" + id).querySelectorAll("[data-key]")) {
+    if (!wanted.has(item.dataset.key)) continue;
+    item.classList.remove("flash");
+    void item.offsetWidth;
+    item.classList.add("flash");
   }
 }
 
@@ -544,7 +652,9 @@ function apply(update) {
   offset = current.at - Date.now();
   renderHeader(current);
   renderMap(current);
-  const fresh = renderPanels(current);
+  const fresh = renderLists(current);
+  fresh.timers = renderTimers(current);
+  fresh.memory = renderMemory(current);
   if (first) return;
   const moved = update.flows || {};
   const targets = new Set(Object.keys(moved).map((e) => EDGES[e] && EDGES[e].to));
@@ -566,6 +676,7 @@ setInterval(() => {
   if (current) {
     renderHeader(current);
     renderMap(current);
+    tickTimers();
   }
 }, 1000);
 </script>
