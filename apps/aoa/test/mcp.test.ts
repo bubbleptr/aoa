@@ -107,6 +107,49 @@ describe("aoa mcp", () => {
   });
 });
 
+describe("aoa mcp send to a waiting task", () => {
+  test("on a task waiting for an approval, send is refused, names the call and appends nothing", async () => {
+    const w = await world();
+    const client = await connect(w);
+    w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
+    w.script([call("bash", { command: "echo deployed >> deploy.log" }), say("Deployed.")]);
+    const { thread } = await ok(client, "send", { text: "Deploy it." });
+    await w.drain();
+    const session = w.sessions()[0]!;
+    expect(session).toMatchObject({ status: "paused" });
+    const events = w.events().length;
+
+    for (const text of ["/approve", "Not today."]) {
+      const r = await use(client, "send", { to: thread, text });
+      expect(r.error).toBe(true);
+      expect(r.text).toContain(session.pending!);
+    }
+    expect(w.events()).toHaveLength(events);
+    expect(w.sessions()[0]).toMatchObject({ status: "paused", pending: session.pending });
+    expect((await ok(client, "status")).pending.map((p: { callId: string }) => p.callId)).toEqual([session.pending]);
+  });
+
+  test("on a task waiting for an answer to its question, the text is the answer", async () => {
+    const w = await world();
+    const client = await connect(w);
+    w.script([call("ask_user", { question: "Which file name?" }), say("Thanks.")]);
+    const { thread } = await ok(client, "send", { text: "Add a greeting file." });
+    await w.drain();
+    const session = w.sessions()[0]!;
+    expect(session).toMatchObject({ status: "paused" });
+
+    await ok(client, "send", { to: thread.slice(0, 10), text: "hello.txt" });
+    expect(w.events().at(-1)).toMatchObject({
+      source: "approval_answer",
+      resume: session.id,
+      payload: { callId: session.pending, verdict: "approve", text: "hello.txt" },
+    });
+    await w.drain();
+    expect(w.sessions()[0]).toMatchObject({ status: "open", pending: null });
+    expect(JSON.stringify(w.modelRequests.at(-1))).toContain("hello.txt");
+  });
+});
+
 describe("aoa mcp messages", () => {
   test("with wait, returns as soon as a message is queued", async () => {
     const w = await world();
