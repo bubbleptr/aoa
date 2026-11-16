@@ -150,6 +150,43 @@ describe("aoa mcp send to a waiting task", () => {
   });
 });
 
+describe("aoa mcp answer", () => {
+  const deploy = () => [call("bash", { command: "echo deployed >> deploy.log" }), say("Deployed.")];
+
+  test("answers a call by prefix in a named agent's inbox, recorded as from MCP; a CLI answer is not", async () => {
+    const w = await world({ helper: {} });
+    const client = await connect(w);
+    w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
+
+    w.script(deploy(), "helper");
+    await ok(client, "send", { text: "Deploy it.", agent: "helper" });
+    await w.drain("helper");
+    const [pending] = (await ok(client, "status")).pending;
+    expect(pending).toMatchObject({ agent: "helper" });
+
+    const missing = await use(client, "answer", { callId: "zz", verdict: "approve" });
+    expect(missing).toEqual({ error: true, text: await cliError(w, "answer", "zz", "approve") });
+
+    expect(await ok(client, "answer", { callId: pending.callId.slice(0, 8), verdict: "approve" })).toMatchObject({ callId: pending.callId });
+    expect(w.events("helper").at(-1)).toMatchObject({
+      source: "approval_answer",
+      payload: { callId: pending.callId, verdict: "approve", via: "mcp" },
+    });
+    await w.drain("helper");
+    expect((await ok(client, "status")).pending).toEqual([]);
+    expect(w.runs("helper").at(-1)?.end?.kind).toBe("sent");
+
+    w.script(deploy());
+    await ok(client, "send", { text: "Deploy it here too." });
+    await w.drain();
+    const [mine] = (await ok(client, "status")).pending;
+    expect((await w.cli("answer", mine.callId, "deny", "not today")).code).toBe(0);
+    const cli = w.events().at(-1)!;
+    expect(cli).toMatchObject({ source: "approval_answer", payload: { callId: mine.callId, verdict: "deny" } });
+    expect(cli.payload).not.toHaveProperty("via");
+  });
+});
+
 describe("aoa mcp messages", () => {
   test("with wait, returns as soon as a message is queued", async () => {
     const w = await world();
