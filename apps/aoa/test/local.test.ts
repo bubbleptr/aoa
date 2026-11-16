@@ -148,6 +148,24 @@ describe("local mode", () => {
     expect(unknown.err).toContain('No task matches "local:zz"');
     expect(unknown.err).toContain(thread);
     expect(w.events()).toHaveLength(2);
+
+    const other = (await w.cli("send", "Another task.")).out.trim();
+    const ambiguous = await w.cli("send", "--to", "local:", "Which one?");
+    expect(ambiguous.code).toBe(1);
+    expect(ambiguous.err).toContain('"local:" is ambiguous');
+    expect(ambiguous.err).toContain(thread);
+    expect(ambiguous.err).toContain(other);
+    expect(w.events()).toHaveLength(3);
+
+    // A task serve has not picked up yet can be added to, and both texts reach its first run.
+    expect((await w.cli("send", "--to", other, "Make it quick.")).code).toBe(0);
+    expect((await w.cli("close", other, "merged")).err).toContain("has not started yet");
+    w.script([say("On it.")]);
+    await w.drain();
+    expect(w.sessions()).toHaveLength(2);
+    const last = JSON.stringify(w.modelRequests.at(-1));
+    expect(last).toContain("Another task.");
+    expect(last).toContain("Make it quick.");
   });
 
   test("on a session waiting for an answer, send --to text is the answer: plain text denies with it as the reason", async () => {
@@ -200,6 +218,10 @@ describe("local mode", () => {
     expect(existsSync(session.workdir!)).toBe(false);
     expect(await w.repoGit("log", "-1", "--format=%s", branch)).toBe("Add greeting");
     expect((await status(w)).sessions[0]).toMatchObject({ state: "closed", outcome: "merged" });
+
+    // Correcting the result of a closed session changes its outcome but closes nothing later.
+    expect((await w.cli("close", thread, "discarded")).code).toBe(0);
+    expect((await status(w)).sessions[0]).toMatchObject({ outcome: "discarded" });
 
     // The declaration closes the session once: sending to it again reopens it on its branch, and it stays open.
     w.script([call("bash", { command: "git branch --show-current && cat greeting.txt" }), say("Back on it.")]);

@@ -26,7 +26,7 @@ export async function send(agent: Agent, text: string): Promise<string> {
  */
 export function sendTo(agent: Agent, target: string, text: string): string {
   nonEmpty(text);
-  const { thread } = resolveSession(agent, target);
+  const { thread } = resolveTask(agent, target);
   appendUserText(agent, thread, text);
   return thread;
 }
@@ -40,26 +40,38 @@ export function close(agent: Agent, target: string, result: string): Session {
     throw new Error("aoa close is for local mode. With GitHub, the pull request decides: merge or close it there.");
   }
   if (result !== "merged" && result !== "discarded") throw new Error(`The result must be merged or discarded, not "${result}".`);
-  const { session } = resolveSession(agent, target);
-  agent.store.results.declare(session.id, result, agent.clock.now());
+  const { thread, session } = resolveTask(agent, target);
+  if (session === null) throw new Error(`The task on ${thread} has not started yet: serve picks it up first.`);
+  agent.store.results.declare(session.id, result);
   // A session that is already closed has nothing left to close; a later reopening must not be closed by this.
   if (session.status === "closed") agent.store.results.markApplied(session.id);
   return session;
 }
 
-/** A session of this inbox named by one of its threads, or a unique prefix of its primary thread or its id. */
-function resolveSession(agent: Agent, target: string): { session: Session; thread: string } {
+type Task = { thread: string; session: Session | null };
+
+/**
+ * A task of this inbox named by one of its threads, or a unique prefix of its primary thread or its session id.
+ * A task sent but not yet picked up by serve has a thread and no session yet.
+ */
+function resolveTask(agent: Agent, target: string): Task {
   return agent.store.tx((t) => {
     const exact = t.sessionForThread(agent.inboxId, target);
     if (exact !== null) return { session: t.getSession(exact)!, thread: target };
-    const candidates = t
+    const started = t
       .listSessions(agent.inboxId)
       .map((session) => ({ session, thread: t.primaryThread(session.id) }))
       .filter((c): c is { session: Session; thread: string } => c.thread !== null);
-    const matches = candidates.filter((c) => c.thread.startsWith(target) || c.session.id.startsWith(target));
+    const waiting = [...new Set(t.listEvents(agent.inboxId).map((e) => e.thread))]
+      .filter((thread): thread is string => thread !== null && t.sessionForThread(agent.inboxId, thread) === null)
+      .map((thread) => ({ thread, session: null }));
+    const candidates: Task[] = [...started, ...waiting];
+    const matches = candidates.filter((c) => c.thread.startsWith(target) || (c.session?.id.startsWith(target) ?? false));
     if (matches.length === 1) return matches[0]!;
-    const list = (cs: typeof candidates) =>
-      cs.length === 0 ? "  none" : cs.map((c) => `  ${c.thread}  (session ${c.session.id.slice(0, 8)})`).join("\n");
+    const list = (cs: Task[]) =>
+      cs.length === 0
+        ? "  none"
+        : cs.map((c) => `  ${c.thread}  (${c.session ? `session ${c.session.id.slice(0, 8)}` : "not started"})`).join("\n");
     if (matches.length === 0) throw new Error(`No task matches "${target}". Tasks:\n${list(candidates)}`);
     throw new Error(`"${target}" is ambiguous; it matches:\n${list(matches)}`);
   });
