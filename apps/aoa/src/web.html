@@ -113,6 +113,13 @@ details.file summary .meta { color: var(--muted); font-size: 12px; white-space: 
 details.file .text-box { margin: 0 16px 10px; max-height: 240px; overflow: auto; font-family: var(--mono); font-size: 12px; }
 details.file .note { margin: -4px 16px 10px; color: var(--muted); font-size: 12px; }
 details.file .note:empty { display: none; }
+.mem-group { border-top: 1px solid var(--line-soft); }
+.mem-group h3 { margin: 0; padding: 10px 16px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.mem-group .missing { padding: 4px 16px 10px; color: var(--muted); font-size: 12px; }
+.mem-group .missing .path { font-family: var(--mono); color: var(--text); }
+ol.told { list-style: none; margin: 0; padding: 0 16px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+ol.told .when { color: var(--muted); font-family: var(--mono); }
+ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   .node.waiting rect.halo, .flash { animation: none; }
@@ -193,7 +200,11 @@ details.file .note:empty { display: none; }
     <div class="panel-head"><h2 id="h-memory">Memory</h2><span class="muted" id="memory-summary"></span></div>
     <div class="extra mono" id="memory-root"></div>
     <div class="extra" id="memory-writes"></div>
-    <div id="memory-list"></div>
+    <div class="mem-group"><h3>Loaded into every run</h3><div id="mem-resident"></div></div>
+    <div class="mem-group"><h3>Progress · loaded into its own task's runs</h3><div id="mem-progress"></div></div>
+    <div class="mem-group"><h3>Notes · read when the agent needs them</h3><div id="mem-notes"></div></div>
+    <div class="mem-group" id="mem-other-group"><h3>Other files · not part of any run</h3><div id="mem-other"></div></div>
+    <div class="mem-group"><h3>Already told you · loaded into every run</h3><ol class="told" id="mem-told"></ol></div>
   </section>
 </aside>
 </div>
@@ -551,7 +562,7 @@ function memoryFile(f) {
   if (!m) {
     const details = el("details", "file");
     // Only on creation: after that, open or closed is the reader's choice.
-    details.open = f.path === "index.md";
+    details.open = f.kind === "instructions" || f.kind === "index";
     const summary = el("summary");
     const meta = el("span", "meta");
     summary.append(el("span", "path", f.path), meta);
@@ -561,7 +572,8 @@ function memoryFile(f) {
     m = { details, meta, box, note, shown: null };
     memoryEls.set(f.path, m);
   }
-  m.meta.textContent = [bytes(f.size), clockTime(f.mtime), f.writtenBy ? "session " + short(f.writtenBy) : null].filter(Boolean).join(" · ");
+  const task = f.task ? "task " + (f.task.state === "unknown" ? "unknown" : f.task.state) : null;
+  m.meta.textContent = [task, bytes(f.size), clockTime(f.mtime), f.writtenBy ? "session " + short(f.writtenBy) : null].filter(Boolean).join(" · ");
   const shown = f.binary ? "" : f.text;
   if (m.shown !== shown) {
     m.box.hidden = shown === "";
@@ -586,15 +598,60 @@ function renderMemory(s) {
     : "";
   const paths = new Set(m.files.map((f) => f.path));
   for (const path of [...memoryEls.keys()]) if (!paths.has(path)) memoryEls.delete(path);
-  const items = m.files.map(memoryFile);
-  const list = document.getElementById("memory-list");
-  if (items.length === 0) list.replaceChildren(el("div", "empty-note", "The memory directory is empty."));
-  else {
-    // Moving an element resets its scroll, so only the files whose place changed are moved.
-    items.forEach((item, i) => { if (list.children[i] !== item) list.insertBefore(item, list.children[i] || null); });
-    while (list.children.length > items.length) list.lastElementChild.remove();
+  const of = (kind) => m.files.filter((f) => f.kind === kind);
+  const resident = ["instructions", "index"].map((kind) => {
+    const [f] = of(kind);
+    return f ? memoryFile(f) : missingFile(kind);
+  });
+  placeFiles("mem-resident", resident);
+  placeFiles("mem-progress", of("progress").map(memoryFile), "No progress files yet.");
+  placeFiles("mem-notes", of("notes").map(memoryFile), "No notes yet.");
+  const other = of("other").map(memoryFile);
+  document.getElementById("mem-other-group").hidden = other.length === 0;
+  placeFiles("mem-other", other);
+  renderTold(m.told);
+  return newKeys("memory", m.files.map((f) => f.path + ":" + f.mtime));
+}
+
+const MISSING = {
+  instructions: ["instructions.md", "not written yet. Your standing instructions to the agent; every run follows them, and only you edit this file."],
+  index: ["index.md", "not written yet. The agent keeps it as the list of its notes and progress files."],
+};
+const missingEls = new Map();
+
+function missingFile(kind) {
+  let e = missingEls.get(kind);
+  if (!e) {
+    const [path, text] = MISSING[kind];
+    e = el("div", "missing");
+    e.append(el("span", "path", path), " " + text);
+    missingEls.set(kind, e);
   }
-  return newKeys("memory", items.map((d) => d.dataset.key));
+  return e;
+}
+
+/** Moving an element resets its scroll, so only the entries whose place changed are moved. */
+function placeFiles(id, items, emptyText) {
+  const list = document.getElementById(id);
+  if (items.length === 0) {
+    list.replaceChildren(...(emptyText ? [el("div", "missing", emptyText)] : []));
+    return;
+  }
+  items.forEach((item, i) => { if (list.children[i] !== item) list.insertBefore(item, list.children[i] || null); });
+  while (list.children.length > items.length) list.lastElementChild.remove();
+}
+
+function renderTold(told) {
+  const list = document.getElementById("mem-told");
+  if (told.length === 0) {
+    list.replaceChildren(el("li", "missing", "Nothing delivered yet."));
+    return;
+  }
+  list.replaceChildren(...told.map((msg) => {
+    const li = el("li");
+    li.append(el("div", "when", clockTime(msg.createdAt) + (msg.thread ? " · " + msg.thread : "")), el("div", "body", msg.body));
+    return li;
+  }));
 }
 
 /** Looks the rows up when it runs: a later update may have replaced the panel's list since. */
