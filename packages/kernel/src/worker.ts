@@ -2,11 +2,12 @@ import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import type { AgentRuntime, Clock, Store, Tx } from "./ports.ts";
 import type { Memory } from "./memory.ts";
 import { reportDead } from "./outbox.ts";
+import { askPermission } from "./permission.ts";
 import type { PolicyConfig } from "./policy.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
-import type { Event, InboxId, RunEnd, RunId, RunResult, Session, SessionId, ToolDef } from "./types.ts";
+import type { Event, InboxId, PermissionAsk, RunEnd, RunId, RunResult, Session, SessionId, ToolDef } from "./types.ts";
 
 export const LEASE_MS = 5 * 60_000;
 export const LEASE_RENEW_MS = 60_000;
@@ -42,6 +43,13 @@ export type WorkerOptions = {
   prepareSession?: (session: Session) => Promise<{ workdir: string }>;
   /** Decides every tool call (spec §6). Without one, every call is allowed. */
   policy?: PolicyConfig;
+  /**
+   * Who decides the agent's own tool calls (design §12). `kernel` (the default): every call goes through
+   * `Tool.invoke` and the policy. `harness`: the runtime's harness has its own tools and the user configures them
+   * there; the kernel only relays the harness's asks to the user (`RunInput.ask`) and holds untrusted input until
+   * the user admits it. It is the worker's because it changes both how runs are selected and what they are given.
+   */
+  permissions?: "kernel" | "harness";
   /** The inbox's memory directory, read into every run's resident context (spec §5). */
   memory?: Memory;
   /** Called when a run starts, with how many events it took. */
@@ -72,6 +80,7 @@ export class Worker {
   private readonly debounceMs: number;
   private readonly prepareSession: WorkerOptions["prepareSession"];
   private readonly policy: PolicyConfig | undefined;
+  private readonly permissions: "kernel" | "harness";
   private readonly memory: Memory | undefined;
   private readonly onRunStart: NonNullable<WorkerOptions["onRunStart"]>;
   private readonly onRunEnd: NonNullable<WorkerOptions["onRunEnd"]>;
@@ -92,6 +101,7 @@ export class Worker {
     this.debounceMs = o.debounceMs ?? 0;
     this.prepareSession = o.prepareSession;
     this.policy = o.policy;
+    this.permissions = o.permissions ?? "kernel";
     this.memory = o.memory;
     this.onRunStart = o.onRunStart ?? (() => {});
     this.onRunEnd = o.onRunEnd ?? (() => {});
@@ -227,6 +237,7 @@ export class Worker {
         resident,
         tools: wrapTools(this.tools, toolCtx),
         ...(answer ? { answer } : {}),
+        ...(this.permissions === "harness" ? { ask: (a: PermissionAsk) => askPermission(toolCtx, a) } : {}),
       });
     } catch (err) {
       // A crash stands in for the process dying: write nothing on the way out.

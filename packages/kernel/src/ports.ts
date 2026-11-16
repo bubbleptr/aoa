@@ -5,6 +5,7 @@ import type {
   PendingCall,
   Event,
   EventId,
+  Grant,
   EventSource,
   EventStatus,
   InboxId,
@@ -113,6 +114,10 @@ export interface Tx {
   deleteDeferred(callId: CallId): void;
   /** Oldest first. */
   listDeferred(inboxId: InboxId): PendingCall[];
+  insertGrant(g: Omit<Grant, "usedBy">): void;
+  /** The session's grants, used or not, oldest first. */
+  listGrants(session: SessionId): Grant[];
+  useGrant(callId: CallId, usedBy: CallId): void;
   recordDecision(d: DecisionRecord): void;
   /** Oldest first. */
   listDecisions(session: SessionId): DecisionRecord[];

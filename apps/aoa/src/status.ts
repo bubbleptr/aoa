@@ -1,4 +1,4 @@
-import type { Event, Session, Tx } from "@aoa/kernel";
+import type { Event, PendingCall, Session, Tx } from "@aoa/kernel";
 import type { SqliteStore } from "@aoa/store-sqlite";
 
 export type PullRef = { number: number; url: string; thread: string; openedAt: number };
@@ -117,7 +117,7 @@ export type StatusReport = {
 
 const ASK_LIMIT = 120;
 
-export function asks(tool: string, kind: "approval" | "question", args: unknown): string {
+export function asks(tool: string, kind: PendingCall["kind"], args: unknown): string {
   const text = kind === "question" ? String((args as { question?: unknown }).question) : `${tool} ${JSON.stringify(args)}`;
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > ASK_LIMIT ? `${line.slice(0, ASK_LIMIT - 1)}…` : line;

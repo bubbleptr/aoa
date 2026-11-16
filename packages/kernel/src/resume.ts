@@ -50,12 +50,13 @@ async function settle(d: PendingCall, a: AnswerPayload, tools: ToolDef[], ctx: T
   const prior = store.tx((t) => t.getJournal(sessionId, d.callId));
   if (prior?.result) return;
 
-  const record = (decision: Decision, basis: string, result?: ToolResult) =>
+  const record = (decision: Decision, basis: string, result?: ToolResult, grant = false) =>
     store.tx((t) => {
       const now = clock.now();
       t.recordDecision({ callId: d.callId, sessionId, tool: d.tool, decision, basis, at: now });
       t.recordIntent({ inboxId, sessionId, callId: d.callId, tool: d.tool, args: d.args, at: now });
       if (result) t.recordResult(sessionId, d.callId, result, now);
+      if (grant) t.insertGrant({ callId: d.callId, sessionId, tool: d.tool, args: d.args, grantedAt: now });
     });
 
   if (d.kind === "question") {
@@ -68,6 +69,11 @@ async function settle(d: PendingCall, a: AnswerPayload, tools: ToolDef[], ctx: T
       ? `${a.text} The call was not executed.`
       : `Denied by the user${because(a.text)} The call was not executed.`;
     record("block", a.expired ? "expired" : "user denied", { status: "error", error });
+    return;
+  }
+  // The kernel cannot run a harness's tools, so approving grants the call and the harness makes it itself.
+  if (d.kind === "harness") {
+    record("allow", "user approved", { status: "ok", output: HARNESS_APPROVED }, true);
     return;
   }
 
@@ -84,5 +90,8 @@ async function settle(d: PendingCall, a: AnswerPayload, tools: ToolDef[], ctx: T
   record("allow", "user approved");
   await executeRecorded(def, ctx, d.callId, d.args);
 }
+
+const HARNESS_APPROVED =
+  "The user approved this call, but it has not run yet. Make the same call again with the same arguments; it will be allowed once.";
 
 const because = (text: string | undefined): string => (text ? `: ${text}.` : ".");

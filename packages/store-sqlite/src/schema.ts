@@ -177,6 +177,33 @@ const migrations: string[] = [
   );
   CREATE INDEX judgments_at ON judgments (at);
   `,
+  `
+  -- Two more kinds of deferred call (design §12). SQLite cannot change a CHECK, so the table is rebuilt as it was.
+  CREATE TABLE deferred_new (
+    call_id      TEXT PRIMARY KEY,
+    session_id   TEXT NOT NULL REFERENCES sessions (id),
+    inbox_id     TEXT NOT NULL,
+    tool         TEXT NOT NULL,
+    args         TEXT NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('approval', 'question', 'harness', 'admit')),
+    requested_at INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL
+  );
+  INSERT INTO deferred_new SELECT call_id, session_id, inbox_id, tool, args, kind, requested_at, expires_at FROM deferred ORDER BY rowid;
+  DROP TABLE deferred;
+  ALTER TABLE deferred_new RENAME TO deferred;
+
+  -- A user's approval of one harness call, used at most once (design §12).
+  CREATE TABLE grants (
+    call_id    TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions (id),
+    tool       TEXT NOT NULL,
+    args       TEXT NOT NULL,
+    granted_at INTEGER NOT NULL,
+    used_by    TEXT
+  );
+  CREATE INDEX grants_session ON grants (session_id);
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */

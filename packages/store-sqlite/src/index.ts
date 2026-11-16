@@ -6,6 +6,7 @@ import type {
   Event,
   EventInsert,
   EventStatus,
+  Grant,
   JournalEntry,
   JournalRecord,
   Judgment,
@@ -285,6 +286,24 @@ type DeferredRow = {
   expires_at: number;
 };
 
+type GrantRow = {
+  call_id: string;
+  session_id: string;
+  tool: string;
+  args: string;
+  granted_at: number;
+  used_by: string | null;
+};
+
+const toGrant = (r: GrantRow): Grant => ({
+  callId: r.call_id,
+  sessionId: r.session_id,
+  tool: r.tool,
+  args: JSON.parse(r.args),
+  grantedAt: r.granted_at,
+  usedBy: r.used_by,
+});
+
 type DecisionRow = {
   call_id: string;
   session_id: string;
@@ -459,6 +478,11 @@ function createTx(db: Database): Tx {
     getDeferred: db.query<DeferredRow, [string]>("SELECT * FROM deferred WHERE call_id = ?"),
     listDeferred: db.query<DeferredRow, [string]>("SELECT * FROM deferred WHERE inbox_id = ? ORDER BY requested_at, rowid"),
     deleteDeferred: db.query("DELETE FROM deferred WHERE call_id = $call"),
+    insertGrant: db.query(
+      "INSERT INTO grants (call_id, session_id, tool, args, granted_at) VALUES ($call, $session, $tool, $args, $at)",
+    ),
+    listGrants: db.query<GrantRow, [string]>("SELECT * FROM grants WHERE session_id = ? ORDER BY granted_at, rowid"),
+    useGrant: db.query("UPDATE grants SET used_by = $by WHERE call_id = $call AND used_by IS NULL"),
     recordDecision: db.query(
       `INSERT INTO decisions (call_id, session_id, tool, decision, basis, at)
        VALUES ($call, $session, $tool, $decision, $basis, $at)`,
@@ -692,6 +716,13 @@ function createTx(db: Database): Tx {
     listDeferred: (inboxId) => q.listDeferred.all(inboxId).map(toDeferred),
     deleteDeferred(callId) {
       q.deleteDeferred.run({ call: callId });
+    },
+    insertGrant(g) {
+      q.insertGrant.run({ call: g.callId, session: g.sessionId, tool: g.tool, args: json(g.args), at: g.grantedAt });
+    },
+    listGrants: (session) => q.listGrants.all(session).map(toGrant),
+    useGrant(callId, usedBy) {
+      q.useGrant.run({ call: callId, by: usedBy });
     },
     recordDecision(d) {
       q.recordDecision.run({ call: d.callId, session: d.sessionId, tool: d.tool, decision: d.decision, basis: d.basis, at: d.at });

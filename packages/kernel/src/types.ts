@@ -124,7 +124,17 @@ export type RunInput = {
    * already executed the call and `result` holds its outcome; the runtime tells the model, it does not call again.
    */
   answer?: { callId: CallId; tool: string; args: unknown; verdict: "approve" | "deny"; text?: string; result?: ToolResult };
+  /**
+   * Set only for an agent whose permissions belong to its harness (design §12): the runtime calls it when the
+   * harness asks permission for one of its own calls. `allow` means the user approved this exact call earlier;
+   * `defer` means the user has been asked (or the session already waits on a call): the runtime must end the run
+   * as `deferred`, and the verdict comes back as `answer` in a later run.
+   */
+  ask?: (request: PermissionAsk) => Promise<"allow" | "defer">;
 };
+
+/** A harness's request for permission to make one of its own calls. */
+export type PermissionAsk = { callId: CallId; tool: string; args: unknown; reason?: string };
 
 export type RunResult = { end: RunEnd; sessionRef?: string };
 
@@ -151,16 +161,32 @@ export type Timer = {
 
 export type Decision = "allow" | "block" | "defer";
 
-/** A row of `deferred` (spec §6.2 `PendingCall`). A `question` is an `ask_user` call: the answer is its result. */
+/**
+ * A row of `deferred` (spec §6.2 `PendingCall`). A `question` is an `ask_user` call: the answer is its result.
+ * A `harness` call is one the agent's harness asked permission for; approving it grants it, the kernel runs nothing.
+ * An `admit` holds a batch of untrusted events until the user lets the agent read them (design §12).
+ */
 export type PendingCall = {
   callId: CallId;
   sessionId: SessionId;
   inboxId: InboxId;
   tool: string;
   args: unknown;
-  kind: "approval" | "question";
+  kind: "approval" | "question" | "harness" | "admit";
   requestedAt: number;
   expiresAt: number;
+};
+
+/** The user's approval of one harness call: it lets an equal call (same tool, deep-equal args) through once. */
+export type Grant = {
+  /** The approved call. */
+  callId: CallId;
+  sessionId: SessionId;
+  tool: string;
+  args: unknown;
+  grantedAt: number;
+  /** The call that used the grant; null while it is unused. */
+  usedBy: CallId | null;
 };
 
 /** A row of `decisions` (I-PRM-7). `basis` names the rule, risk tier, classifier verdict or answer behind it. */

@@ -52,7 +52,7 @@ export const answerEvent = (answer: AnswerPayload, thread: string | null): NewEv
  * The whole deferral in the caller's transaction (spec §6.4): the pending call, the paused session,
  * exactly one request in the outbox (I-OUT-5) and the timer that expires it.
  */
-export function deferInTx(t: Tx, d: PendingCall): void {
+export function deferInTx(t: Tx, d: PendingCall, reason?: string): void {
   t.insertDeferred(d);
   t.setSessionPending(d.sessionId, d.callId);
   t.insertOutMsg({
@@ -61,7 +61,7 @@ export function deferInTx(t: Tx, d: PendingCall): void {
     sessionId: d.sessionId,
     thread: t.primaryThread(d.sessionId),
     kind: "approval_request",
-    body: requestBody(d),
+    body: requestBody(d, reason),
     callId: d.callId,
     dedupeKey: `approval:${d.callId}`,
     createdAt: d.requestedAt,
@@ -77,7 +77,7 @@ export function deferInTx(t: Tx, d: PendingCall): void {
   });
 }
 
-function requestBody(d: PendingCall): string {
+function requestBody(d: PendingCall, reason: string | undefined): string {
   if (d.kind === "question") return (d.args as { question: string }).question;
   return [
     `The agent wants to call \`${d.tool}\` and needs your approval:`,
@@ -86,6 +86,7 @@ function requestBody(d: PendingCall): string {
     JSON.stringify(d.args, null, 2),
     "```",
     "",
+    ...(reason ? [`Its reason: ${reason}`, ""] : []),
     "Reply `/approve` to let it run, or `/deny <reason>` to refuse.",
   ].join("\n");
 }
