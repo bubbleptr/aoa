@@ -36,12 +36,16 @@ export type InboxRow = {
 export type TimerRow = {
   id: string;
   kind: "follow_up" | "schedule";
+  /** The session its event resumes; null when it opens a new one. */
   sessionId: string | null;
+  /** That session's thread, where its reply goes. */
+  thread: string | null;
   status: "armed" | "done" | "cancelled";
   due: number;
   everyMs: number | null;
   lastFired: number | null;
-  note: string | null;
+  /** The payload the agent gets: a note as written, anything else as JSON. Null for an expiry timer, whose event is an answer. */
+  text: string | null;
   /** For the timer that expires a deferred call: that call. */
   expiresCall: string | null;
 };
@@ -239,21 +243,31 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const armed = timers.filter((x) => x.status === "armed");
     const timerRow = (x: (typeof timers)[number]): TimerRow => {
       const { note, expiredCall } = (x.payload ?? {}) as { note?: unknown; expiredCall?: unknown };
+      const expiresCall = typeof expiredCall === "string" ? expiredCall : null;
       return {
         id: x.id,
         kind: x.kind,
         sessionId: x.sessionId,
+        thread: x.sessionId === null ? null : t.primaryThread(x.sessionId),
         status: x.status,
         due: x.due,
         everyMs: x.recurrence?.everyMs ?? null,
         lastFired: x.lastFired,
-        note: typeof note === "string" ? note : null,
-        expiresCall: typeof expiredCall === "string" ? expiredCall : null,
+        text:
+          typeof note === "string"
+            ? note
+            : expiresCall !== null
+              ? null
+              : typeof x.payload === "string"
+                ? x.payload
+                : JSON.stringify(x.payload, null, 2),
+        expiresCall,
       };
     };
-    const fired = timers
-      .filter((x) => x.lastFired !== null)
-      .sort((a, b) => b.lastFired! - a.lastFired!)
+    // A cancelled timer records no cancel time; its due time stands in for it.
+    const ended = timers
+      .filter((x) => x.status !== "armed")
+      .sort((a, b) => (b.lastFired ?? b.due) - (a.lastFired ?? a.due))
       .slice(0, LATEST);
     const nextTimer = armed[0] ? { id: armed[0].id, kind: armed[0].kind, due: armed[0].due } : null;
 
@@ -362,7 +376,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
           done: timers.filter((x) => x.status === "done").length,
           cancelled: timers.filter((x) => x.status === "cancelled").length,
         },
-        rows: [...armed, ...fired.filter((x) => x.status !== "armed")].map(timerRow),
+        rows: [...armed, ...ended].map(timerRow),
       },
       memory: {
         root: agent.paths.memory,
