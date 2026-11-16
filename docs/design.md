@@ -40,6 +40,7 @@ aoa answer <id> approve|deny [理由]     # 回答一个延后的调用
 aoa close <thread> merged|discarded     # 本地模式：告诉它这项任务的分支最后怎样了
 aoa messages --since <id> --wait 600    # agent 说了什么；给聊天里的 agent 当回程用
 aoa status                              # 各任务的结局、被问次数、时长
+aoa web                                 # 只读的实时观察页，http://127.0.0.1:7878
 ```
 
 本地模式下消息在 `<dataDir>/messages.md`。接了 GitHub 时，提问和审批也可以直接在 issue 或 PR 的评论里回答。
@@ -287,6 +288,18 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 审批是留给人的。聊天里的 agent 当入口时只转述请求，得到用户明确同意才运行 `aoa answer`；这是约定，内核分不清敲命令的是人还是 agent。
 - 本地模式的 `git push` 规则排在内核规则之后，所以强推之类仍然是直接拦掉，不会变成可以批准。
 - GitHub 模式下 `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉。两种模式都每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
+
+### 观察页 `aoa web`
+
+一个单独的只读进程，看五个原语的现状和它们之间流过什么。session 只是行上的一个 id。
+
+- 推送，不轮询。`aoa web` 自己先开着一条库连接，所以 WAL 文件一直在；它用 `fs.watch` 盯 `<db>-wal` 这个文件（盯目录会漏事件），别的进程每提交一次，几毫秒内就触发。50 毫秒内的触发合成一次：重读一遍快照，和上一份比，有变化才通过 SSE 推给所有浏览器，带上每条边这次过了几个。兜底只有一个：每 10 秒比一次 `PRAGMA data_version`，变了才重读。浏览器连上（包括断线重连）先拿到当前快照。
+- 只随时间变、没有写入的状态：`serve` 心跳过期、重试的等待到点、租约到期。快照里给出其中最早的时刻 `nextChangeAt`，`aoa web` 在那一刻自己重读一次，所以页面会翻成离线，不用等谁写库。快照里的时间都是绝对时间，生成时刻不参与比较，「已经过去多久」由页面按服务端时钟换算。
+- 心跳：`serve` 启动时在 `cursors` 表里记 `serve:started`，每 5 秒叫醒 worker 时顺带记 `serve:seen`。超过 15 秒（三次没叫醒）没更新就算离线。
+- 安全：只绑 `127.0.0.1`，只有 GET，`Host` 不是 `127.0.0.1:<端口>` 或 `localhost:<端口>` 的请求一律 403，防 DNS rebinding 把工具参数和消息读走。页面带 CSP，不加载任何外部资源（字体也不从 Google Fonts 拿）。库里的内容都是模型或仓库写的，页面只用 `textContent` 放进去。
+- 不需要模型的 key：和 `status` 一样，只有 `serve` 检查 key。
+- 边的计数：`in` 是非定时器、未被去重丢掉的事件；`fires` 是定时器事件，审批过期变成的 `approval_answer` 也算在 `fires` 里，因为它是定时器触发的。`calls` 是工具日志里的 intent，所以延后的调用在被批准之前不算；`set` 和 `memory` 是其中 `wake_me_at`/`cancel_wake` 和 `memory_*` 的部分。`says` 是 outbox 新增的行，`delivered` 是送出的行（送达时间来自存储层新加的 `sentTimes`，`OutMsg` 不带它）。
+- 每次重读都在一个事务里扫全表（事件、run、日志、决定、outbox、定时器），对单人用的库够快；以后慢了再改成专门的聚合查询。记忆目录在事务外遍历，跳过写到一半的 `.tmp` 文件。24 小时窗口只在重读时更新，没写入时会稍有滞后。
 
 ## 13. 没验证的
 
