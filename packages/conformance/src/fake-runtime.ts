@@ -4,7 +4,13 @@ import type { AgentRuntime, CallId, RunEnd, RunInput, RunResult, ToolResult } fr
  * `args` may be computed from the run's input, e.g. to name the session's own progress file.
  * With `harness`, the call is the harness's own tool: the runtime asks the kernel's gate and "executes" it on allow.
  */
-export type ScriptedCall = { tool: string; callId: CallId; args?: object | ((input: RunInput) => unknown); harness?: true };
+export type ScriptedCall = {
+  tool: string;
+  callId: CallId;
+  args?: object | ((input: RunInput) => unknown);
+  harness?: true;
+  reason?: string;
+};
 
 /** What one run does. Fixed call ids make a rerun replay the same ids, as a resumed transcript would. */
 export type RunScript = {
@@ -43,7 +49,7 @@ export class ScriptedRuntime implements AgentRuntime {
         const args = typeof call.args === "function" ? call.args(input) : (call.args ?? {});
         if (call.harness) {
           if (!input.ask) throw new Error("the kernel gave this run no permission gate");
-          const verdict = await input.ask({ callId: call.callId, tool: call.tool, args });
+          const verdict = await input.ask({ callId: call.callId, tool: call.tool, args, ...(call.reason ? { reason: call.reason } : {}) });
           observed.asks.push(verdict);
           if (verdict === "allow") this.harnessEffects.push({ tool: call.tool, args });
           continue;

@@ -31,11 +31,12 @@ for (const [name, factory] of storeFactories) {
     }
 
     test("the harness asks: one approval request, the session pauses, the run ends deferred", async () => {
-      const runtime = new ScriptedRuntime([asks(command("call-1"), command("call-2", "ls"))]);
+      const runtime = new ScriptedRuntime([asks({ ...command("call-1"), reason: "clean before rebuilding" }, command("call-2", "ls"))]);
       const session = await askFirst(runtime);
 
       expect(runtime.runs[0]!.asks).toEqual(["defer", "defer"]);
       expect(requests()).toMatchObject([{ callId: "call-1", body: expect.stringContaining("rm -rf build") }]);
+      expect(requests()[0]!.body).toContain("clean before rebuilding");
       expect(h.store.tx((t) => t.getSession(session))).toMatchObject({ status: "paused", pending: "call-1" });
       expect(h.runs()[0]!.end).toEqual({ kind: "deferred", callId: "call-1" });
       expect(runtime.harnessEffects).toEqual([]);
@@ -43,7 +44,9 @@ for (const [name, factory] of storeFactories) {
     });
 
     test("approve: the answer says so, the same call is allowed once, a third ask is deferred again", async () => {
-      const runtime = new ScriptedRuntime([asks(command("call-1")), asks(command("call-2"), command("call-3"))]);
+      // The same arguments with their keys in another order are the same call.
+      const reordered: ScriptedCall = { ...command("call-2"), args: { cwd: "/work", command: "rm -rf build" } };
+      const runtime = new ScriptedRuntime([asks(command("call-1")), asks(reordered, command("call-3"))]);
       const session = await askFirst(runtime);
       reply("/approve");
       await drain(runtime);
