@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { Decision } from "./types.ts";
+import type { CallId, Decision, SessionId } from "./types.ts";
 
 export type Risk = "low" | "medium" | "high";
 
@@ -11,6 +11,8 @@ export type PolicyContext = {
   tainted: boolean;
   /** The session's working directory, so a rule can tell paths inside it from paths outside. */
   workdir: string | null;
+  /** The call's identity, for a shadow judge that records under it. Absent when the policy runs on its own. */
+  call?: { id: CallId; sessionId: SessionId };
 };
 
 /** A rule with an opinion returns a decision; `null` passes the call to the next rule. */
@@ -174,7 +176,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
  * credential directory (the data directory), and the agent naming its own working directory must not look like
  * reaching for credentials. A path that climbs back out with `..` is left as written.
  */
-function ownWorktreeRelative(text: string, workdir: string | null): string {
+export function ownWorktreeRelative(text: string, workdir: string | null): string {
   if (workdir === null) return text;
   const root = posix.normalize(workdir).replace(/\/+$/, "");
   return text.replace(new RegExp(`${escapeRegExp(root)}(?=$|[/\\s;&|()<>'"\`])([^\\s;&|()<>'"\`]*)`, "g"), (whole, rest: string) => {

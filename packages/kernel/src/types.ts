@@ -171,3 +171,17 @@ export type DecisionRecord = {
   basis: string;
   at: number;
 };
+
+/** A shadow judge's score for one classifier call (design §12). `p` is null when the judge failed. */
+export type Judgment = {
+  callId: CallId;
+  sessionId: SessionId;
+  /** The model that answered, as its response named it. */
+  model: string;
+  /** The probability of yes, 0 to 1; null on failure. */
+  p: number | null;
+  latencyMs: number;
+  /** Why the judge failed; null on success. */
+  error: string | null;
+  at: number;
+};

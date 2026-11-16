@@ -8,6 +8,7 @@ import type {
   EventStatus,
   JournalEntry,
   JournalRecord,
+  Judgment,
   RunEnd,
   RetryAt,
   RunRecord,
@@ -289,6 +290,26 @@ type DecisionRow = {
   at: number;
 };
 
+type JudgmentRow = {
+  call_id: string;
+  session_id: string;
+  model: string;
+  p: number | null;
+  latency_ms: number;
+  error: string | null;
+  at: number;
+};
+
+const toJudgment = (r: JudgmentRow): Judgment => ({
+  callId: r.call_id,
+  sessionId: r.session_id,
+  model: r.model,
+  p: r.p,
+  latencyMs: r.latency_ms,
+  error: r.error,
+  at: r.at,
+});
+
 const json = (v: unknown): string => JSON.stringify(v ?? null);
 
 function createTx(db: Database): Tx {
@@ -439,6 +460,17 @@ function createTx(db: Database): Tx {
        VALUES ($call, $session, $tool, $decision, $basis, $at)`,
     ),
     listDecisions: db.query<DecisionRow, [string]>("SELECT * FROM decisions WHERE session_id = ? ORDER BY seq"),
+    recordJudgment: db.query(
+      `INSERT INTO judgments (call_id, session_id, model, p, latency_ms, error, at)
+       VALUES ($call, $session, $model, $p, $latency, $error, $at)
+       ON CONFLICT (call_id) DO UPDATE SET
+         session_id = excluded.session_id, model = excluded.model, p = excluded.p,
+         latency_ms = excluded.latency_ms, error = excluded.error, at = excluded.at`,
+    ),
+    listJudgments: db.query<JudgmentRow, [string, number]>(
+      `SELECT j.* FROM judgments j JOIN sessions s ON s.id = j.session_id
+       WHERE s.inbox_id = ?1 AND j.at >= ?2 ORDER BY j.at, j.rowid`,
+    ),
     getCursor: db.query<{ value: string }, [string, string]>("SELECT value FROM cursors WHERE inbox_id = ? AND name = ?"),
     setCursor: db.query(
       `INSERT INTO cursors (inbox_id, name, value) VALUES ($inbox, $name, $value)
@@ -669,6 +701,18 @@ function createTx(db: Database): Tx {
         basis: r.basis,
         at: r.at,
       })),
+    recordJudgment(j) {
+      q.recordJudgment.run({
+        call: j.callId,
+        session: j.sessionId,
+        model: j.model,
+        p: j.p,
+        latency: j.latencyMs,
+        error: j.error,
+        at: j.at,
+      });
+    },
+    listJudgments: (inboxId, since) => q.listJudgments.all(inboxId, since).map(toJudgment),
     getCursor: (inboxId, name) => q.getCursor.get(inboxId, name)?.value ?? null,
     setCursor(inboxId, name, value) {
       q.setCursor.run({ inbox: inboxId, name, value });

@@ -164,6 +164,19 @@ const migrations: string[] = [
   -- When a failed attempt's events may be claimed again (design §9). 0 means "not waiting".
   ALTER TABLE events ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- A shadow judge's score for one classifier call (design §12). One row per call; p is NULL when it failed.
+  CREATE TABLE judgments (
+    call_id    TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions (id),
+    model      TEXT NOT NULL,
+    p          REAL,
+    latency_ms INTEGER NOT NULL,
+    error      TEXT,
+    at         INTEGER NOT NULL
+  );
+  CREATE INDEX judgments_at ON judgments (at);
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
