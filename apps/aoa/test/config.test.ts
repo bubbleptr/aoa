@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { derivePaths, findConfig, validateConfig } from "../src/config.ts";
+import { derivePaths, findConfig, validateConfig, validateForServe } from "../src/config.ts";
 
 const valid = {
   dataDir: "~/.aoa",
@@ -96,8 +96,8 @@ describe("named agents", () => {
       },
     });
     expect(c.agents).toEqual({
-      reviewer: { role: "review", instructions: "Be strict.", model: small, classifier: small, risk: { bash: "high" } },
-      helper: { role: "implement", model: local.model, classifier: small, risk: { bash: "medium" } },
+      reviewer: { role: "review", runtime: "pi", instructions: "Be strict.", model: small, classifier: small, risk: { bash: "high" } },
+      helper: { role: "implement", runtime: "pi", model: local.model, classifier: small, risk: { bash: "medium" } },
     });
     expect(validateConfig(base).agents).toBeUndefined();
   });
@@ -131,6 +131,49 @@ describe("named agents", () => {
       memory: "/home/k/.aoa/memory/local/widgets@reviewer",
       worktrees: "/home/k/.aoa/worktrees/local/widgets@reviewer",
     });
+  });
+});
+
+describe("the Codex runtime", () => {
+  const { github: _, model: piModel, ...rest } = valid;
+  const small = { provider: "anthropic", modelId: "claude-small", apiKeyEnv: "OTHER_KEY" };
+  const codexTop = { ...rest, runtime: "codex" };
+
+  test("a codex agent needs no model; one it names is passed to Codex as is", () => {
+    expect(validateConfig(codexTop)).toMatchObject({ runtime: "codex" });
+    expect(validateConfig(codexTop).model).toBeUndefined();
+    expect(validateConfig({ ...codexTop, model: "gpt-5.5" })).toMatchObject({ runtime: "codex", model: "gpt-5.5" });
+    expect(validateConfig({ ...rest, model: piModel })).toMatchObject({ runtime: "pi", model: piModel });
+  });
+
+  test("a named codex agent does not inherit a pi model, and a named pi agent under a codex top level needs its own", () => {
+    const c = validateConfig({ ...rest, model: piModel, classifier: small, agents: { coder: { runtime: "codex" }, helper: {} } });
+    expect(c.agents).toEqual({
+      coder: { role: "implement", runtime: "codex", classifier: small },
+      helper: { role: "implement", runtime: "pi", model: piModel, classifier: small },
+    });
+    const top = validateConfig({ ...codexTop, model: "gpt-5.5", agents: { twin: {}, helper: { runtime: "pi", model: small } } });
+    expect(top.agents).toEqual({
+      twin: { role: "implement", runtime: "codex", model: "gpt-5.5" },
+      helper: { role: "implement", runtime: "pi", model: small },
+    });
+  });
+
+  test.each([
+    [{ ...rest, runtime: "claude", model: piModel }, "runtime"],
+    [{ ...codexTop, model: piModel }, "model"],
+    [{ ...codexTop, github: valid.github }, "runtime"],
+    [{ ...codexTop, agents: { helper: { runtime: "pi" } } }, "agents.helper.model"],
+    [{ ...rest, model: piModel, agents: { reviewer: { role: "review", runtime: "codex" } } }, "agents.reviewer.role"],
+  ])("rejects: %#", (raw, field) => {
+    expect(() => validateConfig(raw)).toThrow(new RegExp(`^Invalid config: ${field.replaceAll(".", "\\.")} `));
+  });
+
+  test("serve wants a classifier only for the agents that run on pi", () => {
+    expect(() => validateForServe(validateConfig(codexTop))).not.toThrow();
+    expect(() => validateForServe(validateConfig({ ...rest, model: piModel }))).toThrow(/^Invalid config: classifier /);
+    const piHelper = validateConfig({ ...codexTop, agents: { helper: { runtime: "pi", model: small } } });
+    expect(() => validateForServe(piHelper)).toThrow(/^Invalid config: agents\.helper\.classifier /);
   });
 });
 
