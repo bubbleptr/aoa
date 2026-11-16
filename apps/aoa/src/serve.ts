@@ -5,6 +5,9 @@ import type { Agent } from "./wiring.ts";
 export const NUDGE_INTERVAL_MS = 5_000;
 /** How often `serve` checks the pull requests of open sessions (GitHub mode). */
 export const PULL_CHECK_INTERVAL_MS = 5 * 60_000;
+/** Cursors where `serve` records when it started and when it last nudged, for `aoa web` to tell whether it runs. */
+export const SERVE_STARTED = "serve:started";
+export const SERVE_SEEN = "serve:seen";
 
 /**
  * Runs the worker, scheduler, dispatcher and channel poller until `stop` resolves, then stops them and
@@ -13,6 +16,8 @@ export const PULL_CHECK_INTERVAL_MS = 5 * 60_000;
 export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
   const { clock, log } = agent;
   agent.log(`serving ${agent.inboxId}`);
+  const startedAt = String(clock.now());
+  agent.store.tx((t) => t.setCursor(agent.inboxId, SERVE_STARTED, startedAt));
 
   const repeating: { stop(): Promise<void> }[] = [];
   const every = (ms: number, what: string, fn: () => Promise<unknown> | void) => {
@@ -55,6 +60,7 @@ export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
 
   if (agent.schedule.polls) every(POLL_INTERVAL_MS, "polling the channel", () => agent.poller.pass());
   every(NUDGE_INTERVAL_MS, "waking the worker", () => {
+    agent.store.tx((t) => t.setCursor(agent.inboxId, SERVE_SEEN, String(clock.now())));
     agent.worker.wake();
     agent.dispatcher.wake();
   });
