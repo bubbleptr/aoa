@@ -11,6 +11,7 @@ import {
   fauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
+import type { SpawnCodex } from "@aoa/runtime-codex";
 import { type Agent, assemble } from "../src/wiring.ts";
 import { type AgentConfigInput, type AgentInput, validateConfig } from "../src/config.ts";
 import { main } from "../src/main.ts";
@@ -105,6 +106,8 @@ export class World {
   private readonly namedModels = new Map<string, ReturnType<typeof fauxProvider>>();
   private readonly judgeModel = fauxProvider({ provider: "judge", models: [{ id: "judge" }] });
   agent!: Agent;
+  /** Where a codex agent's app server comes from; set before `start`. */
+  spawnCodex?: SpawnCodex;
 
   /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
   readonly env: Record<string, string | undefined>;
@@ -146,6 +149,8 @@ export class World {
         ? {
             agents: Object.fromEntries(
               Object.entries(o.agents).map(([name, a]) => {
+                // A codex agent talks to `spawnCodex`, not to a pi model.
+                if (a.runtime === "codex") return [name, a];
                 this.namedModels.set(name, fauxProvider({ provider: `scripted-${name}`, models: [{ id: "agent" }] }));
                 return [name, { model: { provider: `scripted-${name}`, modelId: "agent", apiKeyEnv: KEY_ENV }, ...a }];
               }),
@@ -205,6 +210,7 @@ export class World {
       log: (line: string) => this.logs.push(line),
       // Always injected, so no test ever shows a real notification.
       notify: async (title: string, body: string) => void this.notes.push({ title, body }),
+      ...(this.spawnCodex ? { spawnCodex: this.spawnCodex } : {}),
     };
   }
 
