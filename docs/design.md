@@ -346,7 +346,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 
 ### 权限归 harness 的 agent
 
-runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，下一步接入）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一步只做内核和一致性测试；配置里还没有对应字段，测试用一个扮演 harness 的脚本 runtime。
+runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，见下一节）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一节讲内核这边；一致性测试用一个扮演 harness 的脚本 runtime。
 
 - 模式：`WorkerOptions.permissions`，`"kernel"`（默认，和以前一样）或 `"harness"`。放在 worker 上，因为一个 worker 就是一个 agent 的 inbox，而这个模式同时改两处：`select()` 怎么挑事件，以及 run 拿到什么（`RunInput` 多一个 `ask`）。策略（`policy`）本来也在这里。
 - 转达询问：harness 要为一次调用征求同意时，runtime 调 `RunInput.ask({ callId, tool, args, reason? })`，只会得到 `allow` 或 `defer`。内核对 harness 的调用没有规则，所以不会当场拒绝；用户的拒绝和以前一样，在之后的 run 里通过 `RunInput.answer` 到达。`defer` 时内核建一个新种类 `harness` 的延后调用：审批请求进 outbox、24 小时到期、session 停下、run 以 `deferred` 结束。session 已经在等别的调用时只返回 `defer`，什么都不建也不记，和 `invoke` 的规则一样。新建的询问记一行 `defer`，用掉许可记一行 `allow`（依据写明是哪次批准的许可）；重试时按调用 id 重放的 `allow` 不再记。
@@ -368,6 +368,39 @@ runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，�
 - §6.4 F-DEFER 第 7 步：批准后内核不执行被批准的调用，而是发一次性许可，由 harness 自己再发起一次。
 - `admit` 不对应任何工具调用，但用的是 `PendingCall` 这个结构；规范里的 `PendingCall` 只包着一个 `ToolCall`。它的 session 也不是在 run 里停下的，而是在 `select()` 里，没有 run 以 `deferred` 结束。
 - §3.3 的 `dropped` 原本只表示重复投递。这里多了一条 `pending → dropped`：被拒绝或过期的不可信输入，以及回答这次放行请求的那条 `approval_answer`。答复依然只生效一次（I-PRM-5），只是它的行是 `dropped`，不是 `done`。
+
+### Codex runtime（`packages/runtime-codex`）
+
+第二档的第一个 runtime。配置里 `runtime: "codex"`（顶层或具名 agent，默认 `pi`），这个 agent 的 worker 就是 `permissions: "harness"`；pi 的 agent 永远是 `"kernel"`。
+
+- 进程和线程：每次 run 起一个 `codex app-server` 子进程，工作目录是 session 的 worktree，stdio 上走 JSON-RPC（每行一条，不带 `jsonrpc` 字段），run 结束就杀掉。一个 aoa session 对应一个 Codex 线程，`sessionRef` 就是线程 id：新 session 用 `thread/start`，之后用 `thread/resume`。aoa 的系统提示作为 `developerInstructions` 传入（resume 时再传一遍），本次 run 的事件按 pi 的格式写成 `turn/start` 的输入（渲染代码和 pi 共用）。一次 run 就是一个 turn：turn 完成时 run 以 `silent` 结束（调过 notify 时由内核改成 `sent`），turn 失败或进程退出就抛错，内核照常重试。
+- 不覆盖 Codex 的设置：`thread/start` 不传 `approvalPolicy` 和 `sandbox`，模型只在配置写了 `model`（Codex 的模型名）时才传。Codex 用自己的登录或环境变量认证，aoa 不读也不传它的密钥。`initialize` 声明 `experimentalApi`，因为 `dynamicTools` 是实验字段。
+- `serve` 启动时为每个这样的 agent 记一行：Codex 自己的审批和沙箱设置决定它不问就做什么，aoa 的推送规则和 `~/.aoa` 规则管不到 Codex 自己的工具。`aoa status`（文字和 JSON 的 `agents`）和页面（`View` 上新增的 `runtime`、`permissionOwner`，在切换按钮旁显示）都标出每个 agent 的 runtime 和权限归谁。字段是增量的：旧页面照常显示，新页面遇到旧 `serve` 就不显示这一项。
+
+Codex 的请求怎么对应到 aoa：
+
+| Codex 发来的 | aoa 怎么处理 |
+|---|---|
+| `item/commandExecution/requestApproval` | `ask`，工具名 `codex_command`，参数 `{command, cwd}`，另有 `kind: "writeStdin"`、`additionalPermissions`、`networkApprovalContext` 时一并放进去。`allow` 回 `accept`，`defer` 回 `decline` |
+| `item/fileChange/requestApproval` | `ask`，工具名 `codex_file_change`，参数是这个 item 的改动（`changes`，来自 `item/started`、`item/completed` 和 `item/fileChange/patchUpdated` 通知，请求本身不带 diff），有 `grantRoot` 时带上。回复同上 |
+| `item/permissions/requestApproval` | `ask`，工具名 `codex_permissions`，参数 `{permissions, cwd}`。这个请求的回复不是 accept/decline：`allow` 回所请求的权限、`scope: "turn"`，`defer` 回空权限 |
+| `item/tool/call`（动态工具） | 对应的内核 `Tool.invoke`，结果作为 `contentItems` 返回；`error` 是 `success: false` |
+| `item/tool/requestUserInput` | 每个问题都答一句「这里没人能回答，需要用户决定就调 `ask_user`」 |
+| `mcpServer/elicitation/request` | `decline` |
+| 其他请求 | JSON-RPC 错误，不让 Codex 干等 |
+
+- 从不回 `acceptForSession`：每次批准只放行一次。`defer`、延后的 aoa 工具、或者 `ask`/`invoke` 本身出错时，先回复手上这个请求，再发 `turn/interrupt`，等 Codex 回 `turn/completed`（最多 10 秒）再杀进程，免得线程没存好就断掉。等待期间再来的请求直接拒绝，不再问内核。
+- call id 是 `<session>:<turn>:<item>`，命令审批带 `approvalId` 时再接上它；同一个 turn 里同一个键再出现时加 `#序号`。Codex 的 item id 在线程里唯一，turn id 每次 run 都是新的，所以内核不会拿到已经回答过的 id。
+- 为什么动态工具让 aoa 的工具留在第一档：记忆、`notify`、`wake_me_at`、`cancel_wake`、`ask_user`、`send_to` 在 `thread/start` 时作为动态工具交给 Codex，Codex 调用时请求回到 aoa，由内核的 `invoke` 按策略裁决、写日志、执行，延后时同样停下等你，和 pi 完全一样。Codex 只是替模型转发这一次调用，执行和记录都在 aoa 这边。codex agent 不拿 aoa 的 read、write、edit、bash 等编码工具，这些用 Codex 自己的。分类器仍然配置给它，管的是 aoa 自己的工具；这些工具都是 `low`，所以 `serve` 只要求跑 pi 的 agent 配分类器。
+- 许可和重问：Codex 问一条命令，内核建 `harness` 延后调用、发审批请求，aoa 回 `decline` 并中断 turn。你批准后，内核记下许可（工具名加参数）；下一次 run 恢复同一个线程，输入里的 `<answer>` 写明「用户批准了你之前请求的这个操作（附完整参数），它还没做，现在照原样再做一次，这次不用问」。Codex 再做时照自己的设置又问一次，参数和许可深度相等，内核直接答 `allow`，aoa 回 `accept`，不再发请求。拒绝也同样写进下一次的输入，告诉它不要再试。对 aoa 自己工具的答复仍按 pi 的写法（「已经执行，不要再调」）。
+- Codex 不问就运行的东西：Codex 的审批策略和沙箱允许的一切（比如沙箱内的命令、工作区内的改动、它配置的 MCP 工具），aoa 既看不到也不记录，aoa 的规则（`git push` 延后、`~/.aoa` 路径、worktree 边界）对它们不起作用。所以 codex agent 只能用在本地模式（GitHub 模式的推送要经过 aoa 自己的工具），也不能当审查 agent（审查的只读规则是 aoa 的策略，管不到 Codex 的工具）。
+
+和设计不完全一样、或者没做到的：
+
+- 失败重试的 run 是新的 turn，Codex 给的 id 也是新的；如果失败那次已经用掉了许可，重试时会再问你一次（安全，但和 pi 按 transcript 重放 id 不同）。
+- run 抛错时内核不记 `sessionRef`，所以重试会开一个新线程，前一次 turn 的上下文丢了；重试提示仍按「事件被认领过不止一次」加上。
+- 动态工具只在 `thread/start` 时提供，`thread/resume` 的参数里没有这一项。Codex 把它们存在线程里（二进制里有 `thread_dynamic_tools` 表），恢复时沿用；这一点只有真机冒烟测试能验证。
+- 如果配置里某个 `apiKeyEnv` 和 Codex 用的是同一个环境变量，aoa 启动时会把它从环境里删掉，Codex 子进程也就拿不到。
 
 ## 13. 没验证的
 
@@ -394,6 +427,6 @@ runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，�
 - 记忆的定期整理和历史版本（D-MEM-5）。
 - 消息量评测。
 - 多用户和 inbox 拆分。
-- 第二个 runtime 适配器（Claude Agent SDK）。
+- 再一个 runtime 适配器（Claude Agent SDK）。
 - 早先的项目 要不要迁到 aoa 上。
 - 公开仓库：公开前要把 `spec.md` 里逐字引用的原文改成转述加链接。原文已经进了 git 历史，所以还要重写历史或换一个新仓库。

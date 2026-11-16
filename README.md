@@ -50,6 +50,18 @@ aoa send --agent reviewer --branch aoa/1a2b3c4d "看看这个分支"   # 直接�
 
 `status`、`messages`、`answer`、`send --to`、`close` 都会在所有 agent 里找；`messages.md` 和通知里写着是哪个 agent。具名 agent 的数据在默认 agent 旁边：inbox 是 `local/<repo>@<名字>`，记忆和 worktree 在 `memory/local/<repo>@<名字>/`、`worktrees/local/<repo>@<名字>/`，分支是 `aoa/<名字>/<会话 id 前 8 位>`。只能用在本地模式。
 
+## 用 Codex 跑一个 agent
+
+agent 可以写 `runtime: "codex"`（顶层或某个具名 agent），这时每次运行交给本机的 `codex app-server`，在任务的 worktree 里开一个 Codex 线程，同一个任务接着用同一个线程。读文件、改代码、跑命令用的是 Codex 自己的工具，它不问就能做什么由你在 Codex 里的审批和沙箱设置决定，aoa 不改这些设置；Codex 要问的时候，问题照常变成 aoa 的审批请求，你批准以后 Codex 会再做一次同样的操作并直接放行。记忆、`notify`、`ask_user`、`send_to` 这些 aoa 自己的工具仍由 aoa 裁决和记录。Codex 用自己的登录或环境变量认证，aoa 不读也不传它的密钥；`model` 可以不写（用 Codex 的默认模型），写的话是 Codex 的模型名。只能用在本地模式，审查角色不能用 Codex。
+
+```ts
+agents: {
+  coder: { runtime: "codex", model: "gpt-5.5" },
+},
+```
+
+注意：aoa 的推送规则和 `~/.aoa` 规则管不到 Codex 自己的工具，`serve` 启动时会为每个这样的 agent 提醒一次；`aoa status` 和观察页会标出每个 agent 用的是哪个 runtime、权限归谁。
+
 ## 看它在做什么
 
 ```bash
