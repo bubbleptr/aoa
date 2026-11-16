@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aoa web</title>
+<style>
+:root {
+  --bg: #F6F6F4; --surface: #FFFFFF; --line: #E2E1DC; --line-soft: #EEEDE9; --node-line: #D6D4CE;
+  --text: #1B1B1A; --muted: #5C5B57; --edge: #8a8378;
+  --blue: #2563EB; --blue-bg: #EFF6FF; --blue-line: #93C5FD; --blue-text: #1E3A8A;
+  --amber: #D97706; --amber-bg: #FFFBEB; --amber-line: #F3C66B; --amber-text: #92400E;
+  --green: #15803D; --red: #B91C1C;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1480px; margin: 0 auto; }
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+header .group { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+header .brand { font-weight: 600; font-size: 15px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; align-self: center; background: var(--muted); }
+.dot.ok { background: var(--green); } .dot.bad { background: var(--red); }
+.strong { font-weight: 500; }
+#conn { margin-left: auto; }
+#conn.down { color: var(--red); font-weight: 500; }
+
+.map { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px 6px; }
+.map h1 { margin: 0; font-size: 15px; font-weight: 600; }
+.map p { margin: 2px 0 0; color: var(--muted); }
+.map svg { display: block; width: 100%; height: auto; }
+body.disconnected .map svg, body.disconnected .panels { opacity: .55; }
+.edge { fill: none; stroke: var(--edge); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.edge-label { font-size: 12px; fill: var(--muted); }
+.node rect.box { fill: var(--surface); stroke: var(--node-line); stroke-width: 1; }
+.node text { font-size: 13px; fill: var(--muted); text-anchor: middle; }
+.node text.title { fill: var(--text); font-weight: 600; }
+.node text.warn { fill: var(--amber-text); }
+.node text.run { fill: var(--blue-text); font-family: var(--mono); }
+.node.link { cursor: pointer; }
+.node.link:hover rect.box, .node.link:focus-visible rect.box { stroke: var(--edge); stroke-width: 1.5; }
+.node:focus { outline: none; }
+.node.busy rect.box { fill: var(--blue-bg); stroke: var(--blue-line); }
+.node.waiting rect.box { fill: var(--amber-bg); stroke: var(--amber-line); }
+.node rect.halo { fill: none; stroke: var(--amber); stroke-width: 0; opacity: 0; }
+.node.waiting rect.halo { animation: wait 1.8s ease-in-out infinite; }
+@keyframes wait { 0%, 100% { stroke-width: 0; opacity: .45; } 50% { stroke-width: 14; opacity: 0; } }
+
+.chips { display: none; flex-wrap: wrap; gap: 6px; padding: 10px 0 8px; }
+.chips button { font: inherit; text-align: left; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--node-line); background: var(--surface); color: var(--text); cursor: pointer; }
+.chips button .muted { display: block; font-size: 12px; }
+.chips button.busy { background: var(--blue-bg); border-color: var(--blue-line); }
+.chips button.waiting { background: var(--amber-bg); border-color: var(--amber-line); }
+@media (max-width: 800px) {
+  .wrap { padding: 12px 16px 32px; }
+  .map svg { display: none; }
+  .chips { display: flex; }
+}
+
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; scroll-margin-top: 12px; transition: box-shadow .3s ease-out; }
+.panel.highlight { box-shadow: 0 0 0 3px var(--blue-line); }
+.panel-head { padding: 12px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.panel h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.counts { padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.count { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border-radius: 6px; }
+.count b { font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+.extra { padding: 0 16px 10px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.extra:empty { display: none; }
+.list-title { padding: 6px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+ol { list-style: none; margin: 0; padding: 0; }
+li.row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; padding: 7px 16px; border-top: 1px solid var(--line-soft); }
+li.row.hl { background: var(--amber-bg); }
+li.row.empty { display: block; color: var(--muted); }
+li.row .at { font-family: var(--mono); color: var(--muted); font-size: 12px; padding-top: 1px; }
+li.row .main { overflow-wrap: anywhere; }
+li.row .sub { color: var(--muted); overflow-wrap: anywhere; }
+li.row .cmd { font-family: var(--mono); font-size: 12px; user-select: all; overflow-wrap: anywhere; }
+.tag { justify-self: end; align-self: start; font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.tag:empty { display: none; }
+li.row.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: #DBEAFE; } }
+.ok { background: #ECFDF3; color: #166534; }
+.warn { background: #FEF3C7; color: #92400E; }
+.bad { background: #FEE2E2; color: #991B1B; }
+.info { background: #E0F2FE; color: #075985; }
+.quiet { background: #F1F0EC; color: #3F3E3B; }
+
+@media (prefers-reduced-motion: reduce) {
+  .node.waiting rect.halo, li.row.flash { animation: none; }
+  .panel { transition: none; }
+}
+</style>
+</head>
+<body class="disconnected">
+<div class="wrap">
+
+<header>
+  <div class="group"><span class="brand">aoa</span><span class="mono muted" id="inbox-id"></span></div>
+  <div class="group"><span class="dot" id="serve-dot" aria-hidden="true"></span><span class="strong" id="serve-state">serve</span><span class="muted" id="serve-detail"></span></div>
+  <div class="group"><span class="muted">worker</span><span class="strong" id="worker-state"></span><span class="mono" id="worker-run"></span><span class="muted" id="worker-detail"></span></div>
+  <div class="group"><span class="muted">next timer</span><span id="next-timer"></span></div>
+  <div class="muted" id="conn" role="status">connecting…</div>
+</header>
+
+<section class="map" aria-label="How work flows">
+  <h1>How work flows</h1>
+  <p>A dot travels an edge when something crosses it. Edge counts are the last 24 hours.</p>
+  <svg id="map" viewBox="40 116 1320 504" role="img" aria-label="Flow map of the five primitives">
+    <defs>
+      <marker id="arrow" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible">
+        <path d="M0 0 L4 2 L0 4 Z" fill="#8a8378"></path>
+      </marker>
+    </defs>
+    <path class="edge" id="edge-in" d="M 240 340 L 332 340" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-claim" d="M 512 340 L 604 340" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-calls" d="M 784 340 L 876 340" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-says" d="M 1056 340 L 1148 340" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-set" d="M 968 296 L 968 228" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-memory" d="M 968 384 L 968 452" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-fires" d="M 880 180 L 424 180 L 424 292" marker-end="url(#arrow)"></path>
+    <path class="edge" id="edge-delivered" d="M 1240 384 L 1240 600 L 152 600 L 152 388" marker-end="url(#arrow)"></path>
+    <text class="edge-label" id="label-in" x="288" y="328" text-anchor="middle"></text>
+    <text class="edge-label" id="label-claim" x="560" y="328" text-anchor="middle"></text>
+    <text class="edge-label" id="label-calls" x="832" y="328" text-anchor="middle"></text>
+    <text class="edge-label" id="label-says" x="1104" y="328" text-anchor="middle"></text>
+    <text class="edge-label" id="label-set" x="980" y="266"></text>
+    <text class="edge-label" id="label-memory" x="980" y="424"></text>
+    <text class="edge-label" id="label-fires" x="652" y="170" text-anchor="middle"></text>
+    <text class="edge-label" id="label-delivered" x="696" y="590" text-anchor="middle"></text>
+    <g id="nodes"></g>
+    <g id="dots" aria-hidden="true"></g>
+  </svg>
+  <nav class="chips" id="chips" aria-label="Primitives"></nav>
+</section>
+
+<main class="panels">
+  <section class="panel" id="panel-inbox" aria-labelledby="h-inbox">
+    <div class="panel-head"><h2 id="h-inbox">Event inbox</h2><span class="muted">when does it wake</span></div>
+    <div class="counts"></div><div class="extra"></div>
+    <div class="list-title">Not yet done, then the latest</div><ol></ol>
+  </section>
+  <section class="panel" id="panel-timers" aria-labelledby="h-timers">
+    <div class="panel-head"><h2 id="h-timers">Timers</h2><span class="muted">when does it wake again</span></div>
+    <div class="counts"></div><div class="extra"></div>
+    <div class="list-title">Armed, earliest first, then recently fired</div><ol></ol>
+  </section>
+  <section class="panel" id="panel-memory" aria-labelledby="h-memory">
+    <div class="panel-head"><h2 id="h-memory">Memory</h2><span class="muted">what carries to the next run</span></div>
+    <div class="counts"></div><div class="extra"></div>
+    <div class="list-title"></div><ol></ol>
+  </section>
+  <section class="panel" id="panel-permissions" aria-labelledby="h-permissions">
+    <div class="panel-head"><h2 id="h-permissions">Permissions</h2><span class="muted">what can it do by itself</span></div>
+    <div class="counts"></div><div class="extra"></div>
+    <div class="list-title">Waiting for you, then defers and blocks (last 24 h)</div><ol></ol>
+  </section>
+  <section class="panel" id="panel-outbox" aria-labelledby="h-outbox">
+    <div class="panel-head"><h2 id="h-outbox">Outbox</h2><span class="muted">what was said</span></div>
+    <div class="counts"></div><div class="extra"></div>
+    <div class="list-title">Undelivered first, then the latest sent</div><ol></ol>
+  </section>
+</main>
+</div>
+
+<script>
+"use strict";
+// Every value from the store was written by the model or the repository: it only ever goes in through textContent.
+const SVG = "http://www.w3.org/2000/svg";
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+const NODES = [
+  { id: "you", name: "You", x: 64, y: 296 },
+  { id: "inbox", name: "Event inbox", x: 336, y: 296, panel: "inbox" },
+  { id: "worker", name: "Worker", x: 608, y: 296 },
+  { id: "permissions", name: "Permissions", x: 880, y: 296, panel: "permissions" },
+  { id: "outbox", name: "Outbox", x: 1152, y: 296, panel: "outbox" },
+  { id: "timers", name: "Timers", x: 880, y: 136, panel: "timers" },
+  { id: "memory", name: "Memory", x: 880, y: 456, panel: "memory" },
+];
+const EDGES = {
+  in: { to: "inbox", color: "#2563EB", label: "in" },
+  claim: { to: "worker", color: "#2563EB", label: "claim" },
+  calls: { to: "permissions", color: "#2563EB", label: "calls" },
+  set: { to: "timers", color: "#8a8378", label: "set" },
+  memory: { to: "memory", color: "#8a8378", label: "read · write" },
+  says: { to: "outbox", color: "#D97706", label: "says" },
+  fires: { to: "inbox", color: "#8a8378", label: "fires" },
+  delivered: { to: "you", color: "#15803D", label: "delivered" },
+};
+
+let current = null;
+/** Server time minus local time, so relative times match the server's clock. */
+let offset = 0;
+const now = () => Date.now() + offset;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = String(text);
+  return e;
+}
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, String(v));
+  return e;
+}
+const short = (id) => (id ? String(id).slice(0, 8) : "-");
+const pad = (n) => String(n).padStart(2, "0");
+function duration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m " + pad(s % 60) + "s";
+  if (s < 86400) return Math.floor(s / 3600) + "h " + pad(Math.floor((s % 3600) / 60)) + "m";
+  return Math.floor(s / 86400) + "d " + pad(Math.floor((s % 86400) / 3600)) + "h";
+}
+function clockTime(ms) {
+  if (ms === null || ms === undefined) return "-";
+  const d = new Date(ms);
+  const today = new Date(now());
+  const hms = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  if (d.toDateString() === today.toDateString()) return hms;
+  return d.toLocaleDateString(undefined, { weekday: "short" }) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+function bytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+const clip = (text, n) => (text.length > n ? text.slice(0, n - 1) + "…" : text);
+
+// ---- flow map ----
+const nodeEls = {};
+const chipEls = {};
+function buildMap() {
+  const layer = document.getElementById("nodes");
+  const chips = document.getElementById("chips");
+  for (const n of NODES) {
+    const g = svgEl("g", { class: "node" + (n.panel ? " link" : "") });
+    g.appendChild(svgEl("rect", { class: "halo", x: n.x, y: n.y, width: 176, height: 88, rx: 10 }));
+    g.appendChild(svgEl("rect", { class: "box", x: n.x, y: n.y, width: 176, height: 88, rx: 10 }));
+    const lines = [0, 1, 2].map((i) => {
+      const t = svgEl("text", { x: n.x + 88, y: n.y + 28 + i * 18, class: i === 0 ? "title" : "" });
+      g.appendChild(t);
+      return t;
+    });
+    lines[0].textContent = n.name;
+    const chip = el("button");
+    chip.type = "button";
+    const chipName = el("span", "", n.name);
+    const chipLine = el("span", "muted");
+    chip.append(chipName, chipLine);
+    if (n.panel) {
+      const go = () => focusPanel(n.panel);
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "link");
+      g.setAttribute("aria-label", n.name + " panel");
+      g.addEventListener("click", go);
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      chip.addEventListener("click", go);
+    } else {
+      chip.disabled = true;
+    }
+    layer.appendChild(g);
+    chips.appendChild(chip);
+    nodeEls[n.id] = { g, lines };
+    chipEls[n.id] = { chip, line: chipLine };
+  }
+}
+
+function focusPanel(id) {
+  const panel = document.getElementById("panel-" + id);
+  panel.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" });
+  panel.classList.add("highlight");
+  setTimeout(() => panel.classList.remove("highlight"), 1400);
+}
+
+function setNode(id, line1, line2, cls2, state) {
+  const n = nodeEls[id];
+  n.lines[1].textContent = line1;
+  n.lines[1].setAttribute("class", id === "worker" && state === "busy" ? "run" : "");
+  n.lines[2].textContent = line2;
+  n.lines[2].setAttribute("class", cls2 || "");
+  n.g.classList.toggle("busy", state === "busy");
+  n.g.classList.toggle("waiting", state === "waiting");
+  const c = chipEls[id];
+  c.line.textContent = [line1, line2].filter(Boolean).join(" · ");
+  c.chip.classList.toggle("busy", state === "busy");
+  c.chip.classList.toggle("waiting", state === "waiting");
+}
+
+function renderMap(s) {
+  const e = s.events.counts;
+  const w = s.worker;
+  const p = s.permissions;
+  const o = s.outbox.counts;
+  setNode("you", "aoa send · answer", "");
+  setNode("inbox", e.in_run + " in run · " + e.pending + " pending",
+    e.retrying ? e.retrying + " retrying" : e.dead ? e.dead + " dead" : e.done + " done", e.retrying || e.dead ? "warn" : "");
+  nodeEls.worker.lines[0].textContent = w ? "Worker · run" : "Worker";
+  setNode("worker", w ? short(w.runId) : "idle",
+    w ? (w.startedAt !== null ? duration(now() - w.startedAt) + " · " : "") + "lease " + duration(w.leaseUntil - now()) : "", "", w ? "busy" : "");
+  setNode("permissions", p.waiting.length ? p.waiting.length + " waiting for you" : "nothing waiting",
+    p.last24h.allow + " allow · " + p.last24h.defer + " defer · " + p.last24h.block + " block", "", p.waiting.length ? "waiting" : "");
+  if (p.waiting.length) nodeEls.permissions.lines[1].setAttribute("class", "warn");
+  setNode("outbox", o.pending + o.sending + " pending · " + o.failed + " failed", o.sent + " sent", o.failed ? "warn" : "");
+  setNode("timers", s.timers.counts.armed + " armed",
+    s.nextTimer ? "next " + clockTime(s.nextTimer.due) : "none armed");
+  setNode("memory", plural(s.memory.files.length, "file") + " · " + bytes(s.memory.totalBytes),
+    plural(s.memory.writesToday.reduce((n, x) => n + x.count, 0), "write") + " today");
+  for (const [edge, def] of Object.entries(EDGES)) {
+    document.getElementById("label-" + edge).textContent = def.label + " · " + s.edges[edge].last24h;
+  }
+}
+
+// ---- dots ----
+function playDots(moved, onArrive) {
+  const layer = document.getElementById("dots");
+  const arrived = new Set();
+  for (const edge of Object.keys(moved)) {
+    const def = EDGES[edge];
+    if (!def) continue;
+    const path = document.getElementById("edge-" + edge);
+    const length = path.getTotalLength();
+    const ms = Math.min(2200, Math.max(700, length * 2.4));
+    const dot = svgEl("circle", { r: 6, fill: def.color });
+    layer.appendChild(dot);
+    const start = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - start) / ms);
+      const pt = path.getPointAtLength(length * k);
+      dot.setAttribute("cx", pt.x);
+      dot.setAttribute("cy", pt.y);
+      dot.setAttribute("opacity", k < 0.08 ? k / 0.08 : k > 0.92 ? (1 - k) / 0.08 : 1);
+      if (k < 1) requestAnimationFrame(step);
+      else {
+        dot.remove();
+        if (!arrived.has(def.to)) {
+          arrived.add(def.to);
+          onArrive(def.to);
+        }
+      }
+    };
+    requestAnimationFrame(step);
+  }
+}
+
+// ---- panels ----
+/** Row keys each panel showed last time, to tell which rows are new. */
+const seen = {};
+
+function countChip(n, label, tone) {
+  const c = el("span", "count " + tone);
+  c.append(el("b", "", n), el("span", "", label));
+  return c;
+}
+
+function row(key, o) {
+  const li = el("li", "row" + (o.hl ? " hl" : ""));
+  li.dataset.key = key;
+  li.appendChild(el("span", "at", o.at));
+  const body = el("div");
+  body.appendChild(el("div", "main" + (o.mono ? " mono" : ""), o.main));
+  if (o.sub) body.appendChild(el("div", "sub", o.sub));
+  if (o.cmd) body.appendChild(el("div", "cmd", o.cmd));
+  li.appendChild(body);
+  li.appendChild(el("span", "tag " + (o.tone || "quiet"), o.tag || ""));
+  return li;
+}
+
+/** Fills a panel and returns its rows that were not there before. */
+function fillPanel(id, counts, extra, title, rows, emptyText) {
+  const panel = document.getElementById("panel-" + id);
+  panel.querySelector(".counts").replaceChildren(...counts);
+  panel.querySelector(".extra").textContent = extra || "";
+  if (title !== null) panel.querySelector(".list-title").textContent = title;
+  const list = panel.querySelector("ol");
+  const before = seen[id];
+  const items = rows.map(([key, o]) => row(key, o));
+  list.replaceChildren(...(items.length ? items : [el("li", "row empty", emptyText)]));
+  seen[id] = new Set(rows.map(([key]) => key));
+  return before ? items.filter((li) => !before.has(li.dataset.key)) : [];
+}
+
+const eventTone = { in_run: "info", retrying: "warn", dead: "bad", pending: "quiet", done: "quiet", dropped: "quiet" };
+const outTone = { pending: "quiet", sending: "info", sent: "ok", failed: "bad", cancelled: "quiet" };
+
+function renderPanels(s) {
+  const fresh = {};
+  const e = s.events.counts;
+  fresh.inbox = fillPanel("inbox", [
+    countChip(e.in_run, "in run", "info"), countChip(e.pending, "pending", "quiet"), countChip(e.retrying, "retrying", e.retrying ? "warn" : "quiet"),
+    countChip(e.dead, "dead", e.dead ? "bad" : "quiet"), countChip(e.done, "done", "quiet"), countChip(e.dropped, "dropped", "quiet"),
+  ], "", null, s.events.rows.map((r) => {
+    const sub = [];
+    if (r.sessionId) sub.push("session " + short(r.sessionId));
+    if (r.attempts) sub.push(plural(r.attempts, "failed attempt"));
+    if (r.status === "retrying") sub.push("next try " + clockTime(r.nextAttemptAt));
+    if (r.status === "in_run") sub.push("held by run " + short(r.run) + " · lease until " + clockTime(r.leaseUntil));
+    return [r.id + ":" + r.status, {
+      at: clockTime(r.receivedAt), main: r.source + " · " + (r.thread || "no thread"), sub: sub.join(" · "),
+      tag: r.status.replace("_", " "), tone: eventTone[r.status], hl: r.status === "retrying" || r.status === "dead",
+    }];
+  }), "No events yet.");
+
+  const t = s.timers.counts;
+  fresh.timers = fillPanel("timers", [
+    countChip(t.armed, "armed", "info"), countChip(t.schedule, "schedule", "quiet"), countChip(t.done, "done", "quiet"), countChip(t.cancelled, "cancelled", "quiet"),
+  ], "", null, s.timers.rows.map((r) => {
+    const armed = r.status === "armed";
+    const sub = [];
+    if (r.note) sub.push("“" + clip(r.note, 140) + "”");
+    if (r.expiresCall) sub.push("denies call " + short(r.expiresCall) + " if it is still unanswered");
+    if (r.everyMs) sub.push("every " + duration(r.everyMs));
+    if (!armed && r.lastFired !== null) sub.push("fired → event appended to the inbox");
+    return [r.id + ":" + r.status + ":" + r.lastFired, {
+      at: clockTime(armed ? r.due : r.lastFired), main: r.kind + " · " + (r.sessionId ? "session " + short(r.sessionId) : "new session"),
+      sub: sub.join(" · "), tag: armed ? "armed" : r.status === "done" ? "fired" : r.status, tone: armed ? "info" : "quiet",
+    }];
+  }), "No timers.");
+
+  const m = s.memory;
+  const writes = m.writesToday.reduce((n, x) => n + x.count, 0);
+  fresh.memory = fillPanel("memory", [
+    countChip(m.files.length, m.files.length === 1 ? "file" : "files", "quiet"), countChip(bytes(m.totalBytes), "", "quiet"),
+    countChip(writes, writes === 1 ? "write today" : "writes today", writes ? "info" : "quiet"),
+  ], m.writesToday.length ? "Written today by " + m.writesToday.map((x) => "session " + short(x.sessionId) + " ×" + x.count).join(", ") : "",
+  m.root + ", latest change first", m.files.map((f) => [f.path + ":" + f.mtime, {
+    at: clockTime(f.mtime), main: f.path, mono: true,
+    sub: bytes(f.size) + (f.writtenBy ? " · written by session " + short(f.writtenBy) : ""),
+  }]), "The memory directory is empty.");
+
+  const p = s.permissions;
+  const permRows = p.waiting.map((w) => [w.callId + ":waiting", {
+    at: clockTime(w.askedAt), main: w.args, mono: true,
+    sub: (w.basis || "deferred") + " · session " + short(w.sessionId) + " · expires " + clockTime(w.expiresAt),
+    cmd: w.answer, tag: "waiting", tone: "warn", hl: true,
+  }]).concat(p.recent.filter((d) => !p.waiting.some((w) => w.callId === d.callId)).map((d) => [d.callId + ":" + d.decision, {
+    at: clockTime(d.at), main: d.args || d.tool, mono: true, sub: d.basis,
+    tag: d.decision === "block" ? "blocked" : "deferred", tone: d.decision === "block" ? "bad" : "quiet",
+  }]));
+  if (p.allowsByBasis.length) {
+    permRows.push(["allows:" + p.last24h.allow, {
+      at: "24 h", main: "allowed by basis", sub: p.allowsByBasis.map((a) => a.basis + " " + a.count).join(" · "), tag: "allow", tone: "ok",
+    }]);
+  }
+  fresh.permissions = fillPanel("permissions", [
+    countChip(p.waiting.length, "waiting for you", p.waiting.length ? "warn" : "quiet"), countChip(p.last24h.allow, "allowed", "ok"),
+    countChip(p.last24h.defer, "deferred", p.last24h.defer ? "warn" : "quiet"), countChip(p.last24h.block, "blocked", p.last24h.block ? "bad" : "quiet"),
+  ], "", null, permRows, "No decisions in the last 24 hours.");
+
+  const o = s.outbox.counts;
+  const approvalText = { pending: "still waiting for an answer", answered: "answered", cancelled: "withdrawn before delivery" };
+  fresh.outbox = fillPanel("outbox", [
+    countChip(o.pending, "pending", "quiet"), countChip(o.sending, "sending", o.sending ? "info" : "quiet"), countChip(o.sent, "sent", "ok"),
+    countChip(o.failed, "failed", o.failed ? "bad" : "quiet"), countChip(o.cancelled, "cancelled", "quiet"),
+  ], "", null, s.outbox.rows.map((r) => {
+    const sub = [];
+    if (r.kind === "message") sub.push("“" + clip(r.body.replace(/\s+/g, " ").trim(), 160) + "”");
+    if (r.sentAt !== null) sub.push("delivered " + clockTime(r.sentAt));
+    else if (r.attempts) sub.push(plural(r.attempts, "failed attempt"));
+    if (r.approval) sub.push(approvalText[r.approval]);
+    return [r.id + ":" + r.status + ":" + r.approval, {
+      at: clockTime(r.createdAt), main: r.kind + " · " + (r.thread || "no thread"), sub: sub.join(" · "),
+      tag: r.status, tone: outTone[r.status], hl: r.status === "failed" || r.approval === "pending",
+    }];
+  }), "Nothing said yet.");
+  return fresh;
+}
+
+function flash(rows) {
+  for (const li of rows || []) {
+    li.classList.remove("flash");
+    void li.offsetWidth;
+    li.classList.add("flash");
+  }
+}
+
+// ---- header ----
+function renderHeader(s) {
+  document.getElementById("inbox-id").textContent = s.inboxId;
+  const dot = document.getElementById("serve-dot");
+  const state = document.getElementById("serve-state");
+  const detail = document.getElementById("serve-detail");
+  const sv = s.serve;
+  dot.className = "dot " + (sv.state === "running" ? "ok" : "bad");
+  if (sv.state === "running") {
+    state.textContent = "serve running";
+    detail.textContent = (sv.startedAt !== null ? "up " + duration(now() - sv.startedAt) + " · " : "") + "seen " + duration(now() - sv.seenAt) + " ago";
+  } else if (sv.state === "offline") {
+    state.textContent = "serve offline";
+    detail.textContent = "last seen " + clockTime(sv.seenAt) + " (" + duration(now() - sv.seenAt) + " ago)";
+  } else {
+    state.textContent = "serve offline";
+    detail.textContent = "never seen";
+  }
+  const w = s.worker;
+  document.getElementById("worker-state").textContent = w ? "in a run" : "idle";
+  document.getElementById("worker-run").textContent = w ? short(w.runId) : "";
+  document.getElementById("worker-detail").textContent = w
+    ? [w.sessionId ? "session " + short(w.sessionId) : null, w.startedAt !== null ? duration(now() - w.startedAt) : null,
+       "lease " + duration(w.leaseUntil - now()) + " left", "holds " + plural(w.events, "event")].filter(Boolean).join(" · ")
+    : "";
+  const nt = s.nextTimer;
+  document.getElementById("next-timer").textContent = nt ? clockTime(nt.due) + " (in " + duration(nt.due - now()) + ")" : "none";
+}
+
+// ---- stream ----
+function setConnected(up) {
+  document.body.classList.toggle("disconnected", !up);
+  const conn = document.getElementById("conn");
+  conn.className = up ? "muted" : "down";
+  conn.textContent = up ? location.host + " · read-only · live" : "disconnected · reconnecting…";
+}
+
+function apply(update) {
+  const first = current === null;
+  current = update.snapshot;
+  offset = current.at - Date.now();
+  renderHeader(current);
+  renderMap(current);
+  const fresh = renderPanels(current);
+  if (first) return;
+  const moved = update.flows || {};
+  const targets = new Set(Object.keys(moved).map((e) => EDGES[e] && EDGES[e].to));
+  // Rows a dot is heading for flash when it arrives; the rest flash now.
+  for (const id of Object.keys(fresh)) if (reducedMotion.matches || !targets.has(id)) flash(fresh[id]);
+  if (!reducedMotion.matches) playDots(moved, (to) => flash(fresh[to]));
+}
+
+buildMap();
+const source = new EventSource("/events");
+source.onopen = () => setConnected(true);
+source.onerror = () => setConnected(false);
+source.onmessage = (e) => {
+  setConnected(true);
+  apply(JSON.parse(e.data));
+};
+// Only the relative times move between updates; nothing is fetched.
+setInterval(() => {
+  if (current) {
+    renderHeader(current);
+    renderMap(current);
+  }
+}, 1000);
+</script>
+</body>
+</html>

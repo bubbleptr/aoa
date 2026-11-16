@@ -40,6 +40,8 @@ export type TimerRow = {
   everyMs: number | null;
   lastFired: number | null;
   note: string | null;
+  /** For the timer that expires a deferred call: that call. */
+  expiresCall: string | null;
 };
 
 export type MemoryFile = { path: string; size: number; mtime: number; writtenBy: string | null };
@@ -189,7 +191,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const timers = t.listTimers(inboxId);
     const armed = timers.filter((x) => x.status === "armed");
     const timerRow = (x: (typeof timers)[number]): TimerRow => {
-      const note = (x.payload as { note?: unknown } | null)?.note;
+      const { note, expiredCall } = (x.payload ?? {}) as { note?: unknown; expiredCall?: unknown };
       return {
         id: x.id,
         kind: x.kind,
@@ -199,6 +201,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
         everyMs: x.recurrence?.everyMs ?? null,
         lastFired: x.lastFired,
         note: typeof note === "string" ? note : null,
+        expiresCall: typeof expiredCall === "string" ? expiredCall : null,
       };
     };
     const fired = timers

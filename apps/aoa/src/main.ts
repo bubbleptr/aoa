@@ -2,6 +2,7 @@
 import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
 import { findConfig, loadConfig, validateForServe } from "./config.ts";
 import { serve } from "./serve.ts";
+import { DEFAULT_WEB_PORT, startWeb } from "./web.ts";
 import { type Seams, assemble } from "./wiring.ts";
 
 export const HELP = `aoa: an always-on coding agent for one repository.
@@ -23,12 +24,15 @@ Usage:
                                               only what came after that cursor; --wait waits that long for something new.
   aoa status [--json] [--refresh]             Sessions, outcomes, pending approvals, dead events, failed messages.
                                               --refresh looks up pull request states on GitHub first.
+  aoa web [--port <n>]                        A live, read-only page of the inbox, timers, memory, permissions and
+                                              outbox on http://127.0.0.1:<port> (default ${DEFAULT_WEB_PORT}), until Ctrl-C.
 
 Options:
   --config <path>   The config file (default: ./aoa.config.ts, then ~/.aoa/aoa.config.ts).
   --to <thread>     For send: the task to add to.
   --since <id>      For messages: the cursor a previous aoa messages printed.
   --wait <seconds>  For messages: how long to wait when there is nothing new.
+  --port <n>        For web: the port on 127.0.0.1.
   -h, --help        Show this help.
 
 On GitHub, reply to an approval request with /approve, or /deny followed by a reason.`;
@@ -38,7 +42,7 @@ export type Io = {
   out: (text: string) => void;
   err: (text: string) => void;
   seams?: Seams;
-  /** Resolves when `serve` should stop; by default on SIGINT or SIGTERM. */
+  /** Resolves when `serve` or `web` should stop; by default on SIGINT or SIGTERM. */
   stopSignal?: () => Promise<void>;
 };
 
@@ -49,13 +53,14 @@ type Parsed = {
   to: string | undefined;
   since: string | undefined;
   wait: number | undefined;
+  port: number | undefined;
   json: boolean;
   refresh: boolean;
   help: boolean;
 };
 
 function parse(argv: string[]): Parsed {
-  const p: Parsed = { command: undefined, args: [], config: undefined, to: undefined, since: undefined, wait: undefined, json: false, refresh: false, help: false };
+  const p: Parsed = { command: undefined, args: [], config: undefined, to: undefined, since: undefined, wait: undefined, port: undefined, json: false, refresh: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--config") {
@@ -76,6 +81,10 @@ function parse(argv: string[]): Parsed {
       const value = Number(argv[++i]);
       if (!Number.isFinite(value) || value < 0) throw new Error("--wait needs a number of seconds");
       p.wait = value;
+    } else if (a === "--port") {
+      const value = Number(argv[++i]);
+      if (!Number.isInteger(value) || value < 1 || value > 65_535) throw new Error("--port needs a port number");
+      p.port = value;
     }
     else if (a === "--json") p.json = true;
     else if (a === "--refresh") p.refresh = true;
@@ -105,7 +114,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
     (p.command === undefined && !p.help ? io.err : io.out)(HELP);
     return p.command === undefined && !p.help ? 2 : 0;
   }
-  if (!["serve", "send", "answer", "close", "messages", "status"].includes(p.command)) {
+  if (!["serve", "send", "answer", "close", "messages", "status", "web"].includes(p.command)) {
     io.err(`Unknown command "${p.command}".\n\n${HELP}`);
     return 2;
   }
@@ -117,6 +126,11 @@ export async function main(argv: string[], io: Io): Promise<number> {
 
   if ((p.since !== undefined || p.wait !== undefined) && p.command !== "messages") {
     io.err(`--since and --wait are only for messages.\n\n${HELP}`);
+    return 2;
+  }
+
+  if (p.port !== undefined && p.command !== "web") {
+    io.err(`--port is only for web.\n\n${HELP}`);
     return 2;
   }
 
@@ -139,6 +153,13 @@ export async function main(argv: string[], io: Io): Promise<number> {
     switch (p.command) {
       case "serve": {
         await serve(agent, (io.stopSignal ?? signals)());
+        return 0;
+      }
+      case "web": {
+        const web = startWeb(agent, { port: p.port ?? DEFAULT_WEB_PORT });
+        io.out(`aoa web on http://127.0.0.1:${web.port} (read-only; Ctrl-C to stop)`);
+        await (io.stopSignal ?? signals)();
+        await web.stop();
         return 0;
       }
       case "send": {
