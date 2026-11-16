@@ -12,7 +12,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import { type Agent, assemble } from "../src/wiring.ts";
-import { type AgentConfigInput, validateConfig } from "../src/config.ts";
+import { type AgentConfigInput, type AgentInput, validateConfig } from "../src/config.ts";
 import { main } from "../src/main.ts";
 import { APP_ID, BOT, FakeGitHub, INSTALLATION_ID, OWNER, REPO, USER, writeAppKey } from "../../../packages/channel-github/test/fake-github.ts";
 
@@ -101,13 +101,24 @@ export class World {
   readonly configPath = join(this.root, "aoa.config.ts");
   readonly config: AgentConfigInput;
   private readonly agentModel = fauxProvider({ provider: "scripted", models: [{ id: "agent" }] });
+  /** One scripted model per named agent, so each agent's steps are its own. */
+  private readonly namedModels = new Map<string, ReturnType<typeof fauxProvider>>();
   private readonly judgeModel = fauxProvider({ provider: "judge", models: [{ id: "judge" }] });
   agent!: Agent;
 
   /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
   readonly env: Record<string, string | undefined>;
 
-  constructor(o: { classifier?: boolean; shadowJudge?: boolean; env?: Record<string, string | undefined>; local?: boolean } = {}) {
+  constructor(
+    o: {
+      classifier?: boolean;
+      shadowJudge?: boolean;
+      env?: Record<string, string | undefined>;
+      local?: boolean;
+      /** Named agents; each gets its own scripted model unless it names one. */
+      agents?: Record<string, AgentInput>;
+    } = {},
+  ) {
     this.env = o.env ?? { [KEY_ENV]: MODEL_KEY, ...(o.shadowJudge ? { [JEV_ENV]: JEV_KEY } : {}) };
     this.local = o.local ?? false;
     this.config = {
@@ -131,6 +142,16 @@ export class World {
             },
           }),
       rate: { maxMsgs: 100, windowMs: 3_600_000, minIntervalMs: 0 },
+      ...(o.agents
+        ? {
+            agents: Object.fromEntries(
+              Object.entries(o.agents).map(([name, a]) => {
+                this.namedModels.set(name, fauxProvider({ provider: `scripted-${name}`, models: [{ id: "agent" }] }));
+                return [name, { model: { provider: `scripted-${name}`, modelId: "agent", apiKeyEnv: KEY_ENV }, ...a }];
+              }),
+            ),
+          }
+        : {}),
     };
     this.judgeModel.setResponses(
       Array.from({ length: 200 }, () => (context: Context) => {
@@ -178,7 +199,7 @@ export class World {
     return {
       fetch: this.fetch,
       runGit: this.runGit,
-      providers: [this.agentModel.provider, this.judgeModel.provider],
+      providers: [this.agentModel.provider, this.judgeModel.provider, ...[...this.namedModels.values()].map((m) => m.provider)],
       clock: this.clock,
       env: this.env,
       log: (line: string) => this.logs.push(line),
@@ -212,8 +233,9 @@ export class World {
     return this;
   }
 
-  script(steps: Step[]): void {
-    this.agentModel.setResponses(
+  /** Scripts the default agent, or the named one. */
+  script(steps: Step[], agent?: string): void {
+    this.model(agent).setResponses(
       steps.map((step) => (context: Context) => {
         this.modelRequests.push(context);
         return typeof step === "function" ? step(context.messages) : step;
@@ -221,8 +243,23 @@ export class World {
     );
   }
 
-  pendingSteps(): number {
-    return this.agentModel.getPendingResponseCount();
+  pendingSteps(agent?: string): number {
+    return this.model(agent).getPendingResponseCount();
+  }
+
+  private model(agent: string | undefined) {
+    if (agent === undefined) return this.agentModel;
+    const m = this.namedModels.get(agent);
+    if (!m) throw new Error(`no named agent ${agent} in this world`);
+    return m;
+  }
+
+  /** The default agent, or the named one. */
+  named(agent?: string): Agent {
+    if (agent === undefined) return this.agent;
+    const found = this.agent.agents.find((a) => a.name === agent);
+    if (!found) throw new Error(`no agent ${agent}`);
+    return found;
   }
 
   advance(ms: number): void {
@@ -234,10 +271,10 @@ export class World {
     return this.agent.poller.pass();
   }
 
-  /** Waits out the worker's debounce, then runs everything ready. */
-  async drain() {
+  /** Waits out the worker's debounce, then runs everything ready in the default agent's inbox, or the named one's. */
+  async drain(agent?: string) {
     this.advance(2000);
-    return this.agent.worker.drain();
+    return this.named(agent).worker.drain();
   }
 
   dispatch() {
@@ -258,16 +295,16 @@ export class World {
     return { code, out, err };
   }
 
-  runs() {
-    return this.agent.store.tx((t) => t.listRuns(this.agent.inboxId));
+  runs(agent?: string) {
+    return this.agent.store.tx((t) => t.listRuns(this.named(agent).inboxId));
   }
 
-  sessions() {
-    return this.agent.store.tx((t) => t.listSessions(this.agent.inboxId));
+  sessions(agent?: string) {
+    return this.agent.store.tx((t) => t.listSessions(this.named(agent).inboxId));
   }
 
-  events() {
-    return this.agent.store.tx((t) => t.listEvents(this.agent.inboxId));
+  events(agent?: string) {
+    return this.agent.store.tx((t) => t.listEvents(this.named(agent).inboxId));
   }
 
   judgments() {
