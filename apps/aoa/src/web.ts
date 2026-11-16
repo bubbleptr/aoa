@@ -6,8 +6,11 @@ import type { Agent } from "./wiring.ts";
 export const DEFAULT_WEB_PORT = 7878;
 /** Commits come in bursts (intent, result, outbox); one rebuild covers a burst. */
 const COALESCE_MS = 50;
-/** The safety net for a change the file watch missed; it reads only `data_version`, no tables. */
-const VERSION_CHECK_MS = 10_000;
+/**
+ * The safety net for a change the file watch missed; it reads only `data_version`, no tables. fs.watch can drop a
+ * write for good (seen on macOS across a burst of commits), so this is not a rare path: one second bounds the staleness.
+ */
+const VERSION_CHECK_MS = 1_000;
 
 const PAGE = join(import.meta.dir, "web.html");
 
