@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ToolDef } from "./types.ts";
@@ -21,7 +21,8 @@ const partsOf = (path: string): string[] => path.split(/[\\/]+/).filter((p) => p
 /** Memory on the local disk under `root`, which is created if needed. Nothing outside the root is reachable, symlinks included. */
 export function dirMemory(root: string): Memory {
   mkdirSync(root, { recursive: true });
-  const realRoot = realpath(root);
+  // Resolved now: a promise left pending here would reject unhandled if the root went away before anyone awaited it.
+  const realRoot = realpathSync(root);
 
   /** The absolute path for `path`, after checking that it and whatever part of it exists stay inside the root. */
   async function resolve(path: string): Promise<string> {
@@ -29,7 +30,7 @@ export function dirMemory(root: string): Memory {
     if (isAbsolute(path) || path.startsWith("~")) throw new Error(`memory paths are relative to the memory root: ${path}`);
     const parts = partsOf(path);
     if (parts.includes("..")) throw new Error(`memory paths may not contain "..": ${path}`);
-    const base = await realRoot;
+    const base = realRoot;
     const full = join(base, ...parts);
     for (let probe = full; ; probe = dirname(probe)) {
       try {
