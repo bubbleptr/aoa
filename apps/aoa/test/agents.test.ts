@@ -101,6 +101,37 @@ describe("named agents", () => {
     expect(requestWith(w, "Look around.")).not.toContain('"name":"send_to"');
   });
 
+  test("send_to to an agent that does not exist is an error and appends nothing", async () => {
+    const w = await world({ ...REVIEWER, helper: {} });
+    let shown = "";
+    w.script([
+      call("send_to", { agent: "nobody", text: "Anyone there?" }),
+      (m) => ((shown = lastResult(m)), say("Stopped.")),
+    ]);
+    await w.cli("send", "Try to reach someone.");
+    await w.drain();
+    expect(shown).toContain("No other agent is named nobody");
+    expect(w.events("reviewer")).toHaveLength(0);
+    expect(w.events("helper")).toHaveLength(0);
+    expect(w.events().filter((e) => e.source === "agent_message")).toHaveLength(0);
+  });
+
+  test("send_to with a branch to an agent that does not review is an error and appends nothing", async () => {
+    const w = await world({ ...REVIEWER, helper: {} });
+    let shown = "";
+    w.script([
+      call("send_to", { agent: "helper", text: "Review this branch.", branch: "aoa/12345678" }),
+      (m) => ((shown = lastResult(m)), say("Stopped.")),
+    ]);
+    await w.cli("send", "Hand a branch to the helper.");
+    await w.drain();
+    expect(shown).toContain("branch is only for a review agent");
+    expect(shown).toContain("helper implements");
+    expect(w.events("reviewer")).toHaveLength(0);
+    expect(w.events("helper")).toHaveLength(0);
+    expect(w.events().filter((e) => e.source === "agent_message")).toHaveLength(0);
+  });
+
   test("send_to opens an untrusted review session; the reply resumes the implementer's original session", async () => {
     const w = await world();
     w.script(commit((branch) => call("send_to", { agent: "reviewer", text: "Adds greeting.txt; please review.", branch })));
