@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Event, PermissionAsk, RunInput, Tool } from "@aoa/kernel";
+import type { Event, RunInput, Tool } from "@aoa/kernel";
 import { codexRuntime } from "../src/index.ts";
 
 /**
@@ -15,7 +15,6 @@ test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "aoa-codex-smoke-")));
     Bun.spawnSync(["git", "init", "-q", dir]);
     const calls: unknown[] = [];
-    const asks: PermissionAsk[] = [];
     const notify: Tool = {
       name: "notify",
       description: "Send the user a message.",
@@ -47,7 +46,7 @@ test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
       events: [event(text)],
       resident: "",
       tools: [notify],
-      ask: async (a) => (asks.push(a), "allow"),
+      ask: async () => "allow",
     });
     const runtime = codexRuntime({ developerInstructions: "You are a test agent. Do exactly what the user asks.", cwd: dir });
     try {
