@@ -105,4 +105,9 @@ describe("a reviewer cannot change refs or history", () => {
   ])("git %s is blocked, not deferred or offered to the classifier", async (_sub, command) => {
     expect(await decide(review, { tool: "bash", args: { command } }, ctx)).toEqual({ decision: "block", basis: "rule:review-read-only" });
   });
+
+  // The other half of the branch clause: listing branches is reading, not changing refs.
+  test.each(["git branch --show-current", "git branch -vv"])("%s is still allowed", async (command) => {
+    expect(await decide(review, { tool: "bash", args: { command } }, ctx)).toEqual({ decision: "allow", basis: "rule:read-only-commands" });
+  });
 });
