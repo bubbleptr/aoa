@@ -75,7 +75,8 @@ export function darwinNotifyArgv(title: string, body: string): string[] {
 export function defaultNotifier(platform: string = process.platform): Notifier | undefined {
   if (platform !== "darwin") return undefined;
   return async (title, body) => {
-    const proc = Bun.spawn(darwinNotifyArgv(title, body), { stdout: "ignore", stderr: "pipe" });
+    // Delivery waits for this; a hung osascript (a permission prompt, say) must not hold up every later message.
+    const proc = Bun.spawn(darwinNotifyArgv(title, body), { stdout: "ignore", stderr: "pipe", timeout: 5000 });
     const code = await proc.exited;
     if (code !== 0) throw new Error(`osascript exited with ${code}: ${(await new Response(proc.stderr).text()).trim()}`);
   };

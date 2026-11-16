@@ -162,7 +162,7 @@ GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里�
 
 每次裁决连同依据写进 `decisions`。
 
-凭据：`git_push`、`github_open_pr`、`github_comment` 是宿主进程里的工具，由宿主加上凭据再发请求，agent 的上下文和调用参数里不出现凭据（I-PRM-1）。不做沙箱。agent 的 shell 和宿主是同一个系统用户，所以读凭据路径和 `~/.aoa` 的调用不会被规则直接放行。这是已知并接受的风险，和 早先的项目 ADR-0052 §7 撤回后的状态一致。
+凭据（GitHub 模式；本地模式下宿主手里只有模型的 key）：`git_push`、`github_open_pr`、`github_comment` 是宿主进程里的工具，由宿主加上凭据再发请求，agent 的上下文和调用参数里不出现凭据（I-PRM-1）。不做沙箱。agent 的 shell 和宿主是同一个系统用户，所以读凭据路径和 `~/.aoa` 的调用不会被规则直接放行。这是已知并接受的风险，和 早先的项目 ADR-0052 §7 撤回后的状态一致。
 
 延后调用照 §6.4：session 存盘，run 结束，请求进 outbox，答复作为 `approval_answer` 事件回到 inbox，同一个 `call_id` 的第二次答复被去重丢掉。24 小时没答复就写一个到期事件。
 
@@ -272,12 +272,12 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 事件重试到上限进 `dead` 时，同一个事务里给这项任务写一条失败通知（§8 的第三种消息）。
 - `serve` 必须配分类器。`bash` 是中风险，没有分类器时，只读白名单之外的每条命令都会停下来等你，写代码的循环转不起来。
 - 文件工具的路径落在任务的 worktree 之外时延后。
-- PR 的状态存在 `pull_states` 表里，由存储层直接提供，内核不知道 PR。`serve` 每 5 分钟查一次；PR 合并或关闭后关掉 session、删掉 worktree。之后再来事件会重开 session，在原分支上重建 worktree。
+- GitHub 模式：PR 的状态存在 `pull_states` 表里，由存储层直接提供，内核不知道 PR。`serve` 每 5 分钟查一次；PR 合并或关闭后关掉 session、删掉 worktree。之后再来事件会重开 session，在原分支上重建 worktree。
 - `aoa status --refresh` 只更新 PR 状态，不关 session；本地模式下它什么都不做。
 - 本地模式声明的结局存在 `declared_results` 表里，一次声明只生效一次：`serve` 关掉 session 后，之后用 `send --to` 重开的 session 不会被同一条声明再关掉。
 - session 在等回答时，它的 thread 上来的用户消息就是回答：`/approve` 批准，`/deny 理由` 拒绝，别的文字对审批算拒绝并当作理由，对提问算答案。`aoa send --to` 和 GitHub 评论走的是同一条路。
 - 本地模式的 `git push` 规则排在内核规则之后，所以强推之类仍然是直接拦掉，不会变成可以批准。
-- `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉；另外每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
+- GitHub 模式下 `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉。两种模式都每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
 
 ## 13. 没验证的
 
@@ -295,6 +295,8 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 同一批里有一个调用被延后时，同批的其他调用照常执行。
 - agent 的工作目录里的 `pre-push` 钩子或 `url.insteadOf` 规则能看到或改走推送用的凭据；和 §6 接受的同用户风险是一回事。
 - 给 issue 打标签之前的评论不会进来，只有 issue 本身会。
+- 本地模式的 inbox 是 `local/<仓库目录名>`：同一个 `dataDir` 下两个目录名相同的仓库会共用 inbox、记忆和 worktree 目录。
+- macOS 通知最多等 5 秒，超时算发送失败，只记日志。
 
 还要你来做的：给出模型的 key 和分类器配置，定下跑在哪台机器上，然后才是在真实仓库上跑通和两周自用。要接 GitHub 时再建 App 并装到目标仓库。
 
