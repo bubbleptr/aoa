@@ -108,7 +108,11 @@ export const branchColumns = (branchOf: ((sessionId: string) => string) | null):
   };
 };
 
+/** What runs an agent, and whether aoa or that runtime's harness decides its own tool calls (design §12). */
+export type AgentRuntimeRow = { name: string; runtime: "pi" | "codex"; permissionOwner: "kernel" | "harness" };
+
 export type StatusReport = {
+  agents: AgentRuntimeRow[];
   sessions: SessionStatus[];
   pending: { agent: string; callId: string; session: string; thread: string | null; tool: string; asks: string }[];
   dead: { agent: string; id: string; source: string; thread: string | null; attempts: number }[];
@@ -124,7 +128,7 @@ export function asks(tool: string, kind: PendingCall["kind"], args: unknown): st
 }
 
 /** Everything `aoa status` shows of one agent's inbox, read from the store alone. */
-export function collectStatus(store: SqliteStore, agent: string, inboxId: string, mode: ModeColumns): StatusReport {
+export function collectStatus(store: SqliteStore, agent: string, inboxId: string, mode: ModeColumns): Omit<StatusReport, "agents"> {
   return store.tx((t) => {
     const events = t.listEvents(inboxId);
     const sessions = t.listSessions(inboxId).map((s): SessionStatus => {
@@ -205,6 +209,17 @@ export function renderStatus(r: StatusReport, o: { agents: boolean } = { agents:
       ),
     );
   }
+  lines.push("", "Agents:");
+  lines.push(
+    ...table(
+      ["NAME", "RUNTIME", "PERMISSIONS"],
+      r.agents.map((a) => [
+        a.name,
+        a.runtime,
+        a.permissionOwner === "kernel" ? "aoa decides every tool call" : "Codex decides its own tools; aoa relays what it asks",
+      ]),
+    ).map((l) => `  ${l}`),
+  );
   lines.push("", "Pending approvals:");
   if (r.pending.length === 0) lines.push("  none");
   for (const p of r.pending) lines.push(`  ${p.callId}  ${by(p.agent)}on ${p.thread ?? "-"}: ${p.asks}`);

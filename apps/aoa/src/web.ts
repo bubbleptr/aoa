@@ -28,7 +28,11 @@ export type Web = { port: number; stop(): Promise<void> };
  * The page is read from disk per request while `serve` keeps running, so a page from before named agents reads this
  * as the one agent it knows.
  */
-export type View = Snapshot & { agents: { name: string; role: Role; snapshot: Snapshot }[] };
+export type View = Snapshot &
+  RuntimeOf & { agents: ({ name: string; role: Role; snapshot: Snapshot } & RuntimeOf)[] };
+
+/** What runs the agent and who decides its own tool calls; a page from before this field shows neither. */
+type RuntimeOf = { runtime: Agent["runtime"]; permissionOwner: Agent["permissions"] };
 
 type Flows = Partial<Record<Edge, number>>;
 
@@ -72,9 +76,21 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
   function build(): View {
     // Read before the tables, so a commit landing in between is caught by the next check.
     version = agent.store.dataVersion();
-    const [first, ...named] = agent.agents.map((a) => ({ name: a.name, role: a.role, snapshot: snapshot(a) }));
+    const [first, ...named] = agent.agents.map((a) => ({
+      name: a.name,
+      role: a.role,
+      runtime: a.runtime,
+      permissionOwner: a.permissions,
+      snapshot: snapshot(a),
+    }));
     const later = [first!.snapshot, ...named.map((a) => a.snapshot)].map((s) => s.nextChangeAt).filter((at) => at !== null);
-    return { ...first!.snapshot, agents: named, nextChangeAt: later.length > 0 ? Math.min(...later) : null };
+    return {
+      ...first!.snapshot,
+      runtime: first!.runtime,
+      permissionOwner: first!.permissionOwner,
+      agents: named,
+      nextChangeAt: later.length > 0 ? Math.min(...later) : null,
+    };
   }
 
   function rebuild(): void {

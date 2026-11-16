@@ -17,6 +17,11 @@ export const SERVE_SEEN = "serve:seen";
 export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
   const { clock, log } = agent;
   agent.log(`serving ${agent.agents.map((a) => a.inboxId).join(", ")}`);
+  for (const a of agent.agents.filter((a) => a.permissions === "harness")) {
+    log(
+      `agent ${a.name} runs on Codex: Codex's own approval and sandbox settings govern what it does without asking, and aoa's push and ~/.aoa rules do not apply to Codex's own tools`,
+    );
+  }
   const startedAt = String(clock.now());
   agent.store.tx((t) => t.setCursor(agent.inboxId, SERVE_STARTED, startedAt));
 

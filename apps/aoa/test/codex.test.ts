@@ -76,7 +76,7 @@ test("a codex agent works in its worktree and is offered aoa's tools, not aoa's 
   expect(offered).toContain("memory_write");
   expect(offered).toContain("send_to");
   for (const coding of ["bash", "read", "write", "edit"]) expect(offered).not.toContain(coding);
-  expect(fake.spawns).toEqual([w.sessions("coder")[0]!.workdir]);
+  expect(fake.spawns).toEqual([w.sessions("coder")[0]!.workdir!]);
   expect(start.cwd).toBe(w.sessions("coder")[0]!.workdir);
   expect(w.agent.store.tx((t) => t.listOutbox(w.named("coder").inboxId))).toMatchObject([{ kind: "message", body: "Cleaned." }]);
   expect(w.runs("coder").map((r) => r.end?.kind)).toEqual(["sent"]);
@@ -87,8 +87,8 @@ test("status and the web snapshot say which runtime each agent runs on and who o
 
   const status = JSON.parse((await w.cli("status", "--json")).out);
   expect(status.agents).toEqual([
-    { name: "default", runtime: "pi", permissions: "kernel" },
-    { name: "coder", runtime: "codex", permissions: "harness" },
+    { name: "default", runtime: "pi", permissionOwner: "kernel" },
+    { name: "coder", runtime: "codex", permissionOwner: "harness" },
   ]);
   const text = (await w.cli("status")).out;
   expect(text).toMatch(/default\s+pi\s+aoa decides/);
@@ -97,8 +97,9 @@ test("status and the web snapshot say which runtime each agent runs on and who o
   const server = startWeb(w.agent, { port: 0, watch: () => () => {} });
   cleanup.push(() => server.stop());
   const view = (await (await fetch(`http://127.0.0.1:${server.port}/snapshot`)).json()) as View;
-  expect([view.runtime, view.permissions]).toEqual(["pi", "kernel"]);
-  expect(view.agents.map((a) => [a.name, a.runtime, a.permissions])).toEqual([["coder", "codex", "harness"]]);
+  expect([view.runtime, view.permissionOwner]).toEqual(["pi", "kernel"]);
+  expect(view.permissions.waiting).toEqual([]);
+  expect(view.agents.map((a) => [a.name, a.runtime, a.permissionOwner])).toEqual([["coder", "codex", "harness"]]);
 });
 
 test("serve says, once per codex agent, that Codex's own settings govern what it does unasked", async () => {

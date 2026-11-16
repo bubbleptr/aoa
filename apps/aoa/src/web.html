@@ -27,7 +27,7 @@ header .brand { font-weight: 600; font-size: 15px; }
 .strong { font-weight: 500; }
 #conn { margin-left: auto; }
 .switch { display: flex; flex-wrap: wrap; gap: 6px; }
-.switch[hidden] { display: none; }
+.switch[hidden], .group[hidden] { display: none; }
 .switch button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--node-line); background: var(--surface); color: var(--text); cursor: pointer; }
 .switch button .muted { margin-left: 6px; font-size: 12px; }
 .switch button[aria-pressed="true"] { background: var(--blue-bg); border-color: var(--blue-line); color: var(--blue-text); font-weight: 500; }
@@ -142,6 +142,7 @@ ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5e
 <header>
   <div class="group"><span class="brand">aoa</span><span class="mono muted" id="inbox-id"></span></div>
   <nav class="switch" id="agent-switch" aria-label="Agent" hidden></nav>
+  <div class="group" id="agent-runtime" hidden><span class="muted">runs on</span><span class="strong" id="agent-runtime-name"></span><span class="muted" id="agent-permissions"></span></div>
   <div class="group"><span class="dot" id="serve-dot" aria-hidden="true"></span><span class="strong" id="serve-state">serve</span><span class="muted" id="serve-detail"></span></div>
   <div class="group"><span class="muted">worker</span><span class="strong" id="worker-state"></span><span class="mono" id="worker-run"></span><span class="muted" id="worker-detail"></span></div>
   <div class="group"><span class="muted">next timer</span><span id="next-timer"></span></div>
@@ -749,7 +750,19 @@ function pick() {
   return view;
 }
 
+/** The chosen agent's runtime and who decides its tool calls; a serve from before these fields sends neither. */
+function renderRuntime() {
+  const a = chosen === "default" ? view : named().find((x) => x.name === chosen);
+  const box = document.getElementById("agent-runtime");
+  box.hidden = !a || !a.runtime;
+  if (box.hidden) return;
+  document.getElementById("agent-runtime-name").textContent = a.runtime;
+  document.getElementById("agent-permissions").textContent =
+    a.permissionOwner === "harness" ? "Codex decides its own tools; aoa relays what it asks" : "aoa decides every tool call";
+}
+
 function renderSwitch() {
+  renderRuntime();
   const nav = document.getElementById("agent-switch");
   nav.hidden = named().length === 0;
   const agents = [{ name: "default", role: "implement" }, ...named()];
