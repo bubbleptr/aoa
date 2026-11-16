@@ -55,6 +55,17 @@
       "name": "@aoa/kernel",
       "version": "0.0.0",
     },
+    "packages/runtime-codex": {
+      "name": "@aoa/runtime-codex",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+        "@aoa/runtime-pi": "workspace:*",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+      },
+    },
     "packages/runtime-pi": {
       "name": "@aoa/runtime-pi",
       "version": "0.0.0",
@@ -85,6 +96,8 @@
     "@aoa/conformance": ["@aoa/conformance@workspace:packages/conformance"],
 
     "@aoa/kernel": ["@aoa/kernel@workspace:packages/kernel"],
+
+    "@aoa/runtime-codex": ["@aoa/runtime-codex@workspace:packages/runtime-codex"],
 
     "@aoa/runtime-pi": ["@aoa/runtime-pi@workspace:packages/runtime-pi"],
 
