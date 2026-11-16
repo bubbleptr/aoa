@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -189,6 +190,18 @@ export function derivePaths(c: AgentConfig, home = homedir()): Paths {
     repo,
     privateKey: c.github ? expand(c.github.privateKeyPath, home) : null,
   };
+}
+
+/**
+ * The config file a command uses: the one named, else `aoa.config.ts` in the current directory, else the one in
+ * `~/.aoa`, so the command works from any directory.
+ */
+export function findConfig(explicit: string | undefined, cwd: string, home = homedir()): string {
+  if (explicit !== undefined) return isAbsolute(explicit) ? explicit : resolve(cwd, explicit);
+  const candidates = [join(cwd, "aoa.config.ts"), join(home, ".aoa", "aoa.config.ts")];
+  const found = candidates.find((file) => existsSync(file));
+  if (found === undefined) throw new Error(`No config found. Looked for ${candidates.join(" and ")}; or pass --config <path>.`);
+  return found;
 }
 
 /** Imports the config file and validates its default export. */

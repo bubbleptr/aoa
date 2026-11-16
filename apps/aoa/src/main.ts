@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
-import { loadConfig, validateForServe } from "./config.ts";
+import { findConfig, loadConfig, validateForServe } from "./config.ts";
 import { serve } from "./serve.ts";
 import { type Seams, assemble } from "./wiring.ts";
 
@@ -25,7 +25,7 @@ Usage:
                                               --refresh looks up pull request states on GitHub first.
 
 Options:
-  --config <path>   The config file (default: ./aoa.config.ts).
+  --config <path>   The config file (default: ./aoa.config.ts, then ~/.aoa/aoa.config.ts).
   --to <thread>     For send: the task to add to.
   --since <id>      For messages: the cursor a previous aoa messages printed.
   --wait <seconds>  For messages: how long to wait when there is nothing new.
@@ -45,7 +45,7 @@ export type Io = {
 type Parsed = {
   command: string | undefined;
   args: string[];
-  config: string;
+  config: string | undefined;
   to: string | undefined;
   since: string | undefined;
   wait: number | undefined;
@@ -55,7 +55,7 @@ type Parsed = {
 };
 
 function parse(argv: string[]): Parsed {
-  const p: Parsed = { command: undefined, args: [], config: "aoa.config.ts", to: undefined, since: undefined, wait: undefined, json: false, refresh: false, help: false };
+  const p: Parsed = { command: undefined, args: [], config: undefined, to: undefined, since: undefined, wait: undefined, json: false, refresh: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--config") {
@@ -122,7 +122,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
 
   let agent;
   try {
-    const config = await loadConfig(p.config, io.cwd);
+    const config = await loadConfig(findConfig(p.config, io.cwd), io.cwd);
     if (p.command === "serve") {
       validateForServe(config);
       const env = io.seams?.env ?? process.env;

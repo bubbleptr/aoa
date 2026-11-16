@@ -11,19 +11,19 @@
 
 准备：
 
-- [Bun](https://bun.sh)，在仓库根目录运行 `bun install`。
+- [Bun](https://bun.sh)，在仓库根目录运行 `bun install`，再在 `apps/aoa` 下运行 `bun link`，之后 `aoa` 在任何目录都能用。
 - 模型的 API key 放在环境变量里，例如 `ANTHROPIC_API_KEY`。
 - 一个 `classifier` 模型：`serve` 要求有它，否则每条 `bash` 都要等你批准，agent 自己跑不了检查，也提交不了。
 
-把 `aoa.config.example.ts` 复制成 `aoa.config.ts`，填上仓库路径和模型。配置里只写环境变量名，不写密钥。没有 `github` 一段就是本地模式：不用 GitHub，不推送，不开 PR。
+把 `aoa.config.example.ts` 复制成 `~/.aoa/aoa.config.ts`，填上仓库路径和模型。配置按这个顺序找：`--config`、当前目录的 `aoa.config.ts`、`~/.aoa/aoa.config.ts`。配置里只写环境变量名，不写密钥。没有 `github` 一段就是本地模式：不用 GitHub，不推送，不开 PR。
 
 ```bash
-bun run aoa serve                                # 常驻：跑任务、发消息；Ctrl-C 停
-bun run aoa send "修掉 README 的错字"            # 开一个任务，输出它的线程，如 local:1a2b3c4d
-bun run aoa send --to <线程或前缀> "再改一下标题"  # 接着同一个任务说
-bun run aoa answer <调用 id 或前缀> approve|deny [理由]
-bun run aoa close <线程或会话前缀> merged|discarded
-bun run aoa status [--json]                      # 各任务的状态、结局、被问次数、分支、到第一条消息的时长
+aoa serve                                # 常驻：跑任务、发消息；Ctrl-C 停
+aoa send "修掉 README 的错字"            # 开一个任务，输出它的线程，如 local:1a2b3c4d
+aoa send --to <线程或前缀> "再改一下标题"  # 接着同一个任务说
+aoa answer <调用 id 或前缀> approve|deny [理由]
+aoa close <线程或会话前缀> merged|discarded
+aoa status [--json]                      # 各任务的状态、结局、被问次数、分支、到第一条消息的时长
 ```
 
 每个任务在 `<dataDir>/worktrees/` 下有自己的 worktree，提交在本地分支 `aoa/<会话 id 前 8 位>` 上。agent 找你时，消息追加到 `<dataDir>/messages.md`，在 macOS 上同时弹一条通知。需要批准时，消息里写着该运行的 `aoa answer` 命令；任务在等回答时，用 `send --to` 发的话也算回答：`/approve` 批准，其他内容算拒绝并作为理由。
@@ -37,14 +37,14 @@ agent 的 `bash` 里出现 `git push` 时会先问你。这只是约定，不是
 aoa 自己没有主会话。你在别的聊天 agent（比如 Claude Code）里说话，由它敲命令就够了：
 
 ```bash
-bun run aoa send "..."                          # 派活，记下输出的线程
-bun run aoa messages --since <游标> --wait 600   # 等 agent 的下一条消息；输出末尾是新游标
-bun run aoa answer <调用 id> approve|deny [理由]  # 消息是审批请求时
+aoa send "..."                          # 派活，记下输出的线程
+aoa messages --since <游标> --wait 600   # 等 agent 的下一条消息；输出末尾是新游标
+aoa answer <调用 id> approve|deny [理由]  # 消息是审批请求时
 ```
 
 `messages` 读的是 outbox，不是 `messages.md`，所以两种模式都能用，消息在通道送达之前就能读到；加 `--json` 给程序读。
 
-两条限制：这些命令现在只能在 aoa 仓库根目录运行（或用 `--config` 指到配置）；审批是留给你的，聊天 agent 只转述请求，得到你明确同意后才运行 `aoa answer`。
+一条约定：审批是留给你的，聊天 agent 只转述请求，得到你明确同意后才运行 `aoa answer`。
 
 ## 接 GitHub（可选）
 

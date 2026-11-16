@@ -22,14 +22,14 @@ aoa 是按规范从头写的 always-on agent 内核，第一件事是写代码�
 ## 2. 用法
 
 ```ts
-// aoa.config.ts
-export default defineAgent({
+// ~/.aoa/aoa.config.ts
+export default {
   dataDir: "~/.aoa",
   repo: { path: "~/code/some-repo", base: "main" },
   model: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
   classifier: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
   // github: { owner, repo, userLogin, botLogin, appId, installationId, privateKeyPath },  // 可选
-});
+};
 ```
 
 ```bash
@@ -278,6 +278,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 本地模式声明的结局存在 `declared_results` 表里，一次声明只生效一次：`serve` 关掉 session 后，之后用 `send --to` 重开的 session 不会被同一条声明再关掉。
 - session 在等回答时，它的 thread 上来的用户消息就是回答：`/approve` 批准，`/deny 理由` 拒绝，别的文字对审批算拒绝并当作理由，对提问算答案。`aoa send --to` 和 GitHub 评论走的是同一条路。
 - 没有主会话。入口只是往 inbox 追加事件，谁来追加都行；聊天里的 agent 用 `aoa send` 派活、`aoa messages --since <游标> --wait <秒>` 读回程、`aoa answer` 回答。`messages` 直接读 outbox，游标是最后一条消息的 id，不依赖通道把消息送到了哪里。
+- `aoa` 用 `bun link` 装成全局命令。配置依次找 `--config`、当前目录的 `aoa.config.ts`、`~/.aoa/aoa.config.ts`，所以在任何项目的聊天里都能调用。配置文件默认导出一个普通对象，不需要 import，可以放在仓库之外。
 - 调用一旦被回答，outbox 里还没送出的那条审批请求就撤回，不会再问一遍。
 - 审批是留给人的。聊天里的 agent 当入口时只转述请求，得到用户明确同意才运行 `aoa answer`；这是约定，内核分不清敲命令的是人还是 agent。
 - 本地模式的 `git push` 规则排在内核规则之后，所以强推之类仍然是直接拦掉，不会变成可以批准。
@@ -300,7 +301,6 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 给 issue 打标签之前的评论不会进来，只有 issue 本身会。
 - 本地模式的 inbox 是 `local/<仓库目录名>`：同一个 `dataDir` 下两个目录名相同的仓库会共用 inbox、记忆和 worktree 目录。
 - 审批请求正在投递时被回答、而那次投递又失败了，它会回到待发并在之后送出：撤回只改待发和发送中的行，投递失败的更新不看当前状态。
-- `aoa` 只能在仓库根目录用 `bun run aoa` 运行，配置默认找当前目录；从别的项目里调用要自己带 `--config`。
 - macOS 通知最多等 5 秒，超时算发送失败，只记日志。
 
 还要你来做的：给出模型的 key 和分类器配置，定下跑在哪台机器上，然后才是在真实仓库上跑通和两周自用。要接 GitHub 时再建 App 并装到目标仓库。

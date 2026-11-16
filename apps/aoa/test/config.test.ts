@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { derivePaths, validateConfig } from "../src/config.ts";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { derivePaths, findConfig, validateConfig } from "../src/config.ts";
 
 const valid = {
   dataDir: "~/.aoa",
@@ -76,5 +79,39 @@ describe("local mode", () => {
       repo: "/home/k/code/widgets",
       privateKey: null,
     });
+  });
+});
+
+describe("where the config is found", () => {
+  const dirs = () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "aoa-config-")));
+    const cwd = join(root, "project");
+    const home = join(root, "home");
+    mkdirSync(cwd);
+    mkdirSync(join(home, ".aoa"), { recursive: true });
+    return { root, cwd, home, local: join(cwd, "aoa.config.ts"), global: join(home, ".aoa", "aoa.config.ts") };
+  };
+
+  test("the current directory's config wins over the one in ~/.aoa, and --config over both", () => {
+    const d = dirs();
+    writeFileSync(d.local, "");
+    writeFileSync(d.global, "");
+    expect(findConfig(undefined, d.cwd, d.home)).toBe(d.local);
+    expect(findConfig("other/x.ts", d.cwd, d.home)).toBe(join(d.cwd, "other", "x.ts"));
+    rmSync(d.root, { recursive: true });
+  });
+
+  test("from a directory with no config, the one in ~/.aoa is used", () => {
+    const d = dirs();
+    writeFileSync(d.global, "");
+    expect(findConfig(undefined, d.cwd, d.home)).toBe(d.global);
+    rmSync(d.root, { recursive: true });
+  });
+
+  test("with no config anywhere the error names both places", () => {
+    const d = dirs();
+    expect(() => findConfig(undefined, d.cwd, d.home)).toThrow(d.local);
+    expect(() => findConfig(undefined, d.cwd, d.home)).toThrow(d.global);
+    rmSync(d.root, { recursive: true });
   });
 });

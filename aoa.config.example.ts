@@ -1,8 +1,8 @@
-// Copy to aoa.config.ts and fill in. Secrets stay out of this file: the model API key is read from the
-// environment variable named in apiKeyEnv, and the GitHub App key (if you use GitHub) from privateKeyPath.
-import { defineAgent } from "./apps/aoa/src/index.ts";
-
-export default defineAgent({
+// Copy to ~/.aoa/aoa.config.ts (used from any directory) or to aoa.config.ts in the directory you run aoa from,
+// and fill in. Secrets stay out of this file: the model API key is read from the environment variable named in
+// apiKeyEnv, and the GitHub App key (if you use GitHub) from privateKeyPath.
+// The file's default export is a plain object, so it needs no import and can live outside this repository.
+export default {
   dataDir: "~/.aoa",
   repo: { path: "~/code/your-repo", base: "main" },
   model: { provider: "anthropic", modelId: "your-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
@@ -19,4 +19,4 @@ export default defineAgent({
   //   installationId: 12345678,
   //   privateKeyPath: "~/.aoa/github-app.pem",
   // },
-});
+};
