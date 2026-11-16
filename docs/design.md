@@ -334,6 +334,16 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 记忆文件的全文也在快照里：最新改动的文件先占额度，每个文件最多 64 KB、总共最多 512 KB，超出的只带开头并标 `truncated`，截断点退回到完整字符。不是合法 UTF-8 的文件不带文本，只标 `binary`；只检查读到的那部分。记忆写入会在工具日志里提交，WAL 的监视因此看得到，不用另外盯记忆目录。页面上每个文件是一个 `<details>`，按路径复用，所以推送更新后用户展开的文件保持展开，滚动位置也不变。
 - 记忆按一次运行什么时候能看到它分组，和 §7 一致：每次运行都加载的 `instructions.md`、`index.md`（缺了就明说，`instructions.md` 由你来写）；只进自己任务的 `progress/<session>.md`，标上那个任务现在的状态；需要时才读的 `notes/`；不属于这套布局的其他文件单列。「已经告诉过你的」不是文件，是 worker 每次运行从 outbox 取的最近 5 条，页面用同一个读法列出来。
 
+### 主会话接入：`aoa mcp`
+
+聊天里的 agent（Claude Code、Codex、Cursor 等）原来要靠 shell 敲 `aoa` 命令当入口；`aoa mcp` 让会说 MCP 的 harness 不经 shell 直接驱动 aoa。用户注册一次：`claude mcp add aoa -- aoa mcp`。
+
+- 走 stdio，由 harness 启动和关闭，不开端口。它和其他命令一样按 `--config`、当前目录、`~/.aoa` 找配置，打开同一个库，调用 CLI 调用的同一组函数；不需要 `serve` 在跑，自己也不跑 worker，只往 inbox 追加和读库。stdout 只走协议帧，日志写 stderr。SDK 的 stdio 传输察觉不到客户端断开，所以 stdin 结束时进程退出。
+- 五个工具，各对应一个 CLI 命令：`send`（`text`、`agent?`、`branch?`、`to?`，对应 `send` / `send --to`）、`messages`（`since?`、`wait?`，0–120 秒，对应 `messages --json --wait`）、`status`（对应 `status --json`）、`close`（`thread`、`outcome`，只在本地模式）、`answer`（`callId` 或前缀、`verdict`、`text?`）。结果是 JSON 文本；出错时是 MCP 的工具错误，消息和 CLI 打印的相同。`to` 和 `agent`/`branch` 同时给时报错，意思和 CLI 的那句一样，只是把参数名从 `--to` 换成 `to`。`messages` 的说明让模型拿返回的游标再调一次来接着等，单次最多等两分钟，免得 harness 的调用超时。
+- `send` 带 `to` 时，如果那个任务在等审批（延后的调用不是 `ask_user` 的提问），直接拒绝并指向 `answer`，什么都不追加。原因：内核会把等审批的 thread 上来的 `/approve` 当成批准，答复就有了两条路；拒掉以后答复只有 `answer` 一条。检查和追加在同一个事务里，`serve` 不会在两者之间把 session 停下来。为此内核多导出了 `appendInTx`（只是导出，行为不变）。在等 `ask_user` 提问的任务上，文字照旧就是答案。CLI 的 `send --to` 行为不变。
+- `answer` 写下的 `approval_answer` 在 payload 里多一个 `via: "mcp"`；CLI 和 thread 上的回复不带它，所以库里分得清答复从哪来。这是 `AnswerPayload` 上新增的可选字段，`answerDeferred` 多一个可选参数，规范里没有，这里加上，表结构不变。
+- 安全只靠两样：`answer` 的工具说明写明只有在用户在对话里对那个调用明确说了同意或拒绝之后才能调用；以及 harness 自己对工具调用的确认。这和让 shell 去跑 `aoa answer` 是同一种信任，没有另加机制。
+
 ## 13. 没验证的
 
 下面这些只能接上真实服务才知道，现在都只是按文档写的：

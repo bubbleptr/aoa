@@ -73,6 +73,14 @@ aoa answer <调用 id> approve|deny [理由]  # 消息是审批请求时
 
 一条约定：审批是留给你的，聊天 agent 只转述请求，得到你明确同意后才运行 `aoa answer`。
 
+会说 MCP 的 harness 不用敲命令：`aoa mcp` 是一个 stdio 上的 MCP 服务器，把 `send`、`messages`、`status`、`close`、`answer` 作为工具提供，读写的是同一份配置和库，不需要 `serve` 在跑。在 Claude Code 里注册一次：
+
+```bash
+claude mcp add aoa -- aoa mcp
+```
+
+通过 MCP 时，`send` 不能拿来回答等审批的任务，只能用 `answer`；同样只有你明确同意或拒绝之后，聊天 agent 才能调用它。
+
 ## 接 GitHub（可选）
 
 在配置里加上 `github` 一段（示例在 `aoa.config.example.ts` 里），并建一个 GitHub App 装到目标仓库，权限给 Issues、Pull requests、Contents 的读写，私钥文件放在本机。之后 `send` 会开一个带标签的 issue，agent 推送分支、开 PR，并在 issue 上评论；在评论里回复 `/approve` 或 `/deny 理由`。PR 合并或关闭就结束任务，`aoa close` 不可用；`status --refresh` 先去 GitHub 查 PR 状态。
