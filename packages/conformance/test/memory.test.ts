@@ -49,6 +49,23 @@ describe("dirMemory", () => {
     expect(readFileSync(join(outside, "secret.txt"), "utf8")).toBe("outside");
   });
 
+  test("opening a root that is removed at once leaves no rejected promise behind", async () => {
+    const rejected: unknown[] = [];
+    const onUnhandled = (err: unknown) => rejected.push(err);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      for (let i = 0; i < 500; i++) {
+        const dir = mkdtempSync(join(tmpdir(), "aoa-memory-"));
+        dirMemory(dir);
+        rmSync(dir, { recursive: true, force: true });
+      }
+      await Bun.sleep(100);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+    expect(rejected).toEqual([]);
+  });
+
   test("a symlink that stays inside the root is followed", async () => {
     mkdirSync(join(root, "notes"));
     writeFileSync(join(root, "notes", "a.md"), "inside");
