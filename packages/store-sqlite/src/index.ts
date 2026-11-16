@@ -30,7 +30,23 @@ export type PullStates = {
   set(sessionId: string, s: PullState): void;
 };
 
-export type SqliteStore = Store & { pulls: PullStates; close(): void };
+/** How the user says a local-mode session's branch ended (`aoa close`). `applied` once serve has closed the session for it. */
+export type DeclaredResult = { result: "merged" | "discarded"; declaredAt: number; applied: boolean };
+
+export type DeclaredResults = {
+  get(sessionId: string): DeclaredResult | null;
+  /** Records or replaces the declaration, not yet applied. */
+  declare(sessionId: string, result: DeclaredResult["result"], at: number): void;
+  markApplied(sessionId: string): void;
+};
+
+export type SqliteStore = Store & {
+  pulls: PullStates;
+  results: DeclaredResults;
+  /** When the session's first message of kind `message` was delivered; null if none was. */
+  firstMessageSentAt(sessionId: string): number | null;
+  close(): void;
+};
 
 /** Opens (and migrates) a store on a file path or `:memory:`. */
 export function sqliteStore(path: string): SqliteStore {
@@ -47,6 +63,17 @@ export function sqliteStore(path: string): SqliteStore {
     `INSERT INTO pull_states (session_id, number, state, checked_at) VALUES ($session, $number, $state, $at)
      ON CONFLICT (session_id) DO UPDATE SET number = excluded.number, state = excluded.state, checked_at = excluded.checked_at`,
   );
+  const getResult = db.query<{ result: DeclaredResult["result"]; declared_at: number; applied: number }, [string]>(
+    "SELECT result, declared_at, applied FROM declared_results WHERE session_id = ?",
+  );
+  const declareResult = db.query(
+    `INSERT INTO declared_results (session_id, result, declared_at, applied) VALUES ($session, $result, $at, 0)
+     ON CONFLICT (session_id) DO UPDATE SET result = excluded.result, declared_at = excluded.declared_at, applied = 0`,
+  );
+  const applyResult = db.query("UPDATE declared_results SET applied = 1 WHERE session_id = ?");
+  const firstSent = db.query<{ at: number | null }, [string]>(
+    "SELECT MIN(sent_at) AS at FROM outbox WHERE session_id = ? AND kind = 'message' AND status = 'sent'",
+  );
   return {
     tx: (fn) => db.transaction(() => fn(t)).immediate(),
     pulls: {
@@ -58,6 +85,19 @@ export function sqliteStore(path: string): SqliteStore {
         setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt });
       },
     },
+    results: {
+      get(sessionId) {
+        const r = getResult.get(sessionId);
+        return r ? { result: r.result, declaredAt: r.declared_at, applied: r.applied === 1 } : null;
+      },
+      declare(sessionId, result, at) {
+        declareResult.run({ session: sessionId, result, at });
+      },
+      markApplied(sessionId) {
+        applyResult.run(sessionId);
+      },
+    },
+    firstMessageSentAt: (sessionId) => firstSent.get(sessionId)?.at ?? null,
     close: () => db.close(),
   };
 }

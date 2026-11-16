@@ -153,6 +153,14 @@ const migrations: string[] = [
     checked_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE declared_results (
+    session_id  TEXT PRIMARY KEY REFERENCES sessions (id),
+    result      TEXT NOT NULL CHECK (result IN ('merged', 'discarded')),
+    declared_at INTEGER NOT NULL,
+    applied     INTEGER NOT NULL DEFAULT 0
+  );
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
