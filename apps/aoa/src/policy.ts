@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { defaultRules, type PolicyConfig, type Risk, type Rule } from "@aoa/kernel";
+import { defaultRules, gitInvocations, type PolicyConfig, type Risk, type Rule } from "@aoa/kernel";
 
 const LOW = [
   "read",
@@ -64,12 +64,29 @@ export const outsideWorktree: Rule = {
   },
 };
 
-/** The agent's policy: the built-in risk table under the config's overrides, the worktree rule, then the kernel's rules. */
-export function agentPolicy(o: { risk?: Record<string, Risk>; classify?: PolicyConfig["classify"] }): PolicyConfig {
+/**
+ * Local mode: the branch stays on this machine until the user merges it, so any `git push` in a bash call waits
+ * for them. A convention, not isolation: the agent's shell is the user's, and text matching can be evaded.
+ */
+export const deferPush: Rule = {
+  name: "local-push",
+  match(call) {
+    if (call.tool !== "bash" || typeof call.args !== "object" || call.args === null) return null;
+    const command = (call.args as { command?: unknown }).command;
+    return typeof command === "string" && gitInvocations(command).some((g) => g.sub === "push") ? "defer" : null;
+  },
+};
+
+/**
+ * The agent's policy: the built-in risk table under the config's overrides, the worktree rule, the kernel's rules,
+ * then the mode's `rules`. Those come after the kernel's so its blocks (a force push, sudo) stay blocks instead of
+ * becoming questions; they still come before the risk tier, so the classifier never sees what they defer.
+ */
+export function agentPolicy(o: { risk?: Record<string, Risk>; classify?: PolicyConfig["classify"]; rules?: Rule[] }): PolicyConfig {
   const risk: Record<string, Risk> = {
     ...Object.fromEntries(LOW.map((t) => [t, "low" as const])),
     ...Object.fromEntries(MEDIUM.map((t) => [t, "medium" as const])),
     ...o.risk,
   };
-  return { risk, rules: [outsideWorktree, ...defaultRules], ...(o.classify ? { classify: o.classify } : {}) };
+  return { risk, rules: [outsideWorktree, ...defaultRules, ...(o.rules ?? [])], ...(o.classify ? { classify: o.classify } : {}) };
 }

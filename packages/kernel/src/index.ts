@@ -33,6 +33,7 @@ export { ChannelPoller, POLL_INTERVAL_MS, type ChannelPollerOptions } from "./po
 export {
   decide,
   defaultRules,
+  gitInvocations,
   type PolicyConfig,
   type PolicyContext,
   type Risk,

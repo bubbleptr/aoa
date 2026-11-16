@@ -74,7 +74,8 @@ type GitInvocation = { globals: string[]; sub: string | undefined; args: string[
 
 const GIT_OPTIONS_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--exec-path"]);
 
-function gitInvocations(command: string): GitInvocation[] {
+/** Every `git` invocation in a bash command, with its global options, subcommand and arguments. */
+export function gitInvocations(command: string): GitInvocation[] {
   const found: GitInvocation[] = [];
   for (const words of simpleCommands(command)) {
     words.forEach((word, i) => {

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decide } from "@aoa/kernel";
-import { agentPolicy } from "../src/policy.ts";
+import { agentPolicy, deferPush } from "../src/policy.ts";
 
 // Through tmpdir's symlink (/var -> /private/var on macOS), as a configured path may arrive.
 const root = mkdtempSync(join(tmpdir(), "aoa-policy-"));
@@ -57,5 +57,30 @@ describe("risk tiers", () => {
   test("the config overrides a tool's tier", async () => {
     const strict = agentPolicy({ risk: { github_comment: "high" } });
     expect((await decide(strict, { tool: "github_comment", args: {} }, ctx)).decision).toBe("defer");
+  });
+});
+
+describe("local mode: no pushing without the user", () => {
+  const local = agentPolicy({ classify: async () => "allow", rules: [deferPush] });
+
+  test.each(["git push", "git add -A && git commit -qm x && git push origin aoa/x", "git -C ../repo push", "echo ok; /usr/bin/git push -u origin HEAD"])(
+    "%s is deferred even though the classifier would allow it",
+    async (command) => {
+      expect(await decide(local, { tool: "bash", args: { command } }, ctx)).toEqual({ decision: "defer", basis: "rule:local-push" });
+    },
+  );
+
+  test("the kernel's blocks still come first: a force push is blocked, not offered for approval", async () => {
+    expect(await decide(local, { tool: "bash", args: { command: "git push --force origin main" } }, ctx)).toEqual({
+      decision: "block",
+      basis: "rule:no-force-push",
+    });
+  });
+
+  test("other git commands go to the classifier as before", async () => {
+    expect(await decide(local, { tool: "bash", args: { command: "git commit -qm 'push the button'" } }, ctx)).toEqual({
+      decision: "allow",
+      basis: "classifier:allow",
+    });
   });
 });
