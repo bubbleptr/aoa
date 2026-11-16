@@ -113,7 +113,7 @@ export class Connection {
         continue;
       }
       if (m.method !== undefined && m.id !== undefined) void this.answer(m.id, m.method, m.params);
-      else if (m.method !== undefined) this.handlers.notification(m.method, m.params);
+      else if (m.method !== undefined) this.notified(m.method, m.params);
       else if (m.id !== undefined) {
         const w = this.waiting.get(m.id);
         this.waiting.delete(m.id);
@@ -127,13 +127,28 @@ export class Connection {
     throw error;
   }
 
-  private async answer(id: RequestId, method: string, params: unknown): Promise<void> {
+  /** A notification nobody can handle is dropped; it must not stop the reader. */
+  private notified(method: string, params: unknown): void {
     try {
-      this.send({ id, result: await this.handlers.request(method, params) });
+      this.handlers.notification(method, params);
+    } catch {}
+  }
+
+  /**
+   * Nothing here may reject: it runs detached from the reader, in a process that serves every agent. A reply that
+   * cannot be written means the process is gone, which `closed` reports.
+   */
+  private async answer(id: RequestId, method: string, params: unknown): Promise<void> {
+    let reply: object;
+    try {
+      reply = { id, result: await this.handlers.request(method, params) };
     } catch (err) {
       const code = err instanceof RpcError ? err.code : -32603;
-      this.send({ id, error: { code, message: err instanceof Error ? err.message : String(err) } });
+      reply = { id, error: { code, message: err instanceof Error ? err.message : String(err) } };
     }
-    this.handlers.replied();
+    try {
+      this.send(reply);
+      this.handlers.replied();
+    } catch {}
   }
 }

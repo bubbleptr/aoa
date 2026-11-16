@@ -23,6 +23,8 @@ import type {
   ToolRequestUserInputResponse,
   Turn,
   TurnCompletedNotification,
+  TurnInterruptParams,
+  TurnStartParams,
   TurnStartResponse,
 } from "./protocol.ts";
 
@@ -38,7 +40,7 @@ export type CodexRuntimeConfig = {
 };
 
 /** The kernel's names for what Codex asks permission for; a grant matches on the name and the args. */
-export const HARNESS_TOOLS = {
+const HARNESS_TOOLS = {
   command: "codex_command",
   fileChange: "codex_file_change",
   permissions: "codex_permissions",
@@ -125,10 +127,13 @@ class CodexRun {
         : await conn.request<ThreadResponse>("thread/resume", { threadId: ref, ...common } satisfies ThreadResumeParams);
     this.threadId = thread.id;
 
-    // A claim counts as an attempt, so a second one means an earlier attempt at these events failed part way.
-    const retry = this.input.events.some((e) => e.attempts > 1);
+    // `attempts` counts failed runs, so a non-zero one means an earlier attempt at these events stopped part way.
+    const retry = this.input.events.some((e) => e.attempts > 0);
     const text = renderUserMessage(this.input, retry, renderCodexAnswer);
-    await conn.request<TurnStartResponse>("turn/start", { threadId: thread.id, input: [{ type: "text", text, text_elements: [] }] });
+    await conn.request<TurnStartResponse>("turn/start", {
+      threadId: thread.id,
+      input: [{ type: "text", text, text_elements: [] }],
+    } satisfies TurnStartParams);
     const turn = await Promise.race([this.turnEnd, conn.closed]);
 
     const sessionRef = thread.id;
@@ -174,13 +179,17 @@ class CodexRun {
           ...(p.kind === "writeStdin" ? { kind: p.kind } : {}),
           ...(p.additionalPermissions ? { additionalPermissions: p.additionalPermissions } : {}),
           ...(p.networkApprovalContext ? { networkApprovalContext: p.networkApprovalContext } : {}),
+          // Nothing names the action, so it must not match a grant for some other unnamed one.
+          ...(!p.command && !p.networkApprovalContext ? { item: p.itemId } : {}),
         };
         const key = p.approvalId ? `${p.itemId}:${p.approvalId}` : p.itemId;
         return { decision: decision(await this.gate(p.turnId, key, HARNESS_TOOLS.command, args, p.reason)) };
       }
       case "item/fileChange/requestApproval": {
         const p = params as FileChangeRequestApprovalParams;
-        const args = { changes: this.changes.get(p.itemId) ?? [], ...(p.grantRoot ? { grantRoot: p.grantRoot } : {}) };
+        const changes = this.changes.get(p.itemId);
+        // Without its changes the request names no action, so it must not match a grant for another one.
+        const args = { ...(changes ? { changes } : { item: p.itemId }), ...(p.grantRoot ? { grantRoot: p.grantRoot } : {}) };
         return { decision: decision(await this.gate(p.turnId, p.itemId, HARNESS_TOOLS.fileChange, args, p.reason)) };
       }
       case "item/permissions/requestApproval": {
@@ -269,7 +278,7 @@ class CodexRun {
   replied(): void {
     if (this.interruptTurn === null || this.interrupting || this.finished) return;
     this.interrupting = true;
-    this.conn.request("turn/interrupt", { threadId: this.threadId, turnId: this.interruptTurn }).catch(() => {});
+    this.conn.request("turn/interrupt", { threadId: this.threadId!, turnId: this.interruptTurn } satisfies TurnInterruptParams).catch(() => {});
     this.grace = setTimeout(() => this.ended(null), INTERRUPT_GRACE_MS);
   }
 }

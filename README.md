@@ -56,7 +56,7 @@ agent 可以写 `runtime: "codex"`（顶层或某个具名 agent），这时每�
 
 ```ts
 agents: {
-  coder: { runtime: "codex", model: "gpt-5.5" },
+  coder: { runtime: "codex", model: "your-codex-model-id" },
 },
 ```
 

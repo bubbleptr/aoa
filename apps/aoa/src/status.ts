@@ -176,7 +176,7 @@ function table(header: string[], rows: string[][]): string[] {
   return [header, ...rows].map((r) => r.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd());
 }
 
-/** With `agents`, every row names its agent; a single agent's report reads as it always has. */
+/** With `agents`, every row names its agent; a single agent's rows read as they always have. */
 export function renderStatus(r: StatusReport, o: { agents: boolean } = { agents: false }): string {
   const lines: string[] = [];
   const by = (agent: string) => (o.agents ? `${agent}: ` : "");

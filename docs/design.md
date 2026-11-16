@@ -87,6 +87,7 @@ interface Channel {
 | `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
 | `packages/runtime-pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
+| `packages/runtime-codex` | Codex app-server 适配器：Codex 用自己的工具，aoa 转达它的询问（§12） |
 | `packages/channel-local` | 本地通道：消息写文件，发桌面通知 |
 | `packages/channel-github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
@@ -381,8 +382,8 @@ Codex 的请求怎么对应到 aoa：
 
 | Codex 发来的 | aoa 怎么处理 |
 |---|---|
-| `item/commandExecution/requestApproval` | `ask`，工具名 `codex_command`，参数 `{command, cwd}`，另有 `kind: "writeStdin"`、`additionalPermissions`、`networkApprovalContext` 时一并放进去。`allow` 回 `accept`，`defer` 回 `decline` |
-| `item/fileChange/requestApproval` | `ask`，工具名 `codex_file_change`，参数是这个 item 的改动（`changes`，来自 `item/started`、`item/completed` 和 `item/fileChange/patchUpdated` 通知，请求本身不带 diff），有 `grantRoot` 时带上。回复同上 |
+| `item/commandExecution/requestApproval` | `ask`，工具名 `codex_command`，参数 `{command, cwd}`，另有 `kind: "writeStdin"`、`additionalPermissions`、`networkApprovalContext` 时一并放进去；既没有命令也没有网络上下文时放 item id，理由同下。`allow` 回 `accept`，`defer` 回 `decline` |
+| `item/fileChange/requestApproval` | `ask`，工具名 `codex_file_change`，参数是这个 item 的改动（`changes`，来自 `item/started`、`item/completed` 和 `item/fileChange/patchUpdated` 通知，请求本身不带 diff），有 `grantRoot` 时带上；没收到改动时参数里放 item id，这样它不会和别的许可相等。回复同上 |
 | `item/permissions/requestApproval` | `ask`，工具名 `codex_permissions`，参数 `{permissions, cwd}`。这个请求的回复不是 accept/decline：`allow` 回所请求的权限、`scope: "turn"`，`defer` 回空权限 |
 | `item/tool/call`（动态工具） | 对应的内核 `Tool.invoke`，结果作为 `contentItems` 返回；`error` 是 `success: false` |
 | `item/tool/requestUserInput` | 每个问题都答一句「这里没人能回答，需要用户决定就调 `ask_user`」 |
@@ -398,7 +399,7 @@ Codex 的请求怎么对应到 aoa：
 和设计不完全一样、或者没做到的：
 
 - 失败重试的 run 是新的 turn，Codex 给的 id 也是新的；如果失败那次已经用掉了许可，重试时会再问你一次（安全，但和 pi 按 transcript 重放 id 不同）。
-- run 抛错时内核不记 `sessionRef`，所以重试会开一个新线程，前一次 turn 的上下文丢了；重试提示仍按「事件被认领过不止一次」加上。
+- run 抛错时内核不记 `sessionRef`，所以重试会开一个新线程，前一次 turn 的上下文丢了；事件的 `attempts` 不为 0（之前有一次 run 失败过）时，输入里照 pi 的样子加上重试提示。
 - 动态工具只在 `thread/start` 时提供，`thread/resume` 的参数里没有这一项。Codex 把它们存在线程里（二进制里有 `thread_dynamic_tools` 表），恢复时沿用；这一点只有真机冒烟测试能验证。
 - 如果配置里某个 `apiKeyEnv` 和 Codex 用的是同一个环境变量，aoa 启动时会把它从环境里删掉，Codex 子进程也就拿不到。
 

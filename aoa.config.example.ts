@@ -17,7 +17,7 @@ export default {
   //   reviewer: { role: "review", instructions: "Focus on missing tests." },
   //   // Runs on the local `codex app-server` with Codex's own tools, login and approval settings; aoa relays what
   //   // Codex asks you and still decides its own tools (memory, notify, ask_user). model is optional: a Codex model id.
-  //   coder: { runtime: "codex", model: "gpt-5.5" },
+  //   coder: { runtime: "codex", model: "your-codex-model-id" },
   // },
   // Without a github block aoa runs in local mode. Add one to take tasks from issues and open pull requests:
   // github: {
