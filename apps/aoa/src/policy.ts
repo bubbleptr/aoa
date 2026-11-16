@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { defaultRules, gitInvocations, type PolicyConfig, type Risk, type Rule } from "@aoa/kernel";
+import { BRANCH_LIST_FLAGS, commandOf, defaultRules, gitInvocations, type PolicyConfig, type Risk, type Rule } from "@aoa/kernel";
 
 const LOW = [
   "read",
@@ -19,6 +19,7 @@ const LOW = [
   "follow",
   "github_comment",
   "github_open_pr",
+  "send_to",
 ];
 const MEDIUM = ["bash", "git_push"];
 
@@ -71,22 +72,51 @@ export const outsideWorktree: Rule = {
 export const deferPush: Rule = {
   name: "local-push",
   match(call) {
-    if (call.tool !== "bash" || typeof call.args !== "object" || call.args === null) return null;
-    const command = (call.args as { command?: unknown }).command;
-    return typeof command === "string" && gitInvocations(command).some((g) => g.sub === "push") ? "defer" : null;
+    const command = commandOf(call);
+    return command !== null && gitInvocations(command).some((g) => g.sub === "push") ? "defer" : null;
+  },
+};
+
+/** git subcommands that move a ref or rewrite the work tree's history. `merge-tree` and `restore` are not among them. */
+const HISTORY_CHANGES = new Set(["commit", "push", "merge", "rebase", "reset", "cherry-pick", "revert", "tag", "am", "apply", "stash", "checkout", "switch", "worktree"]);
+
+/**
+ * A review agent reads and runs, but never changes refs or history: those git calls are blocked, not deferred, so the
+ * user is never asked to let a reviewer commit. A convention, not isolation, like `deferPush`.
+ */
+export const reviewReadOnly: Rule = {
+  name: "review-read-only",
+  match(call) {
+    const command = commandOf(call);
+    if (command === null) return null;
+    const changes = gitInvocations(command).some(
+      (g) => g.sub !== undefined && (HISTORY_CHANGES.has(g.sub) || (g.sub === "branch" && !g.args.every((a) => BRANCH_LIST_FLAGS.has(a)))),
+    );
+    return changes ? "block" : null;
   },
 };
 
 /**
- * The agent's policy: the built-in risk table under the config's overrides, the worktree rule, the kernel's rules,
- * then the mode's `rules`. Those come after the kernel's so its blocks (a force push, sudo) stay blocks instead of
- * becoming questions; they still come before the risk tier, so the classifier never sees what they defer.
+ * The agent's policy: the built-in risk table under the config's overrides, the worktree rule, the role's `ahead`
+ * rules, the kernel's rules, then the mode's `rules`. The role's rules come first so their blocks win over the
+ * kernel's deferrals (a commit naming a path under `~/.aoa` would otherwise become a question). The mode's come after the kernel's so its blocks (a force
+ * push, sudo) stay blocks instead of becoming questions; they still come before the risk tier, so the classifier
+ * never sees what they defer.
  */
-export function agentPolicy(o: { risk?: Record<string, Risk>; classify?: PolicyConfig["classify"]; rules?: Rule[] }): PolicyConfig {
+export function agentPolicy(o: {
+  risk?: Record<string, Risk>;
+  classify?: PolicyConfig["classify"];
+  ahead?: Rule[];
+  rules?: Rule[];
+}): PolicyConfig {
   const risk: Record<string, Risk> = {
     ...Object.fromEntries(LOW.map((t) => [t, "low" as const])),
     ...Object.fromEntries(MEDIUM.map((t) => [t, "medium" as const])),
     ...o.risk,
   };
-  return { risk, rules: [outsideWorktree, ...defaultRules, ...(o.rules ?? [])], ...(o.classify ? { classify: o.classify } : {}) };
+  return {
+    risk,
+    rules: [outsideWorktree, ...(o.ahead ?? []), ...defaultRules, ...(o.rules ?? [])],
+    ...(o.classify ? { classify: o.classify } : {}),
+  };
 }

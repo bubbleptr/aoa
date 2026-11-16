@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runGitWithBun } from "@aoa/channel-github";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -16,7 +17,7 @@ afterEach(async () => {
 
 const REVIEWER: Record<string, AgentInput> = { reviewer: { role: "review" } };
 
-async function world(agents: Record<string, AgentInput> | undefined = REVIEWER): Promise<World> {
+async function world(agents: Record<string, AgentInput> | null = REVIEWER): Promise<World> {
   const w = new World({ local: true, ...(agents ? { agents } : {}) });
   cleanup.push(() => w.dispose());
   return w.start();
@@ -74,7 +75,7 @@ describe("named agents", () => {
   });
 
   test("with one agent there is no send_to", async () => {
-    const w = await world(undefined);
+    const w = await world(null);
     w.script([say("Nothing to do.")]);
     await w.cli("send", "Look around.");
     await w.drain();
@@ -211,9 +212,8 @@ describe("named agents", () => {
     await w.cli("send", "Say hi.");
     await w.drain();
 
-    let ran = "";
     w.script(
-      [call("bash", { command: "echo deploy" }), (m) => ((ran = lastResult(m)), call("notify", { body: "Reviewer done." })), say("Done.")],
+      [call("bash", { command: "echo deployed >> deploy.log" }), call("notify", { body: "Reviewer done." }), say("Done.")],
       "reviewer",
     );
     const reviewThread = (await w.cli("send", "--agent", "reviewer", "Run the deploy check.")).out.trim();
@@ -236,7 +236,7 @@ describe("named agents", () => {
     expect((await w.cli("answer", callId.slice(0, 8), "approve")).code).toBe(0);
     expect(w.events("reviewer").at(-1)).toMatchObject({ source: "approval_answer" });
     await w.drain("reviewer");
-    expect(ran).toContain("deploy");
+    expect(readFileSync(join(w.sessions("reviewer")[0]!.workdir!, "deploy.log"), "utf8")).toBe("deployed\n");
 
     const later = JSON.parse((await w.cli("messages", "--json", "--since", listing.cursor)).out) as Listing;
     expect(later.messages.map((m) => [m.agent, m.body])).toEqual([["reviewer", "Reviewer done."]]);

@@ -86,6 +86,7 @@ describe("local mode", () => {
     const report = await status(w);
     expect(report.sessions).toEqual([
       {
+        agent: "default",
         session: session.id,
         thread,
         state: "open",

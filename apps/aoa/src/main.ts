@@ -14,7 +14,11 @@ Usage:
   aoa serve [--port <n>]                      Run the agent until interrupted (Ctrl-C), with the page of aoa web
                                               on http://127.0.0.1:<port>; it prints the address.
   aoa send "<text>"                           Open a task, picked up by serve (with GitHub: an issue with the text).
-  aoa send --to <thread-or-prefix> "<text>"   Add to an existing task; on one waiting for an answer, the text answers it.
+  aoa send --agent <name> [--branch <branch>] "<text>"
+                                              Open a task for a named agent; --branch names the branch a review
+                                              agent reviews.
+  aoa send --to <thread-or-prefix> "<text>"   Add to an existing task of any agent; on one waiting for an answer,
+                                              the text answers it.
   aoa answer <call-id-or-prefix> approve|deny [text...]
                                               Answer a call that waits for you.
   aoa close <thread-or-session-prefix> merged|discarded
@@ -31,6 +35,8 @@ Usage:
 Options:
   --config <path>   The config file (default: ./aoa.config.ts, then ~/.aoa/aoa.config.ts).
   --to <thread>     For send: the task to add to.
+  --agent <name>    For send: the named agent (config agents) that gets the task; without it, the default agent.
+  --branch <name>   For send --agent: the branch a review agent reviews.
   --since <id>      For messages: the cursor a previous aoa messages printed.
   --wait <seconds>  For messages: how long to wait when there is nothing new.
   --port <n>        For serve and web: the page's port on 127.0.0.1 (default ${DEFAULT_WEB_PORT}; 0 picks a free one).
@@ -52,6 +58,8 @@ type Parsed = {
   args: string[];
   config: string | undefined;
   to: string | undefined;
+  agent: string | undefined;
+  branch: string | undefined;
   since: string | undefined;
   wait: number | undefined;
   port: number | undefined;
@@ -61,7 +69,20 @@ type Parsed = {
 };
 
 function parse(argv: string[]): Parsed {
-  const p: Parsed = { command: undefined, args: [], config: undefined, to: undefined, since: undefined, wait: undefined, port: undefined, json: false, refresh: false, help: false };
+  const p: Parsed = {
+    command: undefined,
+    args: [],
+    config: undefined,
+    to: undefined,
+    agent: undefined,
+    branch: undefined,
+    since: undefined,
+    wait: undefined,
+    port: undefined,
+    json: false,
+    refresh: false,
+    help: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--config") {
@@ -74,6 +95,15 @@ function parse(argv: string[]): Parsed {
       if (value === undefined) throw new Error("--to needs a thread");
       p.to = value;
     } else if (a.startsWith("--to=")) p.to = a.slice("--to=".length);
+    else if (a === "--agent") {
+      const value = argv[++i];
+      if (value === undefined) throw new Error("--agent needs an agent name");
+      p.agent = value;
+    } else if (a === "--branch") {
+      const value = argv[++i];
+      if (value === undefined) throw new Error("--branch needs a branch name");
+      p.branch = value;
+    }
     else if (a === "--since") {
       const value = argv[++i];
       if (value === undefined) throw new Error("--since needs a message id");
@@ -120,8 +150,13 @@ export async function main(argv: string[], io: Io): Promise<number> {
     return 2;
   }
 
-  if (p.to !== undefined && p.command !== "send") {
-    io.err(`--to is only for send.\n\n${HELP}`);
+  if ((p.to !== undefined || p.agent !== undefined || p.branch !== undefined) && p.command !== "send") {
+    io.err(`--to, --agent and --branch are only for send.\n\n${HELP}`);
+    return 2;
+  }
+
+  if (p.to !== undefined && (p.agent !== undefined || p.branch !== undefined)) {
+    io.err(`--to finds the task in any agent's inbox; it takes neither --agent nor --branch.\n\n${HELP}`);
     return 2;
   }
 
@@ -141,7 +176,8 @@ export async function main(argv: string[], io: Io): Promise<number> {
     if (p.command === "serve") {
       validateForServe(config);
       const env = io.seams?.env ?? process.env;
-      for (const m of [config.model, config.classifier]) {
+      const models = [config.model, config.classifier, ...Object.values(config.agents ?? {}).flatMap((a) => [a.model, a.classifier])];
+      for (const m of models) {
         if (m && !env[m.apiKeyEnv]) throw new Error(`The model API key is missing: set the environment variable ${m.apiKeyEnv}.`);
       }
     }
@@ -175,7 +211,11 @@ export async function main(argv: string[], io: Io): Promise<number> {
       }
       case "send": {
         const text = p.args.join(" ");
-        io.out(p.to === undefined ? await send(agent, text) : sendTo(agent, p.to, text));
+        io.out(
+          p.to === undefined
+            ? await send(agent, text, { ...(p.agent === undefined ? {} : { agent: p.agent }), ...(p.branch === undefined ? {} : { branch: p.branch }) })
+            : sendTo(agent, p.to, text),
+        );
         return 0;
       }
       case "close": {
@@ -196,7 +236,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
       }
       case "messages": {
         const listing = await messages(agent, { since: p.since ?? null, waitMs: (p.wait ?? 0) * 1000 });
-        io.out(p.json ? JSON.stringify(listing, null, 2) : renderMessages(listing));
+        io.out(p.json ? JSON.stringify(listing, null, 2) : renderMessages(listing, { agents: agent.agents.length > 1 }));
         return 0;
       }
       default:

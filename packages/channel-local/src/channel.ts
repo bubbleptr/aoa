@@ -15,6 +15,8 @@ export type LocalChannelOptions = {
   file: string;
   notify?: Notifier;
   log?: (line: string) => void;
+  /** With several agents writing to one file, the agent this channel speaks for; named in every entry and notification. */
+  agent?: string;
 };
 
 const NOTIFY_LIMIT = 200;
@@ -32,7 +34,8 @@ export function localChannel(o: LocalChannelOptions): LocalChannel {
       const marker = markerOf(m.dedupeKey);
       // Redelivery after a failure finds its own entry and adds nothing (I-OUT-2).
       if (existsSync(o.file) && readFileSync(o.file, "utf8").includes(marker)) return;
-      const lines = [`## ${new Date(m.createdAt).toISOString()} · ${m.thread ?? "-"} · ${m.kind}`, "", disarm(m.body)];
+      const by = o.agent === undefined ? "" : `${o.agent} · `;
+      const lines = [`## ${new Date(m.createdAt).toISOString()} · ${by}${m.thread ?? "-"} · ${m.kind}`, "", disarm(m.body)];
       if (m.kind === "approval_request" && m.callId !== null) {
         lines.push("", `Answer with \`aoa answer ${m.callId} approve\` or \`aoa answer ${m.callId} deny <reason>\`.`);
       }
@@ -41,7 +44,8 @@ export function localChannel(o: LocalChannelOptions): LocalChannel {
       appendFileSync(o.file, lines.join("\n"));
 
       if (!o.notify) return;
-      const title = m.kind === "approval_request" ? `aoa needs your answer (${m.thread ?? "-"})` : `aoa (${m.thread ?? "-"})`;
+      const who = o.agent === undefined ? "aoa" : `aoa ${o.agent}`;
+      const title = m.kind === "approval_request" ? `${who} needs your answer (${m.thread ?? "-"})` : `${who} (${m.thread ?? "-"})`;
       const body = m.body.length > NOTIFY_LIMIT ? `${m.body.slice(0, NOTIFY_LIMIT - 1)}…` : m.body;
       try {
         await o.notify(title, body);

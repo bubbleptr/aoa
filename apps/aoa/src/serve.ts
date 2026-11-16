@@ -10,12 +10,13 @@ export const SERVE_STARTED = "serve:started";
 export const SERVE_SEEN = "serve:seen";
 
 /**
- * Runs the worker, scheduler, dispatcher and channel poller until `stop` resolves, then stops them and
- * waits for what is in flight. Polls once right away.
+ * Runs every agent's worker, scheduler, dispatcher, channel poller and finished-session check until `stop`
+ * resolves, then stops them and waits for what is in flight. Polls once right away. The heartbeat is one, in the
+ * default agent's inbox.
  */
 export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
   const { clock, log } = agent;
-  agent.log(`serving ${agent.inboxId}`);
+  agent.log(`serving ${agent.agents.map((a) => a.inboxId).join(", ")}`);
   const startedAt = String(clock.now());
   agent.store.tx((t) => t.setCursor(agent.inboxId, SERVE_STARTED, startedAt));
 
@@ -44,11 +45,15 @@ export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
     });
   };
 
-  const loops = [
-    ["worker", agent.worker],
-    ["scheduler", agent.scheduler],
-    ["dispatcher", agent.dispatcher],
-  ] as const;
+  const several = agent.agents.length > 1;
+  const loops = agent.agents.flatMap((a) => {
+    const of = (name: string) => (several ? `${name} of ${a.name}` : name);
+    return [
+      [of("worker"), a.worker],
+      [of("scheduler"), a.scheduler],
+      [of("dispatcher"), a.dispatcher],
+    ] as const;
+  });
   let failed: () => void = () => {};
   const failure = new Promise<void>((resolve) => (failed = resolve));
   const running = loops.map(([name, loop]) =>
@@ -58,13 +63,15 @@ export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
     }),
   );
 
-  if (agent.schedule.polls) every(POLL_INTERVAL_MS, "polling the channel", () => agent.poller.pass());
-  every(NUDGE_INTERVAL_MS, "waking the worker", () => {
+  for (const a of agent.agents) if (a.schedule.polls) every(POLL_INTERVAL_MS, "polling the channel", () => a.poller.pass());
+  every(NUDGE_INTERVAL_MS, "waking the workers", () => {
     agent.store.tx((t) => t.setCursor(agent.inboxId, SERVE_SEEN, String(clock.now())));
-    agent.worker.wake();
-    agent.dispatcher.wake();
+    for (const a of agent.agents) {
+      a.worker.wake();
+      a.dispatcher.wake();
+    }
   });
-  every(agent.schedule.finishCheckMs, "closing finished sessions", () => agent.closeFinished());
+  for (const a of agent.agents) every(a.schedule.finishCheckMs, "closing finished sessions", () => a.closeFinished());
 
   await Promise.race([stop, failure]);
   for (const [, loop] of loops) loop.stop();

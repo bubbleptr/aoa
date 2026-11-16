@@ -49,6 +49,8 @@ export type SqliteStore = Store & {
   firstMessageSentAt(sessionId: string): number | null;
   /** When each delivered message of the inbox was sent, by message id. */
   sentTimes(inboxId: string): Map<string, number>;
+  /** Where each message of the inbox sits in the outbox's one queue, shared by every inbox: later messages higher. */
+  outboxOrder(inboxId: string): Map<string, number>;
   /** SQLite's `data_version`: it changes whenever another connection commits to the database. */
   dataVersion(): number;
   close(): void;
@@ -83,6 +85,7 @@ export function sqliteStore(path: string): SqliteStore {
   const sentTimes = db.query<{ id: string; sent_at: number }, [string]>(
     "SELECT id, sent_at FROM outbox WHERE inbox_id = ? AND sent_at IS NOT NULL",
   );
+  const outboxOrder = db.query<{ id: string; seq: number }, [string]>("SELECT id, seq FROM outbox WHERE inbox_id = ?");
   const dataVersion = db.query<{ data_version: number }, []>("PRAGMA data_version");
   return {
     tx: (fn) => db.transaction(() => fn(t)).immediate(),
@@ -109,6 +112,7 @@ export function sqliteStore(path: string): SqliteStore {
     },
     firstMessageSentAt: (sessionId) => firstSent.get(sessionId)?.at ?? null,
     sentTimes: (inboxId) => new Map(sentTimes.all(inboxId).map((r) => [r.id, r.sent_at])),
+    outboxOrder: (inboxId) => new Map(outboxOrder.all(inboxId).map((r) => [r.id, r.seq])),
     dataVersion: () => dataVersion.get()!.data_version,
     close: () => db.close(),
   };

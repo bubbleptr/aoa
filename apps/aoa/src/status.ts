@@ -37,12 +37,15 @@ export type PullColumns = {
 
 /** Local mode: the session's branch, which the user merges themself and reports with `aoa close`. */
 export type BranchColumns = {
-  branch: string;
+  /** Null for a review agent's session, which works detached and has no branch of its own. */
+  branch: string | null;
   /** From the session's first event to its first delivered message. */
   timeToMessageMs: number | null;
 };
 
 export type SessionStatus = {
+  /** The agent whose inbox holds the session. */
+  agent: string;
   session: string;
   thread: string | null;
   state: "waiting for you" | "open" | "closed";
@@ -90,7 +93,8 @@ export const pullColumns: ModeColumns = (t, store, s, events) => {
   };
 };
 
-export const branchColumns: ModeColumns = (_t, store, s, events) => {
+/** Local mode; `branchOf` names a session's branch, null for an agent whose sessions have none. */
+export const branchColumns = (branchOf: ((sessionId: string) => string) | null): ModeColumns => (_t, store, s, events) => {
   const declared = store.results.get(s.id)?.result;
   const firstMessage = store.firstMessageSentAt(s.id);
   const first = firstEventAt(events);
@@ -98,7 +102,7 @@ export const branchColumns: ModeColumns = (_t, store, s, events) => {
   return {
     outcome: declared === "discarded" ? "discarded" : declared === "merged" ? (reworked ? "reworked" : "merged") : "in progress",
     columns: {
-      branch: `aoa/${s.id.slice(0, 8)}`,
+      branch: branchOf === null ? null : branchOf(s.id),
       timeToMessageMs: firstMessage !== null && first !== null ? firstMessage - first : null,
     },
   };
@@ -106,9 +110,9 @@ export const branchColumns: ModeColumns = (_t, store, s, events) => {
 
 export type StatusReport = {
   sessions: SessionStatus[];
-  pending: { callId: string; session: string; thread: string | null; tool: string; asks: string }[];
-  dead: { id: string; source: string; thread: string | null; attempts: number }[];
-  failed: { id: string; kind: string; thread: string | null; attempts: number }[];
+  pending: { agent: string; callId: string; session: string; thread: string | null; tool: string; asks: string }[];
+  dead: { agent: string; id: string; source: string; thread: string | null; attempts: number }[];
+  failed: { agent: string; id: string; kind: string; thread: string | null; attempts: number }[];
 };
 
 const ASK_LIMIT = 120;
@@ -119,14 +123,15 @@ export function asks(tool: string, kind: "approval" | "question", args: unknown)
   return line.length > ASK_LIMIT ? `${line.slice(0, ASK_LIMIT - 1)}…` : line;
 }
 
-/** Everything `aoa status` shows, read from the store alone. */
-export function collectStatus(store: SqliteStore, inboxId: string, mode: ModeColumns): StatusReport {
+/** Everything `aoa status` shows of one agent's inbox, read from the store alone. */
+export function collectStatus(store: SqliteStore, agent: string, inboxId: string, mode: ModeColumns): StatusReport {
   return store.tx((t) => {
     const events = t.listEvents(inboxId);
     const sessions = t.listSessions(inboxId).map((s): SessionStatus => {
       const mine = events.filter((e) => e.resume === s.id && e.status !== "dropped");
       const { outcome, columns } = mode(t, store, s, mine);
       return {
+        agent,
         session: s.id,
         thread: t.primaryThread(s.id),
         state: s.status === "paused" ? "waiting for you" : s.status,
@@ -138,6 +143,7 @@ export function collectStatus(store: SqliteStore, inboxId: string, mode: ModeCol
     return {
       sessions,
       pending: t.listDeferred(inboxId).map((d) => ({
+        agent,
         callId: d.callId,
         session: d.sessionId,
         thread: t.primaryThread(d.sessionId),
@@ -146,8 +152,8 @@ export function collectStatus(store: SqliteStore, inboxId: string, mode: ModeCol
       })),
       dead: events
         .filter((e) => e.status === "dead")
-        .map((e) => ({ id: e.id, source: e.source, thread: e.thread, attempts: e.attempts })),
-      failed: t.listFailed(inboxId).map((m) => ({ id: m.id, kind: m.kind, thread: m.thread, attempts: m.attempts })),
+        .map((e) => ({ agent, id: e.id, source: e.source, thread: e.thread, attempts: e.attempts })),
+      failed: t.listFailed(inboxId).map((m) => ({ agent, id: m.id, kind: m.kind, thread: m.thread, attempts: m.attempts })),
     };
   });
 }
@@ -166,23 +172,34 @@ function table(header: string[], rows: string[][]): string[] {
   return [header, ...rows].map((r) => r.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd());
 }
 
-export function renderStatus(r: StatusReport): string {
+/** With `agents`, every row names its agent; a single agent's report reads as it always has. */
+export function renderStatus(r: StatusReport, o: { agents: boolean } = { agents: false }): string {
   const lines: string[] = [];
+  const by = (agent: string) => (o.agents ? `${agent}: ` : "");
   if (r.sessions.length === 0) lines.push("No sessions yet.");
   else {
     const duration = (ms: number | null) => (ms === null ? "-" : formatDuration(ms));
     const local = "branch" in r.sessions[0]!;
     lines.push(
       ...table(
-        ["SESSION", "THREAD", "STATE", "OUTCOME", "ASKED", ...(local ? ["BRANCH", "TIME TO MESSAGE"] : ["PR", "TIME TO PR"])],
+        [
+          ...(o.agents ? ["AGENT"] : []),
+          "SESSION",
+          "THREAD",
+          "STATE",
+          "OUTCOME",
+          "ASKED",
+          ...(local ? ["BRANCH", "TIME TO MESSAGE"] : ["PR", "TIME TO PR"]),
+        ],
         r.sessions.map((s) => [
+          ...(o.agents ? [s.agent] : []),
           s.session.slice(0, 8),
           s.thread ?? "-",
           s.state,
           s.outcome,
           String(s.asked),
           ...("branch" in s
-            ? [s.branch, duration(s.timeToMessageMs)]
+            ? [s.branch ?? "-", duration(s.timeToMessageMs)]
             : [s.pull ? `#${s.pull.number}` : "-", duration(s.timeToPullMs)]),
         ]),
       ),
@@ -190,13 +207,13 @@ export function renderStatus(r: StatusReport): string {
   }
   lines.push("", "Pending approvals:");
   if (r.pending.length === 0) lines.push("  none");
-  for (const p of r.pending) lines.push(`  ${p.callId}  on ${p.thread ?? "-"}: ${p.asks}`);
+  for (const p of r.pending) lines.push(`  ${p.callId}  ${by(p.agent)}on ${p.thread ?? "-"}: ${p.asks}`);
   lines.push("", "Dead events:");
   if (r.dead.length === 0) lines.push("  none");
-  for (const d of r.dead) lines.push(`  ${d.id}  ${d.source} on ${d.thread ?? "-"} after ${d.attempts} attempts`);
+  for (const d of r.dead) lines.push(`  ${d.id}  ${by(d.agent)}${d.source} on ${d.thread ?? "-"} after ${d.attempts} attempts`);
   lines.push("", "Failed messages:");
   if (r.failed.length === 0) lines.push("  none");
-  for (const f of r.failed) lines.push(`  ${f.id}  ${f.kind} to ${f.thread ?? "-"} after ${f.attempts} attempts`);
+  for (const f of r.failed) lines.push(`  ${f.id}  ${by(f.agent)}${f.kind} to ${f.thread ?? "-"} after ${f.attempts} attempts`);
   return lines.join("\n");
 }
 

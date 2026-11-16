@@ -24,13 +24,14 @@ import {
 import { codingTools, piClassifier, piRuntime } from "@aoa/runtime-pi";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
-import { type AgentConfig, type ModelRef, type Paths, derivePaths } from "./config.ts";
-import { agentPolicy, deferPush } from "./policy.ts";
-import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT } from "./prompt.ts";
+import { type AgentConfig, DEFAULT_AGENT, type ModelRef, type NamedAgent, type Paths, type Role, derivePaths } from "./config.ts";
+import { agentPolicy, deferPush, reviewReadOnly } from "./policy.ts";
+import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT, handOffPrompt, reviewPrompt } from "./prompt.ts";
+import { sendToTool } from "./send-to.ts";
 import { jevJudge, withShadowJudge } from "./shadow.ts";
 import { NUDGE_INTERVAL_MS, PULL_CHECK_INTERVAL_MS } from "./serve.ts";
 import { type ModeColumns, branchColumns, pullColumns, pullOf } from "./status.ts";
-import { type Worktrees, worktrees } from "./worktree.ts";
+import { type Worktrees, sessionBranch, worktrees } from "./worktree.ts";
 
 /** What the outside world is, for this process. Tests swap these; `serve` uses the defaults. */
 export type Seams = {
@@ -72,6 +73,11 @@ type Front = {
 };
 
 export type Agent = {
+  /** `default` for the agent the config's top level describes. */
+  name: string;
+  role: Role;
+  /** Every agent of the config, the default one first; they share one store, clock and process. */
+  agents: Agent[];
   config: AgentConfig;
   paths: Paths;
   inboxId: string;
@@ -96,6 +102,7 @@ export type Agent = {
   closeFinished(): Promise<void>;
   /** GitHub mode: stores the state of every session's pull request, closed sessions included, and changes nothing else. */
   refreshPulls(): Promise<void>;
+  /** Closes the store all the agents share. */
   close(): void;
 };
 
@@ -106,6 +113,10 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 const TITLE_LIMIT = 80;
 
 type FrontDeps = {
+  /** Named in the messages file and notifications when there are several agents. */
+  label: string | undefined;
+  /** The branch of a session, null for an agent whose sessions work detached. */
+  branchOf: ((sessionId: string) => string) | null;
   paths: Paths;
   store: SqliteStore;
   clock: Clock;
@@ -151,7 +162,12 @@ function githubFront(gh: NonNullable<AgentConfig["github"]>, d: FrontDeps): Fron
 }
 
 function localFront(d: FrontDeps): Front {
-  const channel = localChannel({ file: join(d.paths.dataDir, "messages.md"), notify: d.seams.notify ?? defaultNotifier(), log: d.log });
+  const channel = localChannel({
+    file: join(d.paths.dataDir, "messages.md"),
+    notify: d.seams.notify ?? defaultNotifier(),
+    log: d.log,
+    ...(d.label === undefined ? {} : { agent: d.label }),
+  });
   return {
     mode: "local",
     channel,
@@ -168,60 +184,112 @@ function localFront(d: FrontDeps): Front {
     polls: false,
     // Reads only the store, so it can run as often as serve looks for other processes' writes.
     finishCheckMs: NUDGE_INTERVAL_MS,
-    statusColumns: branchColumns,
+    statusColumns: branchColumns(d.branchOf),
   };
 }
 
-/** The one assembly of the agent: `serve`, the other commands and the end-to-end test all go through it. */
+type Spec = NamedAgent & { name: string };
+
+type Shared = {
+  config: AgentConfig;
+  seams: Seams;
+  store: SqliteStore;
+  clock: Clock;
+  log: (line: string) => void;
+  runGit: GitRunner;
+  keyOf: (m: ModelRef) => string | undefined;
+  roster: Spec[];
+  agents: Agent[];
+  /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
+  removals: Map<string, Promise<void>>;
+};
+
+/**
+ * The one assembly: `serve`, the other commands and the end-to-end test all go through it. Returns the default
+ * agent; `agents` holds it and every named one, all on one store and clock.
+ */
 export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
-  const paths = derivePaths(config);
   const clock = seams.clock ?? systemClock;
   const env = seams.env ?? process.env;
-  const log = seams.log ?? defaultLog;
-  const runGit = seams.runGit ?? runGitWithBun;
-  const { inboxId } = paths;
-
-  mkdirSync(paths.dataDir, { recursive: true });
-  const store = sqliteStore(paths.db);
-  const memory = dirMemory(paths.memory);
-  const frontDeps = { paths, store, clock, runGit, seams, log };
-  const front = config.github ? githubFront(config.github, frontDeps) : localFront(frontDeps);
-  const { channel } = front;
-  const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit, fromOrigin: front.fromOrigin });
+  const roster: Spec[] = [
+    {
+      name: DEFAULT_AGENT,
+      role: "implement",
+      model: config.model,
+      ...(config.classifier ? { classifier: config.classifier } : {}),
+      ...(config.risk ? { risk: config.risk } : {}),
+    },
+    ...Object.entries(config.agents ?? {}).map(([name, a]) => ({ name, ...a })),
+  ];
+  const { dataDir, db } = derivePaths(config);
+  mkdirSync(dataDir, { recursive: true });
+  const store = sqliteStore(db);
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
-  /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
-  const removals = new Map<string, Promise<void>>();
   const keys = new Map(
-    [config.model, config.classifier, config.shadowJudge]
+    [...roster.flatMap((a) => [a.model, a.classifier]), config.shadowJudge]
       .filter((m): m is ModelRef => m !== undefined)
       .map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]),
   );
-  // The model clients hold the keys in memory from here on; the agent's bash and git inherit this environment, so they go.
+  // The model clients hold the keys in memory from here on; the agents' bash and git inherit this environment, so they go.
   for (const name of keys.keys()) delete env[name];
-  const keyOf = (m: ModelRef) => keys.get(m.apiKeyEnv);
+  const shared: Shared = {
+    config,
+    seams,
+    store,
+    clock,
+    log: seams.log ?? defaultLog,
+    runGit: seams.runGit ?? runGitWithBun,
+    keyOf: (m) => keys.get(m.apiKeyEnv),
+    roster,
+    agents: [],
+    removals: new Map(),
+  };
+  for (const spec of roster) shared.agents.push(assembleOne(spec, shared));
+  return shared.agents[0]!;
+}
 
+function assembleOne(spec: Spec, s: Shared): Agent {
+  const { config, seams, store, clock, log, runGit, removals } = s;
+  const named = spec.name !== DEFAULT_AGENT;
+  const several = s.roster.length > 1;
+  const paths = derivePaths(config, undefined, named ? spec.name : undefined);
+  const { inboxId } = paths;
+  const review = spec.role === "review";
+  const branchOf = review ? null : (id: string) => sessionBranch(named ? spec.name : null, id);
+  const memory = dirMemory(paths.memory);
+  const frontDeps = { label: several ? spec.name : undefined, branchOf, paths, store, clock, runGit, seams, log };
+  const front = config.github ? githubFront(config.github, frontDeps) : localFront(frontDeps);
+  const { channel } = front;
+  const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit, fromOrigin: front.fromOrigin, branchOf });
+
+  const reviewers = s.roster.filter((a) => a.role === "review").map((a) => a.name);
+  const rolePrompt = review
+    ? reviewPrompt(config.repo.base)
+    : reviewers.length > 0
+      ? `${front.systemPrompt}\n\n${handOffPrompt(reviewers)}`
+      : front.systemPrompt;
   const runtime = piRuntime({
-    provider: config.model.provider,
-    modelId: config.model.modelId,
-    apiKey: keyOf(config.model),
+    provider: spec.model.provider,
+    modelId: spec.model.modelId,
+    apiKey: s.keyOf(spec.model),
     agentDir: paths.piAgent,
     sessionsDir: paths.sessions,
     cwd: paths.repo,
-    systemPrompt: front.systemPrompt,
+    systemPrompt: spec.instructions === undefined ? rolePrompt : `${rolePrompt}\n\n${spec.instructions}`,
     providers: seams.providers,
   });
-  const classify = config.classifier
+  const classify = spec.classifier
     ? withShadowJudge(
         piClassifier({
-          provider: config.classifier.provider,
-          modelId: config.classifier.modelId,
-          apiKey: keyOf(config.classifier),
+          provider: spec.classifier.provider,
+          modelId: spec.classifier.modelId,
+          apiKey: s.keyOf(spec.classifier),
           providers: seams.providers,
         }),
         config.shadowJudge
           ? jevJudge({
               modelId: config.shadowJudge.modelId,
-              apiKey: keyOf(config.shadowJudge),
+              apiKey: s.keyOf(config.shadowJudge),
               fetch: seams.fetch ?? fetch,
               clock,
               log,
@@ -232,14 +300,17 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     : undefined;
 
   const deps = { store, clock, inboxId };
-  const tools = [
+  const all = [
     ...codingTools(),
     ...timerTools(deps),
     ...outboxTools(deps),
     ...memoryTools(memory),
     ...askUserTools(),
     ...front.tools,
+    ...(several ? [sendToTool({ store, clock, from: spec.name, inboxId, roster: s.roster, agents: () => s.agents })] : []),
   ];
+  // A reviewer reads, runs and reports: no way to change files or to stop and ask (its verdict is the answer).
+  const tools = review ? all.filter((t) => !["edit", "write", "ask_user"].includes(t.name)) : all;
 
   const logged: Channel = {
     poll: (cursor) => channel.poll(cursor),
@@ -254,20 +325,29 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     },
   };
   const dispatcher = new Dispatcher({ ...deps, channel: logged, ...(config.rate ? { policy: config.rate } : {}) });
+  /** The branch a review session was asked to look at: the first of its events that names one. */
+  const reviewedBranch = (sessionId: string): string | undefined =>
+    store.tx((t) =>
+      t
+        .listEvents(inboxId)
+        .filter((e) => e.resume === sessionId)
+        .map((e) => (e.payload as { branch?: unknown } | null)?.branch)
+        .find((b): b is string => typeof b === "string"),
+    );
   const worker: Worker = new Worker({
     ...deps,
     runtime,
     tools,
     memory,
-    policy: agentPolicy({ risk: config.risk, classify, rules: front.rules }),
+    policy: agentPolicy({ risk: spec.risk, classify, ahead: review ? [reviewReadOnly] : [], rules: front.rules }),
     debounceMs: 2000,
     prepareSession: async (session) => {
       await removals.get(session.id);
-      return trees.prepare(session);
+      return review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session);
     },
-    onRunStart: (r) => log(`run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
+    onRunStart: (r) => log(`${named ? `${spec.name}: ` : ""}run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
     onRunEnd: (r) => {
-      log(runEndLine(r));
+      log(`${named ? `${spec.name}: ` : ""}${runEndLine(r)}`);
       dispatcher.wake();
     },
   });
@@ -307,6 +387,9 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   }
 
   return {
+    name: spec.name,
+    role: spec.role,
+    agents: s.agents,
     config,
     paths,
     inboxId,
