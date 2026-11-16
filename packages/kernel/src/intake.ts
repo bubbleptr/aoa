@@ -53,7 +53,7 @@ export function appendInTx(t: Tx, inboxId: InboxId, now: number, incoming: NewEv
   return { id, status, resume: target };
 }
 
-/** The CLI's way to answer (`aoa answer`): the same event a reply on the thread becomes. */
+/** The CLI's way to answer (`aoa answer`): the same event a reply on the thread becomes, marked with `via` when given. */
 export function answerDeferred(
   store: Store,
   clock: Clock,
@@ -61,11 +61,15 @@ export function answerDeferred(
   callId: CallId,
   verdict: "approve" | "deny",
   text?: string,
+  via?: string,
 ): AppendResult {
   return store.tx((t) => {
     const pending = t.getDeferred(callId);
     if (!pending) throw new Error(`no deferred call ${callId} is waiting for an answer`);
-    const answer = answerEvent({ callId, verdict, ...(text === undefined ? {} : { text }) }, null);
+    const answer = answerEvent(
+      { callId, verdict, ...(text === undefined ? {} : { text }), ...(via === undefined ? {} : { via }) },
+      null,
+    );
     return appendInTx(t, inboxId, clock.now(), answer, pending.sessionId);
   });
 }

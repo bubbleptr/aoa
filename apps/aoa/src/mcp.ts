@@ -94,7 +94,7 @@ export function mcpServer(agent: Agent): McpServer {
         text: z.string().optional().describe("The user's reason, or their answer to a question."),
       },
     },
-    async ({ callId, verdict, text }) => json({ callId: answer(agent, callId, verdict, text), verdict }),
+    async ({ callId, verdict, text }) => json({ callId: answer(agent, callId, verdict, text, "mcp"), verdict }),
   );
 
   return server;

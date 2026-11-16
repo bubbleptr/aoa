@@ -6,8 +6,11 @@ export const DEFER_TTL_MS = 24 * 60 * 60_000;
 
 export const EXPIRY_TEXT = "No answer within 24 hours.";
 
-/** The payload of an `approval_answer` event. */
-export type AnswerPayload = { callId: CallId; verdict: "approve" | "deny"; text?: string; expired?: true };
+/**
+ * The payload of an `approval_answer` event. `via` names where an answer given outside the thread came from (e.g.
+ * `mcp`); absent for a reply on the thread, the expiry and `aoa answer`.
+ */
+export type AnswerPayload = { callId: CallId; verdict: "approve" | "deny"; text?: string; expired?: true; via?: string };
 
 const questionTools = new WeakSet<ToolDef>();
 

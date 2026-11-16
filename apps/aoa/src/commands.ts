@@ -119,8 +119,11 @@ function resolveTask(agent: Agent, target: string): Task {
   });
 }
 
-/** Answers a call waiting in any agent's inbox; the answer goes to the inbox that holds it. */
-export function answer(agent: Agent, prefix: string, verdict: string, text: string | undefined): string {
+/**
+ * Answers a call waiting in any agent's inbox; the answer goes to the inbox that holds it. `via` records where an
+ * answer not typed on the command line came from.
+ */
+export function answer(agent: Agent, prefix: string, verdict: string, text: string | undefined, via?: "mcp"): string {
   if (verdict !== "approve" && verdict !== "deny") throw new Error(`The answer must be approve or deny, not "${verdict}".`);
   const pending = agent.store.tx((t) => agent.agents.flatMap((a) => t.listDeferred(a.inboxId)));
   const callId = resolveCallId(
@@ -128,7 +131,7 @@ export function answer(agent: Agent, prefix: string, verdict: string, text: stri
     prefix,
   );
   const { inboxId } = pending.find((d) => d.callId === callId)!;
-  answerDeferred(agent.store, agent.clock, inboxId, callId, verdict, text);
+  answerDeferred(agent.store, agent.clock, inboxId, callId, verdict, text, via);
   return callId;
 }
 
