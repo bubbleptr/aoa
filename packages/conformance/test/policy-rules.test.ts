@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { decide, defaultRules, type PolicyConfig } from "@aoa/kernel";
+import { decide, defaultRules, type PolicyConfig, type PolicyContext } from "@aoa/kernel";
 
 /** Bash is otherwise low risk here, so whatever is not allowed comes from a rule. */
 const policy: PolicyConfig = { risk: { bash: "low", read: "low", ls: "low" }, rules: defaultRules };
-const clean = { tainted: false, workdir: null };
+const clean: PolicyContext = { tainted: false, workdir: null };
 
 const bash = (command: string, ctx = clean) => decide(policy, { tool: "bash", args: { command } }, ctx);
 const decisionOf = async (command: string, ctx = clean) => (await bash(command, ctx)).decision;
