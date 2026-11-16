@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { Decision, DecisionRecord, EventSource, EventStatus, JournalRecord, OutMsg, Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
@@ -50,7 +50,21 @@ export type TimerRow = {
   expiresCall: string | null;
 };
 
-export type MemoryFile = { path: string; size: number; mtime: number; writtenBy: string | null };
+/** The most of one memory file's text a snapshot carries, in bytes. */
+export const MEMORY_FILE_CAP = 64 * 1024;
+/** The most memory text a snapshot carries in all, in bytes; the latest files get it first. */
+export const MEMORY_TOTAL_CAP = 512 * 1024;
+
+export type MemoryFile = {
+  path: string;
+  size: number;
+  mtime: number;
+  writtenBy: string | null;
+  /** The file's text, or its head when `truncated`; null when it is not UTF-8. */
+  text: string | null;
+  truncated: boolean;
+  binary: boolean;
+};
 
 /** A shadow judge's answer for one call: its probability of yes, or why it has none. */
 export type JevScore = { model: string; p: number | null; error: string | null; latencyMs: number };
@@ -151,12 +165,55 @@ function listFiles(root: string): MemoryFile[] {
       // A `.tmp` file is a memory write halfway through its rename.
       else if (e.isFile() && !e.name.endsWith(".tmp")) {
         const st = statSync(full);
-        files.push({ path: relative(root, full).split(sep).join("/"), size: st.size, mtime: st.mtimeMs, writtenBy: null });
+        const path = relative(root, full).split(sep).join("/");
+        files.push({ path, size: st.size, mtime: st.mtimeMs, writtenBy: null, text: null, truncated: false, binary: false });
       }
     }
   };
   walk(root);
-  return files.sort((a, b) => b.mtime - a.mtime);
+  files.sort((a, b) => b.mtime - a.mtime);
+  let budget = MEMORY_TOTAL_CAP;
+  for (const f of files) {
+    const read = readHead(join(root, f.path), Math.min(MEMORY_FILE_CAP, budget));
+    if (read === null) continue;
+    if (read.text === null) {
+      f.binary = true;
+      continue;
+    }
+    f.text = read.text;
+    f.truncated = read.truncated;
+    budget -= read.bytes;
+  }
+  return files;
+}
+
+/**
+ * At most `cap` bytes of a file, decoded as UTF-8 and cut back to a whole character. Its text is null when the bytes
+ * read are not UTF-8; the result is null when the file went away since it was listed.
+ */
+function readHead(path: string, cap: number): { text: string | null; bytes: number; truncated: boolean } | null {
+  let fd;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return null;
+  }
+  try {
+    // One byte past the cap tells a file of exactly `cap` bytes from a longer one.
+    const buf = Buffer.alloc(cap + 1);
+    const n = readSync(fd, buf, 0, cap + 1, 0);
+    const truncated = n > cap;
+    const head = buf.subarray(0, Math.min(n, cap));
+    try {
+      // In stream mode a character cut at the end is held back instead of rejected.
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(head, { stream: truncated });
+      return { text, bytes: Buffer.byteLength(text), truncated };
+    } catch {
+      return { text: null, bytes: 0, truncated: false };
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 const startOfDay = (now: number): number => new Date(now).setHours(0, 0, 0, 0);
