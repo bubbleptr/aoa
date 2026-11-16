@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
 import { findConfig, loadConfig, validateForServe } from "./config.ts";
+import { mcpServer } from "./mcp.ts";
 import { serve } from "./serve.ts";
 import { DEFAULT_WEB_PORT, type Web, startWeb } from "./web.ts";
 import { type Seams, assemble } from "./wiring.ts";
@@ -31,6 +33,8 @@ Usage:
                                               --refresh looks up pull request states on GitHub first.
   aoa web [--port <n>]                        Only the page: a live, read-only view of the inbox, timers, memory,
                                               permissions and outbox, for when serve is not running.
+  aoa mcp                                     send, messages, status, close and answer as tools of an MCP server on
+                                              stdio, for a chat agent: claude mcp add aoa -- aoa mcp
 
 Options:
   --config <path>   The config file (default: ./aoa.config.ts, then ~/.aoa/aoa.config.ts).
@@ -145,7 +149,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
     (p.command === undefined && !p.help ? io.err : io.out)(HELP);
     return p.command === undefined && !p.help ? 2 : 0;
   }
-  if (!["serve", "send", "answer", "close", "messages", "status", "web"].includes(p.command)) {
+  if (!["serve", "send", "answer", "close", "messages", "status", "web", "mcp"].includes(p.command)) {
     io.err(`Unknown command "${p.command}".\n\n${HELP}`);
     return 2;
   }
@@ -207,6 +211,15 @@ export async function main(argv: string[], io: Io): Promise<number> {
         io.out(`aoa web on http://127.0.0.1:${web.port} (read-only; Ctrl-C to stop)`);
         await (io.stopSignal ?? signals)();
         await web.stop();
+        return 0;
+      }
+      case "mcp": {
+        const server = mcpServer(agent);
+        // The SDK's transport does not notice the client going away; stdin ending is how it goes.
+        const ended = new Promise<void>((resolve) => process.stdin.once("end", resolve));
+        await server.connect(new StdioServerTransport());
+        await Promise.race([ended, (io.stopSignal ?? signals)()]);
+        await server.close();
         return 0;
       }
       case "send": {
