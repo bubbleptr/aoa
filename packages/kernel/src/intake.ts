@@ -36,6 +36,8 @@ export function appendInTx(t: Tx, inboxId: InboxId, now: number, incoming: NewEv
   const status = (answer ? t.isAccepted(inboxId, e.source, e.dedupeKey) : seen) ? "dropped" : "pending";
   const target =
     status === "dropped" ? null : (resume ?? (thread !== null ? t.sessionForThread(inboxId, thread) : null));
+  // An answer that counts makes the question moot: a request still waiting in the outbox is never sent.
+  if (status === "pending" && e.source === "approval_answer") t.cancelApprovalRequest((e.payload as { callId: string }).callId);
   t.insertEvent({
     id,
     inboxId,

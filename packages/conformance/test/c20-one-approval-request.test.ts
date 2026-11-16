@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash } from "@aoa/kernel";
+import { LEASE_MS, SimulatedCrash, answerDeferred } from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type RunScript } from "../src/index.ts";
 
 const THREAD = "github:o/r#1";
@@ -39,6 +39,20 @@ for (const [name, factory] of storeFactories) {
       expect(channel.visible.map((m) => m.kind)).toEqual(["approval_request"]);
       expect(runtime.runs[1]!.toolResults).toHaveLength(1);
       expect(runtime.runs[1]!.toolResults[0]!.status).not.toBe("deferred");
+    });
+
+    test("a call answered before its request went out is never asked about", async () => {
+      const runtime = new ScriptedRuntime([deployCall, {}]);
+      const worker = h.worker({ runtime, tools: [countingTool("deploy")], policy: { risk: {} } });
+      const channel = new FakeChannel();
+
+      h.append({ thread: THREAD });
+      await worker.drain();
+      answerDeferred(h.store, h.clock, h.inboxId, "call-1", "approve");
+      await h.dispatcher({ channel }).pass();
+
+      expect(channel.visible).toEqual([]);
+      expect(h.outbox().map((m) => [m.kind, m.status])).toEqual([["approval_request", "cancelled"]]);
     });
   });
 }
