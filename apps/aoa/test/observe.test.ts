@@ -111,6 +111,23 @@ describe("snapshot", () => {
     });
   });
 
+  test("a fired follow-up stays in the timer list after an approval is answered; the expiry it cancelled does not show", async () => {
+    const w = await world();
+    w.judge = () => "unsure";
+    w.script([call("wake_me_at", { inMs: 1_000, note: "Look again." }), call("bash", { command: "echo hi >> log.txt" })]);
+    await w.cli("send", "Do it.");
+    await w.drain();
+    w.advance(1_000);
+    w.agent.scheduler.pass();
+    const [waiting] = observe(w).permissions.waiting;
+    w.script([say("Done.")]);
+    await w.cli("answer", waiting!.callId, "approve");
+    await w.drain();
+
+    const ended = observe(w).timers.rows.filter((r) => r.status !== "armed");
+    expect(ended.map((r) => [r.status, r.text])).toEqual([["done", "Look again."]]);
+  });
+
   test("a memory file carries its text: whole when small, a valid head past the cap, none when it is not UTF-8", async () => {
     const w = await world();
     const dir = w.agent.paths.memory;
