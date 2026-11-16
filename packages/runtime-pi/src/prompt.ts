@@ -1,7 +1,7 @@
 import type { Event, RunInput, ToolResult } from "@aoa/kernel";
 import { resultText } from "./results.ts";
 
-type Answer = NonNullable<RunInput["answer"]>;
+export type Answer = NonNullable<RunInput["answer"]>;
 
 /** Put before events the transcript already holds: an earlier attempt at them stopped before it finished. */
 export const RETRY_NOTICE =
@@ -20,11 +20,14 @@ export function encode(value: unknown): string {
   return (JSON.stringify(value) ?? "null").replace(/[<>&]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
-/** The run's one user message: resident text, then the answer to a deferred call, then one block per event. */
-export function renderUserMessage(input: RunInput, retry: boolean): string {
+/**
+ * The run's one user message: resident text, then the answer to a deferred call, then one block per event.
+ * A runtime whose harness asks permission for its own calls renders those answers itself.
+ */
+export function renderUserMessage(input: RunInput, retry: boolean, answer: (a: Answer) => string = renderAnswer): string {
   const parts: string[] = [];
   if (input.resident !== "") parts.push(input.resident);
-  if (input.answer) parts.push(renderAnswer(input.answer));
+  if (input.answer) parts.push(answer(input.answer));
   if (retry && input.events.length > 0) parts.push(RETRY_NOTICE);
   for (const e of input.events) parts.push(renderEvent(e));
   return parts.join("\n\n");
@@ -34,7 +37,7 @@ function renderEvent(e: Event): string {
   return `${eventMarker(e)}source=${encode(e.source)} trusted=${e.trusted} thread=${encode(e.thread)}>\n${encode(e.payload)}\n</event>`;
 }
 
-function renderAnswer(a: Answer): string {
+export function renderAnswer(a: Answer): string {
   const head = `<answer call=${encode(a.callId)} tool=${encode(a.tool)} verdict=${encode(a.verdict)}>`;
   const call = `your earlier call to ${encode(a.tool)} with arguments ${encode(a.args)}`;
   const body =
