@@ -273,6 +273,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 事件重试到上限进 `dead` 时，同一个事务里给这项任务写一条失败通知（§8 的第三种消息）。
 - `serve` 必须配分类器。`bash` 是中风险，没有分类器时，只读白名单之外的每条命令都会停下来等你，写代码的循环转不起来。
 - 文件工具的路径落在任务的 worktree 之外时延后。
+- worktree 建在数据目录 `~/.aoa` 下，而凭据规则会拦提到 `~/.aoa` 的命令。所以规则先把指向本 session 自己 worktree 的绝对路径改写成相对路径再判断；用 `..` 爬出去的、别的 session 的 worktree、数据目录里其余的东西照旧交给你。写成 `~/.aoa/worktrees/…` 的形式不会被改写，仍然会问你。
 - GitHub 模式：PR 的状态存在 `pull_states` 表里，由存储层直接提供，内核不知道 PR。`serve` 每 5 分钟查一次；PR 合并或关闭后关掉 session、删掉 worktree。之后再来事件会重开 session，在原分支上重建 worktree。
 - `aoa status --refresh` 只更新 PR 状态，不关 session；本地模式下它什么都不做。
 - 本地模式声明的结局存在 `declared_results` 表里，一次声明只生效一次：`serve` 关掉 session 后，之后用 `send --to` 重开的 session 不会被同一条声明再关掉。

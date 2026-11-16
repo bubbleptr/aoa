@@ -86,6 +86,40 @@ describe("default rules", () => {
     expect(await bash(command)).toMatchObject({ decision: "defer", basis: "rule:credential-paths" });
   });
 
+  describe("a worktree kept under the data directory", () => {
+    const workdir = "/Users/me/.aoa/worktrees/local/app/2a1ba542-0328";
+    const inTree = { tainted: false, workdir };
+
+    test.each([
+      `cd ${workdir} && wc -l docs/design.md`,
+      `ls ${workdir}/packages`,
+      `cat ${workdir}/src/a.ts ${workdir}/src/b.ts`,
+      `cd ${workdir}/src/../docs && wc -l spec.md`,
+    ])("paths inside the session's own worktree are not credential paths: %s", async (command) => {
+      expect(await bash(command, inTree)).not.toMatchObject({ basis: "rule:credential-paths" });
+    });
+
+    test.each([
+      `cat ${workdir}/../../../../aoa.db`,
+      `cd ${workdir} && cat ~/.aoa/aoa.db`,
+      `ls ${workdir}-other`,
+      `cat ${workdir}/.env`,
+      "ls /Users/me/.aoa/worktrees/local/app/another-session",
+    ])("anything else under the data directory still waits for the user: %s", async (command) => {
+      expect(await bash(command, inTree)).toMatchObject({ decision: "defer", basis: "rule:credential-paths" });
+    });
+
+    test("file tools: the own worktree is reachable, the rest of the data directory is not", async () => {
+      expect((await decide(policy, { tool: "read", args: { path: `${workdir}/src/a.ts` } }, inTree)).decision).toBe("allow");
+      for (const path of [`${workdir}/../../../../aoa.db`, "/Users/me/.aoa/memory/notes.md"]) {
+        expect(await decide(policy, { tool: "read", args: { path } }, inTree)).toMatchObject({
+          decision: "defer",
+          basis: "rule:credential-paths",
+        });
+      }
+    });
+  });
+
   test("file tools touching credentials wait for the user", async () => {
     for (const [tool, args] of [
       ["read", { path: "/Users/me/.ssh/id_rsa" }],

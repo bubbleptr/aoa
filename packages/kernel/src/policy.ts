@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import type { Decision } from "./types.ts";
 
 export type Risk = "low" | "medium" | "high";
@@ -166,13 +167,30 @@ function pathArgs(call: ToolCall): string[] {
   return keys.map((k) => args[k]).filter((v): v is string => typeof v === "string");
 }
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The text with every path into the session's own worktree written relative to it. The worktree may live under a
+ * credential directory (the data directory), and the agent naming its own working directory must not look like
+ * reaching for credentials. A path that climbs back out with `..` is left as written.
+ */
+function ownWorktreeRelative(text: string, workdir: string | null): string {
+  if (workdir === null) return text;
+  const root = posix.normalize(workdir).replace(/\/+$/, "");
+  return text.replace(new RegExp(`${escapeRegExp(root)}(?=$|[/\\s;&|()<>'"\`])([^\\s;&|()<>'"\`]*)`, "g"), (whole, rest: string) => {
+    const relative = posix.relative(root, posix.normalize(root + rest));
+    return relative === ".." || relative.startsWith("../") ? whole : `./${relative}`;
+  });
+}
+
 /** Credentials are never reachable through a rule's allow: the user decides. */
 const credentialPaths: Rule = {
   name: "credential-paths",
-  match(call) {
+  match(call, ctx) {
+    const hits = (text: string) => CREDENTIAL_PATH.test(ownWorktreeRelative(text, ctx.workdir));
     const command = commandOf(call);
-    if (command !== null) return CREDENTIAL_PATH.test(unquote(command)) ? "defer" : null;
-    if (FILE_TOOLS.has(call.tool)) return pathArgs(call).some((p) => CREDENTIAL_PATH.test(p)) ? "defer" : null;
+    if (command !== null) return hits(unquote(command)) ? "defer" : null;
+    if (FILE_TOOLS.has(call.tool)) return pathArgs(call).some(hits) ? "defer" : null;
     return null;
   },
 };
