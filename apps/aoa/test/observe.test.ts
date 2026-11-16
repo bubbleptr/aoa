@@ -65,7 +65,7 @@ describe("snapshot", () => {
 
   test("a failed run's event is retrying until its next try, then pending", async () => {
     const w = await world();
-    w.script([fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded" })]);
+    w.script([fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid request" })]);
     await w.cli("send", "Do it.");
     await w.drain();
 
