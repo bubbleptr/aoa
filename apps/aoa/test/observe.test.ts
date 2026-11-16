@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { addSchedule } from "@aoa/kernel";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { type Snapshot, flows, snapshot } from "../src/observe.ts";
 import { serve } from "../src/serve.ts";
@@ -79,6 +80,33 @@ describe("snapshot", () => {
     const [first] = w.sessions();
     const s = observe(w);
     expect(s.memory.files.find((f) => f.path === "notes/x.md")?.writtenBy).toBe(first!.id);
+  });
+
+  test("a timer carries the full text the agent will get, the session it resumes and the thread it wakes", async () => {
+    const w = await world();
+    const note = `Check CI on main.\n${"If it failed, read the log and report which test. ".repeat(6)}`;
+    w.script([call("wake_me_at", { inMs: 3_600_000, note }), say("Will check.")]);
+    const thread = (await w.cli("send", "Watch CI.")).out.trim();
+    await w.drain();
+    const session = w.sessions()[0]!.id;
+    const weekly = { note: "Read aoa status.\nNote in memory what changed since last week." };
+    const schedule = addSchedule(w.agent.store, w.clock, w.agent.inboxId, {
+      everyMs: 7 * 24 * 3_600_000,
+      anchor: w.clock.now() + 60_000,
+      payload: weekly,
+      sessionId: session,
+    });
+    const other = { report: ["ci", "deps"] };
+    addSchedule(w.agent.store, w.clock, w.agent.inboxId, { everyMs: 60_000, anchor: w.clock.now(), payload: other });
+
+    const rows = observe(w).timers.rows;
+    expect(rows.find((r) => r.kind === "follow_up")).toMatchObject({ status: "armed", sessionId: session, thread, text: note });
+    expect(rows.find((r) => r.id === schedule.id)).toMatchObject({ sessionId: session, thread, text: weekly.note, everyMs: 7 * 24 * 3_600_000 });
+    expect(rows.find((r) => r.kind === "schedule" && r.id !== schedule.id)).toMatchObject({
+      sessionId: null,
+      thread: null,
+      text: JSON.stringify(other, null, 2),
+    });
   });
 
   test("a failed run's event is retrying until its next try, then pending", async () => {
