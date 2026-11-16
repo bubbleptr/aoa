@@ -21,7 +21,7 @@ export function mcpServer(agent: Agent): McpServer {
         "Give aoa a task, or with `to` add to an existing one. Without `to` it opens a new task for the default agent, or " +
         "for the named `agent`; `branch` names the branch a review agent reviews. With `to` (a thread, or a prefix of a " +
         "thread or session id) the text continues that task; on a task waiting for an answer to its question, the text " +
-        "is the answer. Returns the thread.",
+        "is the answer. A task waiting for an approval is refused: approvals go through `answer`. Returns the thread.",
       inputSchema: {
         text: z.string().describe("What to tell the agent."),
         agent: z.string().optional().describe("A named agent from the config; without it, the default agent."),
@@ -34,7 +34,7 @@ export function mcpServer(agent: Agent): McpServer {
         if (name !== undefined || branch !== undefined) {
           throw new Error("`to` finds the task in any agent's inbox; it takes neither `agent` nor `branch`.");
         }
-        return json({ thread: sendTo(agent, to, text) });
+        return json({ thread: sendTo(agent, to, text, { refuseApproval: true }) });
       }
       return json({ thread: await send(agent, text, { ...(name === undefined ? {} : { agent: name }), ...(branch === undefined ? {} : { branch }) }) });
     },

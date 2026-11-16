@@ -12,7 +12,7 @@ export type {
 } from "./ports.ts";
 export { systemClock } from "./ports.ts";
 export { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
-export { answerDeferred, appendEvent, type AppendDeps, type AppendResult } from "./intake.ts";
+export { answerDeferred, appendEvent, appendInTx, type AppendDeps, type AppendResult } from "./intake.ts";
 export {
   LEASE_MS,
   LEASE_RENEW_MS,

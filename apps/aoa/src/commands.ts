@@ -1,22 +1,36 @@
-import { type OutMsg, type Session, answerDeferred, appendEvent } from "@aoa/kernel";
-import { type StatusReport, collectStatus, renderStatus, resolveCallId } from "./status.ts";
+import { type OutMsg, type Session, type Tx, answerDeferred, appendInTx } from "@aoa/kernel";
+import { type StatusReport, asks, collectStatus, renderStatus, resolveCallId } from "./status.ts";
 import type { Agent } from "./wiring.ts";
 
 const nonEmpty = (text: string) => {
   if (text.trim() === "") throw new Error("Nothing to send: the text is empty.");
 };
 
-const appendUserText = (agent: Agent, thread: string, text: string, branch?: string) =>
-  appendEvent(
-    { store: agent.store, clock: agent.clock, inboxId: agent.inboxId },
-    {
+const appendUserText = (agent: Agent, thread: string, text: string, o: { branch?: string; refuseApproval?: boolean } = {}) =>
+  agent.store.tx((t) => {
+    // Checked in the append's transaction, so serve cannot pause the session in between.
+    if (o.refuseApproval) refuseApproval(t, agent.inboxId, thread);
+    return appendInTx(t, agent.inboxId, agent.clock.now(), {
       source: "user_message",
       dedupeKey: `send:${crypto.randomUUID()}`,
-      payload: { kind: "send", text, ...(branch === undefined ? {} : { branch }) },
+      payload: { kind: "send", text, ...(o.branch === undefined ? {} : { branch: o.branch }) },
       thread,
       trusted: true,
-    },
+    });
+  });
+
+/** Throws when the thread's session waits on an approval, which the kernel would take this text as answering. */
+function refuseApproval(t: Tx, inboxId: string, thread: string): void {
+  const sessionId = t.sessionForThread(inboxId, thread);
+  const session = sessionId === null ? null : t.getSession(sessionId);
+  if (!session || session.status !== "paused" || session.pending === null) return;
+  const pending = t.getDeferred(session.pending);
+  if (!pending || pending.kind === "question") return;
+  throw new Error(
+    `The task on ${thread} waits for an approval of call ${pending.callId} (${asks(pending.tool, pending.kind, pending.args)}). ` +
+      "Answer it with answer once the user has said yes or no; send does not answer approvals.",
   );
+}
 
 /** The agent of this config with that name. */
 function agentNamed(agent: Agent, name: string): Agent {
@@ -37,18 +51,19 @@ export async function send(agent: Agent, text: string, o: { agent?: string; bran
     if ((await target.worktrees.commitOf(o.branch)) === null) throw new Error(`There is no branch ${o.branch} in ${target.paths.repo}.`);
   }
   const thread = await target.openThread(text);
-  appendUserText(target, thread, text, o.branch);
+  appendUserText(target, thread, text, o.branch === undefined ? {} : { branch: o.branch });
   return thread;
 }
 
 /**
  * Appends the user's message on an existing task's thread, so its session resumes. On a session that waits for an
- * answer, the kernel takes the text as that answer. Returns the thread.
+ * answer, the kernel takes the text as that answer. With `refuseApproval`, a session waiting on an approval (not a
+ * question) is refused, so approvals have one path: `answer`. Returns the thread.
  */
-export function sendTo(agent: Agent, target: string, text: string): string {
+export function sendTo(agent: Agent, target: string, text: string, o: { refuseApproval?: boolean } = {}): string {
   nonEmpty(text);
   const task = resolveTask(agent, target);
-  appendUserText(task.agent, task.thread, text);
+  appendUserText(task.agent, task.thread, text, o);
   return task.thread;
 }
 
