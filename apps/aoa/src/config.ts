@@ -12,6 +12,21 @@ export type ModelRef = {
   apiKeyEnv: string;
 };
 
+export type Role = "implement" | "review";
+
+/** A named agent with everything it did not set taken from the top level. */
+export type NamedAgent = {
+  role: Role;
+  /** Appended to the role's system prompt. */
+  instructions?: string;
+  model: ModelRef;
+  classifier?: ModelRef;
+  risk?: Record<string, Risk>;
+};
+
+/** What a config file writes for one named agent. */
+export type AgentInput = Partial<NamedAgent>;
+
 export type AgentConfig = {
   dataDir: string;
   repo: { path: string; base: string };
@@ -35,12 +50,15 @@ export type AgentConfig = {
   /** Per-tool risk, over the built-in table. */
   risk?: Record<string, Risk>;
   rate?: RatePolicy;
+  /** Agents besides the default one, which the top-level fields describe. Local mode only. */
+  agents?: Record<string, NamedAgent>;
 };
 
 type GitHubConfig = NonNullable<AgentConfig["github"]>;
 
 /** What a config file writes; the App ids may be numbers. */
-export type AgentConfigInput = Omit<AgentConfig, "github"> & {
+export type AgentConfigInput = Omit<AgentConfig, "github" | "agents"> & {
+  agents?: Record<string, AgentInput>;
   github?: Omit<GitHubConfig, "appId" | "installationId"> & { appId: string | number; installationId: string | number };
 };
 
@@ -125,9 +143,46 @@ function github(value: unknown): GitHubConfig {
   };
 }
 
+function riskTable(value: unknown, field: string): Record<string, Risk> {
+  const risk = object(value, field, Object.keys((value ?? {}) as Obj));
+  for (const [tool, tier] of Object.entries(risk)) {
+    if (tier !== "low" && tier !== "medium" && tier !== "high") throw new ConfigError(`${field}.${tool}`, "must be low, medium or high");
+  }
+  return risk as Record<string, Risk>;
+}
+
+/** Lowercase, so it is safe in an inbox id, a directory name and a branch name. */
+const AGENT_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** The default agent's name: it is the top level of the config, so no named agent may take it. */
+export const DEFAULT_AGENT = "default";
+
+function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
+  const all = object(value, "agents", Object.keys((value ?? {}) as Obj));
+  const named: Record<string, NamedAgent> = {};
+  for (const [name, raw] of Object.entries(all)) {
+    const field = `agents.${name}`;
+    if (!AGENT_NAME.test(name)) throw new ConfigError(field, "is not a valid agent name: a lowercase letter, then up to 31 lowercase letters, digits or -");
+    if (name === DEFAULT_AGENT) throw new ConfigError(field, "is reserved for the agent the top-level fields describe");
+    const a = object(raw, field, ["role", "instructions", "model", "classifier", "risk"]);
+    if (a.role !== undefined && a.role !== "implement" && a.role !== "review") throw new ConfigError(`${field}.role`, "must be implement or review");
+    const agent: NamedAgent = {
+      role: (a.role as Role | undefined) ?? "implement",
+      model: a.model === undefined ? top.model : modelRef(a.model, `${field}.model`),
+    };
+    if (a.instructions !== undefined) agent.instructions = str(a, "instructions", `${field}.`);
+    const classifier = a.classifier === undefined ? top.classifier : modelRef(a.classifier, `${field}.classifier`);
+    if (classifier) agent.classifier = classifier;
+    const risk = a.risk === undefined ? top.risk : riskTable(a.risk, `${field}.risk`);
+    if (risk) agent.risk = risk;
+    named[name] = agent;
+  }
+  return named;
+}
+
 /** Checks a loaded config; the error names the first bad field. */
 export function validateConfig(raw: unknown): AgentConfig {
-  const c = object(raw, "config", ["dataDir", "repo", "model", "classifier", "shadowJudge", "github", "risk", "rate"]);
+  const c = object(raw, "config", ["dataDir", "repo", "model", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
   const repo = object(c.repo, "repo", ["path", "base"]);
   const config: AgentConfig = {
     dataDir: str(c, "dataDir", ""),
@@ -141,14 +196,13 @@ export function validateConfig(raw: unknown): AgentConfig {
     if (judge.provider !== "typesafe") throw new ConfigError("shadowJudge.provider", "must be typesafe");
     config.shadowJudge = judge;
   }
-  if (c.risk !== undefined) {
-    const risk = object(c.risk, "risk", Object.keys(c.risk as Obj));
-    for (const [tool, tier] of Object.entries(risk)) {
-      if (tier !== "low" && tier !== "medium" && tier !== "high") throw new ConfigError(`risk.${tool}`, "must be low, medium or high");
-    }
-    config.risk = risk as Record<string, Risk>;
-  }
+  if (c.risk !== undefined) config.risk = riskTable(c.risk, "risk");
   if (c.rate !== undefined) config.rate = rate(c.rate);
+  if (c.agents !== undefined) {
+    // An issue or a pull request has no way to name the agent it is for.
+    if (config.github) throw new ConfigError("agents", "cannot be used with github: GitHub mode runs one agent");
+    config.agents = agents(c.agents, config);
+  }
   return config;
 }
 
@@ -181,11 +235,15 @@ export type Paths = {
 const expand = (path: string, home: string): string =>
   path === "~" ? home : path.startsWith("~/") ? resolve(home, path.slice(2)) : resolve(path);
 
-/** Everything below `dataDir` is derived, never configured (one layout per inbox). */
-export function derivePaths(c: AgentConfig, home = homedir()): Paths {
+/**
+ * Everything below `dataDir` is derived, never configured (one layout per inbox). A named agent's inbox is the
+ * repo's with `@<agent>`, so its memory and worktrees sit beside the default agent's rather than inside them.
+ */
+export function derivePaths(c: AgentConfig, home = homedir(), agent?: string): Paths {
   const dataDir = expand(c.dataDir, home);
   const repo = expand(c.repo.path, home);
-  const [owner, name] = c.github ? [c.github.owner, c.github.repo] : ["local", basename(repo)];
+  const [owner, repoName] = c.github ? [c.github.owner, c.github.repo] : ["local", basename(repo)];
+  const name = agent === undefined ? repoName : `${repoName}@${agent}`;
   return {
     inboxId: `${owner}/${name}`,
     dataDir,
