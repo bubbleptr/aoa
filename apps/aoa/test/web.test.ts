@@ -103,10 +103,19 @@ test("pushes a snapshot on connect, then only changes, each carrying what flowed
   expect(second.flows).toEqual({ in: 1 });
   expect(second.snapshot.edges.in.total).toBe(2);
 
-  // A write the watch missed is found by the data_version check.
+  // A write the watch missed is found by the data_version check within a second or two, not only after a long net.
   await w.cli("send", "Third task.");
-  w.advance(10_000);
-  expect((await client.next()).flows).toEqual({ in: 1 });
+  w.advance(2_000);
+  let missed: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const third = await Promise.race([
+      client.next(),
+      new Promise<never>((_, reject) => (missed = setTimeout(() => reject(new Error("a write the watch missed was not pushed within 2 s")), 1_000))),
+    ]);
+    expect(third.flows).toEqual({ in: 1 });
+  } finally {
+    clearTimeout(missed);
+  }
 
   const snapshot = (await (await fetch(`http://127.0.0.1:${server.port}/snapshot`)).json()) as Snapshot;
   expect(snapshot.edges.in.total).toBe(3);
