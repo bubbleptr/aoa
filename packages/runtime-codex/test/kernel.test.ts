@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { askUserTools, outboxTools } from "@aoa/kernel";
+import { RETRY_NOTICE } from "@aoa/runtime-pi/prompt";
 import { Harness, sqliteFactory } from "@aoa/conformance";
 import { codexRuntime } from "../src/index.ts";
 import { FakeAppServer, type FakeTurn, type TurnScript } from "./fake-app-server.ts";
@@ -70,4 +71,16 @@ test("ask_user through a dynamic tool interrupts the turn and the session waits 
   expect(run!.end).toEqual({ kind: "deferred", callId: `${run!.sessionId}:turn-1:call-1` });
   expect(h.outbox()).toMatchObject([{ kind: "approval_request", body: "Which colour?" }]);
   expect(fake.sent("turn/interrupt")).toHaveLength(1);
+});
+
+test("a run retried after a failed turn tells Codex the earlier attempt was interrupted; the first attempt does not", async () => {
+  const { fake, w } = worker([async () => ({ failed: "stream disconnected" }), async () => {}]);
+  h.append({ thread: "local:1" });
+  await w.drain();
+  h.waitOutLease();
+  await w.drain();
+
+  expect(h.runs().map((r) => r.error ?? r.end?.kind)).toEqual(["the Codex turn failed: stream disconnected", "silent"]);
+  expect(fake.inputs[0]).not.toContain(RETRY_NOTICE);
+  expect(fake.inputs[1]).toContain(RETRY_NOTICE);
 });

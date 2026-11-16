@@ -8,6 +8,8 @@ export type FakeTurn = {
   text: string;
   request<T = any>(method: string, params: object): Promise<T>;
   notify(method: string, params: object): void;
+  /** The process dies mid-turn: its output ends and it exits with `why`. */
+  die(why: string): void;
 };
 
 /** A turn's script; it may end the turn as failed, otherwise the turn completes (or reports the interrupt). */
@@ -100,6 +102,12 @@ export class FakeAppServer {
           );
         },
         notify: (method, params) => send({ method, params }),
+        die: (why) => {
+          killed = true;
+          this.live--;
+          out.end();
+          exit(why);
+        },
       };
       const end = await script(turn);
       const status = end ? "failed" : interrupted ? "interrupted" : "completed";

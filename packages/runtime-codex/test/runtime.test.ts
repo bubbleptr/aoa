@@ -18,7 +18,7 @@ function event(text: string): Event {
     trusted: true,
     status: "in_run",
     leaseUntil: null,
-    attempts: 1,
+    attempts: 0,
     nextAttemptAt: 0,
     run: null,
   };
@@ -206,6 +206,25 @@ describe("codexRuntime", () => {
       expect(fake.serverRequests.map((r) => r.reply)).toEqual([{ decision: "accept" }, { decision: "accept" }]);
     });
 
+    test("an ask whose action is unknown cannot match an earlier grant", async () => {
+      // A file change whose item was never seen, and a command with nothing to name it, are asked about as themselves.
+      const fake = new FakeAppServer([
+        async (t) => {
+          await t.request("item/fileChange/requestApproval", { threadId: t.threadId, turnId: t.turnId, itemId: "item-1", startedAtMs: 0 });
+          await t.request("item/fileChange/requestApproval", { threadId: t.threadId, turnId: t.turnId, itemId: "item-2", startedAtMs: 0 });
+          await commandApproval(t, "item-3", null as unknown as string, { cwd: null });
+          await commandApproval(t, "item-4", null as unknown as string, { cwd: null });
+        },
+      ]);
+      const gate = recordingAsk(() => "allow");
+
+      await setup(fake).run(runInput({ ask: gate.ask }));
+
+      const [a, b, c, d] = gate.asks.map((x) => x.args);
+      expect(a).not.toEqual(b);
+      expect(c).not.toEqual(d);
+    });
+
     test("a permissions request is granted for the turn on allow and grants nothing on defer", async () => {
       const permissions = { network: { enabled: true }, fileSystem: null };
       const ask = (t: FakeTurn) =>
@@ -309,10 +328,30 @@ describe("codexRuntime", () => {
     expect(fake.inputs[0]).not.toContain("already been executed");
   });
 
-  test("a failed turn and a process that dies both fail the run", async () => {
+  test("a denied harness call is described as not done, not to be tried again, with the user's words", async () => {
+    const fake = new FakeAppServer();
+    const answer: RunInput["answer"] = {
+      callId: "session-1:turn-1:item-1",
+      tool: "codex_command",
+      args: { command: "rm -rf build", cwd: "/work/tree" },
+      verdict: "deny",
+      text: "keep the cache",
+    };
+
+    await setup(fake).run(runInput({ answer }));
+
+    expect(fake.inputs[0]).toContain("denied");
+    expect(fake.inputs[0]).toContain("rm -rf build");
+    expect(fake.inputs[0]).toContain("keep the cache");
+    expect(fake.inputs[0]).not.toContain("Do it again");
+  });
+
+  test("a failed turn, a process that dies mid-turn and one that never starts all fail the run", async () => {
     const failing = new FakeAppServer([async () => ({ failed: "usage limit reached" })]);
+    const dying = new FakeAppServer([async (t) => t.die("codex app-server exited with code 137")]);
 
     await expect(setup(failing).run(runInput())).rejects.toThrow("usage limit reached");
+    await expect(setup(dying).run(runInput())).rejects.toThrow("code 137");
     await expect(codexRuntime({ developerInstructions: "", cwd: "/repo", spawn: dyingProcess }).run(runInput())).rejects.toThrow("not logged in");
   });
 });

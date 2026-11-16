@@ -114,3 +114,32 @@ test("serve says, once per codex agent, that Codex's own settings govern what it
   expect(lines[0]).toContain("coder");
   expect(lines[0]).toContain("~/.aoa");
 });
+
+test("a codex agent's model reaches Codex, and the default agent can run on Codex too", async () => {
+  const fake = new FakeAppServer([
+    async (t) =>
+      void (await t.request("item/tool/call", {
+        threadId: t.threadId,
+        turnId: t.turnId,
+        callId: "call-1",
+        namespace: null,
+        tool: "notify",
+        arguments: { body: "Done." },
+      })),
+  ]);
+  const w = new World({ local: true, codexDefault: true, classifier: false, env: {}, agents: { coder: { runtime: "codex", model: "gpt-test" } } });
+  w.spawnCodex = fake.spawn;
+  cleanup.push(() => w.dispose());
+  await w.start();
+
+  await w.cli("send", "Tidy up.");
+  await w.drain();
+  await w.cli("send", "--agent", "coder", "And this.");
+  await w.drain("coder");
+
+  const [first, second] = fake.sent("thread/start");
+  expect(first).not.toHaveProperty("model");
+  expect(second.model).toBe("gpt-test");
+  expect(w.agent.store.tx((t) => t.listOutbox(w.agent.inboxId))).toMatchObject([{ kind: "message", body: "Done." }]);
+  expect(JSON.parse((await w.cli("status", "--json")).out).agents[0]).toEqual({ name: "default", runtime: "codex", permissionOwner: "harness" });
+});

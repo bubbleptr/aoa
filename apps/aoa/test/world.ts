@@ -120,6 +120,8 @@ export class World {
       local?: boolean;
       /** Named agents; each gets its own scripted model unless it names one. */
       agents?: Record<string, AgentInput>;
+      /** The default agent runs on Codex (through `spawnCodex`) instead of the scripted pi model. */
+      codexDefault?: true;
     } = {},
   ) {
     this.env = o.env ?? { [KEY_ENV]: MODEL_KEY, ...(o.shadowJudge ? { [JEV_ENV]: JEV_KEY } : {}) };
@@ -127,7 +129,7 @@ export class World {
     this.config = {
       dataDir: join(this.root, "data"),
       repo: { path: this.repo, base: "main" },
-      model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV },
+      ...(o.codexDefault ? { runtime: "codex" as const } : { model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV } }),
       ...(o.classifier === false ? {} : { classifier: { provider: "judge", modelId: "judge", apiKeyEnv: KEY_ENV } }),
       ...(o.shadowJudge ? { shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: JEV_ENV } } : {}),
       ...(this.local
