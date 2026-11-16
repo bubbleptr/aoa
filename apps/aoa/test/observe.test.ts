@@ -63,6 +63,24 @@ describe("snapshot", () => {
     expect(s.memory.writesToday).toEqual([{ sessionId: session, count: 1 }]);
   });
 
+  test("a memory file is credited to the session that wrote it last, across sessions", async () => {
+    const w = await world();
+    const write = (content: string) => [call("memory_write", { path: "notes/x.md", content }), say("Noted.")];
+    w.script(write("from A"));
+    const a = (await w.cli("send", "Task A.")).out.trim();
+    await w.drain();
+    w.script(write("from B"));
+    await w.cli("send", "Task B.");
+    await w.drain();
+    w.script(write("from A again"));
+    await w.cli("send", "--to", a, "Once more.");
+    await w.drain();
+
+    const [first] = w.sessions();
+    const s = observe(w);
+    expect(s.memory.files.find((f) => f.path === "notes/x.md")?.writtenBy).toBe(first!.id);
+  });
+
   test("a failed run's event is retrying until its next try, then pending", async () => {
     const w = await world();
     w.script([fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid request" })]);
