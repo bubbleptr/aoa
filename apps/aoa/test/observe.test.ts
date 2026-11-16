@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { addSchedule } from "@aoa/kernel";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { type Snapshot, flows, snapshot } from "../src/observe.ts";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { MEMORY_FILE_CAP, MEMORY_TOTAL_CAP, type Snapshot, flows, snapshot } from "../src/observe.ts";
 import { serve } from "../src/serve.ts";
 import { World, call, say } from "./world.ts";
 
@@ -107,6 +109,43 @@ describe("snapshot", () => {
       thread: null,
       text: JSON.stringify(other, null, 2),
     });
+  });
+
+  test("a memory file carries its text: whole when small, a valid head past the cap, none when it is not UTF-8", async () => {
+    const w = await world();
+    const dir = w.agent.paths.memory;
+    mkdirSync(join(dir, "notes"), { recursive: true });
+    writeFileSync(join(dir, "index.md"), "# Index\n\n- notes/big.md\n");
+    // Three bytes a character, so the per-file cap falls inside one.
+    const big = "记忆".repeat(MEMORY_FILE_CAP / 4);
+    writeFileSync(join(dir, "notes/big.md"), big);
+    writeFileSync(join(dir, "blob.bin"), Uint8Array.of(0x61, 0xff, 0xfe, 0x62));
+
+    const files = observe(w).memory.files;
+    expect(files.find((f) => f.path === "index.md")).toMatchObject({ text: "# Index\n\n- notes/big.md\n", truncated: false, binary: false });
+    const head = files.find((f) => f.path === "notes/big.md")!;
+    expect(head.truncated).toBe(true);
+    expect(big.startsWith(head.text!)).toBe(true);
+    expect(Buffer.byteLength(head.text!)).toBeLessThanOrEqual(MEMORY_FILE_CAP);
+    expect(Buffer.byteLength(head.text!)).toBeGreaterThan(MEMORY_FILE_CAP - 3);
+    expect(files.find((f) => f.path === "blob.bin")).toMatchObject({ text: null, binary: true, size: 4 });
+  });
+
+  test("memory text past the total cap goes to the latest files; older ones keep only a head", async () => {
+    const w = await world();
+    const dir = w.agent.paths.memory;
+    mkdirSync(dir, { recursive: true });
+    const count = Math.ceil(MEMORY_TOTAL_CAP / MEMORY_FILE_CAP) + 2;
+    for (let i = 0; i < count; i++) {
+      const path = join(dir, `f${i}.md`);
+      writeFileSync(path, "x".repeat(MEMORY_FILE_CAP));
+      utimesSync(path, 1_000 + i, 1_000 + i);
+    }
+
+    const files = observe(w).memory.files;
+    expect(files.reduce((n, f) => n + f.text!.length, 0)).toBe(MEMORY_TOTAL_CAP);
+    expect(files[0]).toMatchObject({ path: `f${count - 1}.md`, truncated: false });
+    expect(files.at(-1)).toMatchObject({ path: "f0.md", text: "", truncated: true });
   });
 
   test("a failed run's event is retrying until its next try, then pending", async () => {

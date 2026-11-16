@@ -7,7 +7,7 @@ import type { Edge, Snapshot } from "../src/observe.ts";
 import { SERVE_SEEN } from "../src/serve.ts";
 import { type Web, startWeb } from "../src/web.ts";
 import { type Agent, assemble } from "../src/wiring.ts";
-import { World } from "./world.ts";
+import { World, call, say } from "./world.ts";
 
 type Update = { snapshot: Snapshot; flows: Partial<Record<Edge, number>> };
 
@@ -143,6 +143,38 @@ test("only GET from a localhost Host is served", async () => {
   expect(statusLine(await rawRequest(port, ["GET /snapshot HTTP/1.1", `Host: localhost:${port}`]))).toContain("200");
   expect(statusLine(await rawRequest(port, ["GET /snapshot HTTP/1.1", `Host: attacker.example:${port}`]))).toContain("403");
   expect(statusLine(await rawRequest(port, ["GET /events HTTP/1.1", "Host: 127.0.0.1"]))).toContain("403");
+});
+
+test("a run's memory write reaches a client with the file's new text", async () => {
+  const w = await world();
+  const agent = assemble(validateConfig(w.config), { ...w.seams, clock: systemClock });
+  cleanup.push(() => agent.close());
+  const client = await subscribe(web(agent));
+  await client.next();
+
+  const write = (content: string) => [call("memory_write", { path: "notes/ci.md", content }), say("Noted.")];
+  w.script(write("CI is red."));
+  const thread = (await w.cli("send", "Note the CI state.")).out.trim();
+  await w.drain();
+  w.script(write("CI is green."));
+  await w.cli("send", "--to", thread, "It passed now.");
+  await w.drain();
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pushed = async () => {
+    for (;;) {
+      const update = await client.next();
+      if (update.snapshot.memory.files.find((f) => f.path === "notes/ci.md")?.text === "CI is green.") return;
+    }
+  };
+  try {
+    await Promise.race([
+      pushed(),
+      new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("the new text was not pushed within 3 s")), 3_000))),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 test("with the real file watch, another connection's write reaches a client", async () => {
