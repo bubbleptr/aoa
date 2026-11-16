@@ -26,6 +26,11 @@ header .brand { font-weight: 600; font-size: 15px; }
 .dot.ok { background: var(--green); } .dot.bad { background: var(--red); }
 .strong { font-weight: 500; }
 #conn { margin-left: auto; }
+.switch { display: flex; flex-wrap: wrap; gap: 6px; }
+.switch[hidden] { display: none; }
+.switch button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--node-line); background: var(--surface); color: var(--text); cursor: pointer; }
+.switch button .muted { margin-left: 6px; font-size: 12px; }
+.switch button[aria-pressed="true"] { background: var(--blue-bg); border-color: var(--blue-line); color: var(--blue-text); font-weight: 500; }
 #conn.down { color: var(--red); font-weight: 500; }
 
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 26vw, 440px); gap: 16px; align-items: start; }
@@ -136,6 +141,7 @@ ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5e
 
 <header>
   <div class="group"><span class="brand">aoa</span><span class="mono muted" id="inbox-id"></span></div>
+  <nav class="switch" id="agent-switch" aria-label="Agent" hidden></nav>
   <div class="group"><span class="dot" id="serve-dot" aria-hidden="true"></span><span class="strong" id="serve-state">serve</span><span class="muted" id="serve-detail"></span></div>
   <div class="group"><span class="muted">worker</span><span class="strong" id="worker-state"></span><span class="mono" id="worker-run"></span><span class="muted" id="worker-detail"></span></div>
   <div class="group"><span class="muted">next timer</span><span id="next-timer"></span></div>
@@ -361,6 +367,11 @@ function renderMap(s) {
     plural(s.memory.writesToday.reduce((n, x) => n + x.count, 0), "write") + " today");
   for (const [edge, def] of Object.entries(EDGES)) {
     document.getElementById("label-" + edge).textContent = def.label + " " + s.edges[edge].last24h;
+  }
+  // Of what came in, what another agent sent; a server from before named agents sends no such count.
+  if (named().length) {
+    const fromAgents = s.inFromAgents ? s.inFromAgents.last24h : 0;
+    document.getElementById("label-in").textContent = EDGES.in.label + " " + (s.edges.in.last24h - fromAgents) + " · agents " + fromAgents;
   }
 }
 
@@ -722,17 +733,62 @@ function setConnected(up) {
   conn.textContent = up ? location.host + " · read-only · live" : "disconnected · reconnecting…";
 }
 
+// ---- agents ----
+/** The whole update's snapshot: the default agent's, with the named agents' in `agents`. */
+let view = null;
+/** The agent the page shows; the switcher changes it, nothing on the server does. */
+let chosen = "default";
+const named = () => (view && view.agents) || [];
+
+function pick() {
+  if (chosen === "default") return view;
+  const found = named().find((a) => a.name === chosen);
+  if (found) return found.snapshot;
+  chosen = "default";
+  return view;
+}
+
+function renderSwitch() {
+  const nav = document.getElementById("agent-switch");
+  nav.hidden = named().length === 0;
+  const agents = [{ name: "default", role: "implement" }, ...named()];
+  const keys = agents.map((a) => a.name + ":" + a.role + ":" + (a.name === chosen)).join("|");
+  if (nav.dataset.keys === keys) return;
+  nav.dataset.keys = keys;
+  nav.replaceChildren(...agents.map((a) => {
+    const b = el("button", "", a.name);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(a.name === chosen));
+    b.appendChild(el("span", "muted", a.role));
+    b.addEventListener("click", () => choose(a.name));
+    return b;
+  }));
+}
+
+/** Another agent's panels start fresh: nothing flashes as new, and no row or file stays open from the last one. */
+function choose(name) {
+  if (name === chosen) return;
+  chosen = name;
+  for (const id of Object.keys(seen)) delete seen[id];
+  openRows.clear();
+  memoryEls.clear();
+  current = null;
+  apply({ snapshot: view, flows: {}, flowsByAgent: {} });
+}
+
 function apply(update) {
+  view = update.snapshot;
   const first = current === null;
-  current = update.snapshot;
+  current = pick();
   offset = current.at - Date.now();
+  renderSwitch();
   renderHeader(current);
   renderMap(current);
   const fresh = renderLists(current);
   fresh.timers = renderTimers(current);
   fresh.memory = renderMemory(current);
   if (first) return;
-  const moved = update.flows || {};
+  const moved = (chosen === "default" ? update.flows : (update.flowsByAgent || {})[chosen]) || {};
   const targets = new Set(Object.keys(moved).map((e) => EDGES[e] && EDGES[e].to));
   // Rows a dot is heading for flash when it arrives; the rest flash now.
   for (const id of Object.keys(fresh)) if (reducedMotion.matches || !targets.has(id)) flash(id, fresh[id]);
