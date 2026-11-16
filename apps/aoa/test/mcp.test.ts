@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { mcpServer } from "../src/mcp.ts";
@@ -174,7 +176,7 @@ describe("aoa mcp answer", () => {
     });
     await w.drain("helper");
     expect((await ok(client, "status")).pending).toEqual([]);
-    expect(w.runs("helper").at(-1)?.end?.kind).toBe("sent");
+    expect(readFileSync(join(w.sessions("helper")[0]!.workdir!, "deploy.log"), "utf8")).toBe("deployed\n");
 
     w.script(deploy());
     await ok(client, "send", { text: "Deploy it here too." });
