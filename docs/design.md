@@ -309,7 +309,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 有审查 agent 时，实现 agent 的提示多一段：提交之后用 `send_to` 把简短说明和当前分支交给审查 agent，再通知你；收到结论时按结论修，或者说明为什么不修。审查 agent 的提示要求：用 `git merge-tree --write-tree` 检查能否干净合进 `base`，跑仓库文档里写的测试和类型检查，能做到时检查每个新测试在去掉修复后会失败，然后给实现 agent 一条结论，并用同样的结论通知你。
 - 命令：`aoa send --agent <名字> [--branch <分支>]` 给具名 agent 派活，不带 `--agent` 是默认 agent，`--branch` 只能给审查 agent。`send --to`、`close`、`answer` 在所有 agent 的 inbox 里找。`status` 和 `messages` 多一列 agent；只有一个 agent 时文字输出和以前一样，JSON 里总带 `agent` 字段。`messages` 按 outbox 的入队顺序（`seq`）合并所有 agent 的消息：「按投递顺序」在这里理解为入队顺序，因为游标要求列表只在末尾增长，而送达时间对还没送出的消息会变。
 - 本地通道：所有 agent 写同一个 `messages.md`；有多个 agent 时每条写上 agent 名，通知标题也带上名字。
-- 页面：快照和推送里是默认 agent 的快照，外加 `agents` 数组放其余 agent 的快照，每次推送另带各 agent 各自流过的边。用增量字段而不是换一个外层结构，是因为页面文件每次请求都从磁盘读，正在跑的 `serve` 可能比页面旧或新；旧页面照常显示默认 agent。顶部的切换按钮在浏览器里切换，整页只显示选中的 agent。`in` 边的标签把 `agent_message` 单独数出来，例如 `send · answer 5 · agents 2`。
+- 页面：快照和推送里是默认 agent 的快照，外加 `agents` 数组放其余 agent 的快照，每次推送另带各 agent 各自流过的边。用增量字段而不是换一个外层结构，是因为页面文件每次请求都从磁盘读，正在跑的 `serve` 可能比页面旧或新；旧页面照常显示默认 agent。顶部的切换按钮在浏览器里切换，整页只显示选中的 agent。`in` 边把 `agent_message` 单独数出来：边上方是 `send · answer 5`，下方是 `agents 2`；写成一行会压到 Event inbox 节点上。
 
 ### 影子判断 Jev
 

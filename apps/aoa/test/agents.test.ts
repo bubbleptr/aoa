@@ -7,7 +7,7 @@ import type { AgentInput } from "../src/config.ts";
 import type { Snapshot } from "../src/observe.ts";
 import { SERVE_SEEN, serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
-import { World, call, lastResult, say, type Step } from "./world.ts";
+import { KEY_ENV, MODEL_KEY, World, call, lastResult, say, type Step } from "./world.ts";
 
 let cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -83,6 +83,16 @@ describe("named agents", () => {
     expect(await w.repoGit("log", "-1", "--format=%s", `aoa/helper/${helped!.id.slice(0, 8)}`)).toBe("Add greeting");
   });
 
+  test("a named agent's own model key leaves the environment its shell inherits", async () => {
+    const env = { [KEY_ENV]: MODEL_KEY, AOA_REVIEWER_KEY: "sk-reviewer-secret" };
+    const model = { provider: "scripted-reviewer", modelId: "agent", apiKeyEnv: "AOA_REVIEWER_KEY" };
+    const w = new World({ local: true, env, agents: { reviewer: { role: "review", model } } });
+    cleanup.push(() => w.dispose());
+    await w.start();
+    expect(w.env.AOA_REVIEWER_KEY).toBeUndefined();
+    expect(w.env[KEY_ENV]).toBeUndefined();
+  });
+
   test("with one agent there is no send_to", async () => {
     const w = await world(null);
     w.script([say("Nothing to do.")]);
@@ -153,7 +163,7 @@ describe("named agents", () => {
   });
 
   test("a reviewer cannot edit or change history, can read it, and works detached at the branch's commit", async () => {
-    const w = await world();
+    const w = await world({ reviewer: { role: "review", instructions: "Also check the README." } });
     w.script(commit());
     await w.cli("send", "Add a greeting file.");
     await w.drain();
@@ -187,6 +197,7 @@ describe("named agents", () => {
     const request = requestWith(w, "Review this branch.");
     for (const tool of ["read", "bash", "send_to", "notify"]) expect(request).toContain(`"name":"${tool}"`);
     for (const tool of ["edit", "write", "ask_user"]) expect(request).not.toContain(`"name":"${tool}"`);
+    expect(request).toContain("Also check the README.");
 
     const [reviewing] = w.sessions("reviewer");
     expect(await git(reviewing!.workdir!, "rev-parse", "HEAD")).toBe(await w.repoGit("rev-parse", branch));
@@ -238,6 +249,9 @@ describe("named agents", () => {
     );
     const reviewThread = (await w.cli("send", "--agent", "reviewer", "Run the deploy check.")).out.trim();
     await w.drain("reviewer");
+    expect((await w.named("reviewer").dispatcher.pass()).delivered).toBe(1);
+    expect(readFileSync(join(w.config.dataDir, "messages.md"), "utf8")).toContain(`reviewer · ${reviewThread} · approval_request`);
+    expect(w.notes.at(-1)!.title).toContain("reviewer");
 
     type Listing = { messages: { id: string; agent: string; kind: string; body: string; callId: string | null }[]; cursor: string };
     const listing = JSON.parse((await w.cli("messages", "--json")).out) as Listing;

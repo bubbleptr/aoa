@@ -168,6 +168,7 @@ ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5e
     <path class="edge" id="edge-memory" d="M 812 264 L 812 332" marker-end="url(#arrow)"></path>
     <path class="edge dashed" id="edge-fires" d="M 724 60 L 268 60 L 268 172" marker-end="url(#arrow)"></path>
     <text class="edge-label" id="label-in" x="104" y="208" text-anchor="middle"></text>
+    <text class="edge-label" id="label-in-agents" x="104" y="240" text-anchor="middle"></text>
     <text class="edge-label" id="label-claim" x="402" y="208" text-anchor="middle"></text>
     <text class="edge-label" id="label-calls" x="674" y="208" text-anchor="middle"></text>
     <text class="edge-label" id="label-says" x="946" y="208" text-anchor="middle"></text>
@@ -368,11 +369,11 @@ function renderMap(s) {
   for (const [edge, def] of Object.entries(EDGES)) {
     document.getElementById("label-" + edge).textContent = def.label + " " + s.edges[edge].last24h;
   }
-  // Of what came in, what another agent sent; a server from before named agents sends no such count.
-  if (named().length) {
-    const fromAgents = s.inFromAgents ? s.inFromAgents.last24h : 0;
-    document.getElementById("label-in").textContent = EDGES.in.label + " " + (s.edges.in.last24h - fromAgents) + " · agents " + fromAgents;
-  }
+  // Of what came in, what another agent sent, under the edge: one line would run into the inbox node. A server from
+  // before named agents sends no such count.
+  const fromAgents = s.inFromAgents ? s.inFromAgents.last24h : 0;
+  if (named().length) document.getElementById("label-in").textContent = EDGES.in.label + " " + (s.edges.in.last24h - fromAgents);
+  document.getElementById("label-in-agents").textContent = named().length ? "agents " + fromAgents : "";
 }
 
 // ---- dots ----
