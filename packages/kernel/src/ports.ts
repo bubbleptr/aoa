@@ -51,6 +51,12 @@ export type OutMsgInsert = Omit<OutMsg, "status" | "attempts"> & {
 /** An undelivered message and the earliest time it may be tried. */
 export type QueuedMsg = { msg: OutMsg; nextAttemptAt: number };
 
+/**
+ * When the events of a failed attempt may be claimed again: given how many times they have failed and when
+ * the attempt ended (for an expired lease, when the lease ran out).
+ */
+export type RetryAt = (attempts: number, failedAt: number) => number;
+
 export interface Tx {
   /** True if this inbox holds a non-dropped event with this `(source, dedupeKey)`, or consumed the key as an answer. */
   isAccepted(inboxId: InboxId, source: EventSource, dedupeKey: string): boolean;
@@ -59,19 +65,19 @@ export interface Tx {
   insertEvent(e: EventInsert): void;
   getEvent(id: EventId): Event | null;
   listEvents(inboxId: InboxId): Event[];
-  /** Pending events, oldest first by insertion order. */
+  /** Pending events, oldest first by insertion order; they may still be waiting out a retry delay (`nextAttemptAt`). */
   listPending(inboxId: InboxId): Event[];
 
   /**
-   * `in_run` events whose lease ended go back to `pending` with `attempts + 1`, or to `dead` at `maxAttempts`.
-   * Returns the events that went `dead`, oldest first.
+   * `in_run` events whose lease ended go back to `pending` with `attempts + 1` and a `next_attempt_at` of
+   * `retryAt(attempts + 1, leaseUntil)`, or to `dead` at `maxAttempts`. Returns the events that went `dead`, oldest first.
    */
-  expireLeases(inboxId: InboxId, now: number, maxAttempts: number): Event[];
+  expireLeases(inboxId: InboxId, now: number, maxAttempts: number, retryAt: RetryAt): Event[];
   /** The latest unexpired lease held in this inbox, or null if no run holds one. */
   activeLease(inboxId: InboxId, now: number): number | null;
   /**
    * `pending → in_run` for exactly these events, pinning them to `session`.
-   * Returns false and changes nothing if any of them is no longer pending
+   * Returns false and changes nothing if any of them is no longer pending, is still waiting out a retry delay,
    * or the inbox already holds an unexpired lease.
    */
   claimEvents(inboxId: InboxId, ids: EventId[], run: RunId, session: SessionId, now: number, leaseUntil: number): boolean;
@@ -80,10 +86,10 @@ export interface Tx {
   /** `in_run → done` for the events this run still holds; returns how many. */
   completeEvents(run: RunId): number;
   /**
-   * A failed attempt: the run's events go back to `pending` with `attempts + 1`, or to `dead` at `maxAttempts`.
-   * Returns the events that went `dead`, oldest first.
+   * A failed attempt: the run's events go back to `pending` with `attempts + 1` and a `next_attempt_at` of
+   * `retryAt(attempts + 1, now)`, or to `dead` at `maxAttempts`. Returns the events that went `dead`, oldest first.
    */
-  releaseEvents(run: RunId, maxAttempts: number): Event[];
+  releaseEvents(run: RunId, now: number, maxAttempts: number, retryAt: RetryAt): Event[];
 
   sessionForThread(inboxId: InboxId, thread: string): SessionId | null;
   registerThread(inboxId: InboxId, thread: string, session: SessionId): void;

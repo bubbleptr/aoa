@@ -82,6 +82,7 @@ export function event(payload: unknown, over: Partial<Event> = {}): Event {
     status: "in_run",
     leaseUntil: null,
     attempts: 0,
+    nextAttemptAt: 0,
     run: null,
     ...over,
   };

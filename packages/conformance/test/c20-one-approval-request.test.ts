@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash, answerDeferred } from "@aoa/kernel";
+import { SimulatedCrash, answerDeferred } from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type RunScript } from "../src/index.ts";
 
 const THREAD = "github:o/r#1";
@@ -24,7 +24,7 @@ for (const [name, factory] of storeFactories) {
 
       h.append({ thread: THREAD });
       await expect(worker({ crash: crashAt("before_complete") }).drain()).rejects.toBeInstanceOf(SimulatedCrash);
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       // The events are back to pending, but their session waits on the call: nothing runs until the answer.
       expect((await worker({ store: h.connect() }).drain()).runs).toBe(0);
       await h.dispatcher({ channel }).pass();

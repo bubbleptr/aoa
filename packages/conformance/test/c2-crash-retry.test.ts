@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, MAX_ATTEMPTS, SimulatedCrash } from "@aoa/kernel";
+import { LEASE_MS, MAX_ATTEMPTS, SimulatedCrash, retryDelayMs } from "@aoa/kernel";
 import { Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {
@@ -11,7 +11,7 @@ for (const [name, factory] of storeFactories) {
     afterEach(() => h.dispose());
 
     for (const point of ["after_claim", "before_complete"] as const) {
-      test(`crash at ${point}: a fresh worker retries after the lease expires`, async () => {
+      test(`crash at ${point}: a fresh worker retries after the lease and the retry delay have passed`, async () => {
         const { id } = h.append();
         const runtime = new ScriptedRuntime();
         const dying = h.worker({ runtime, crash: crashAt(point) });
@@ -22,6 +22,11 @@ for (const [name, factory] of storeFactories) {
         expect((await fresh.drain()).runs).toBe(0);
 
         h.clock.advance(LEASE_MS);
+        const expiredAt = h.clock.now();
+        // A lease that ran out is a failed attempt, so the events wait out the retry delay (design §9).
+        expect(await fresh.drain()).toEqual({ runs: 0, nextReadyAt: expiredAt + retryDelayMs(1) });
+
+        h.clock.advance(retryDelayMs(1));
         expect((await fresh.drain()).runs).toBe(1);
         const event = h.store.tx((t) => t.getEvent(id))!;
         expect(event.status).toBe("done");
@@ -35,7 +40,12 @@ for (const [name, factory] of storeFactories) {
       const runtime = new ScriptedRuntime(Array.from({ length: MAX_ATTEMPTS }, () => ({ fail: new Error("model unavailable") })));
       const worker = h.worker({ runtime });
 
-      expect((await worker.drain()).runs).toBe(MAX_ATTEMPTS);
+      let runs = 0;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        runs += (await worker.drain()).runs;
+        if (attempt < MAX_ATTEMPTS) h.clock.advance(retryDelayMs(attempt));
+      }
+      expect(runs).toBe(MAX_ATTEMPTS);
       const event = h.store.tx((t) => t.getEvent(id))!;
       expect(event.status).toBe("dead");
       expect(event.attempts).toBe(MAX_ATTEMPTS);
@@ -48,7 +58,7 @@ for (const [name, factory] of storeFactories) {
       const runtime = new ScriptedRuntime();
       for (let i = 0; i < MAX_ATTEMPTS; i++) {
         await expect(h.worker({ runtime, crash: crashAt("after_claim") }).drain()).rejects.toBeInstanceOf(SimulatedCrash);
-        h.clock.advance(LEASE_MS);
+        h.waitOutLease(i + 1);
       }
       expect((await h.worker({ runtime }).drain()).runs).toBe(0);
       expect(h.store.tx((t) => t.getEvent(id))?.status).toBe("dead");

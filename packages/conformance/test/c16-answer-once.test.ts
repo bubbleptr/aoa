@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash, answerDeferred } from "@aoa/kernel";
+import { SimulatedCrash, answerDeferred } from "@aoa/kernel";
 import { Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type CountingTool, type RunScript } from "../src/index.ts";
 
 const THREAD = "github:o/r#1";
@@ -83,7 +83,7 @@ for (const [name, factory] of storeFactories) {
 
       await expect(worker(runtime, { crash: crashAt("after_tool_exec") }).drain()).rejects.toBeInstanceOf(SimulatedCrash);
       expect(deploy.effects).toHaveLength(1);
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       await worker(runtime, { store: h.connect() }).drain();
 
       expect(deploy.effects).toHaveLength(1);
@@ -97,7 +97,7 @@ for (const [name, factory] of storeFactories) {
 
       await expect(worker(runtime, { crash: crashAt("before_complete") }).drain()).rejects.toBeInstanceOf(SimulatedCrash);
       expect(h.store.tx((t) => t.getSession(session))?.status).toBe("open");
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       await worker(runtime, { store: h.connect() }).drain();
 
       expect(deploy.effects).toHaveLength(1);

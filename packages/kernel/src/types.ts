@@ -23,6 +23,8 @@ export type Event = {
   status: EventStatus;
   leaseUntil: number | null;
   attempts: number;
+  /** A failed attempt's events wait until then before another claim (design §9). */
+  nextAttemptAt: number;
   run: RunId | null;
 };
 

@@ -11,6 +11,19 @@ import type { Event, InboxId, RunEnd, RunId, RunResult, Session, SessionId, Tool
 export const LEASE_MS = 5 * 60_000;
 export const LEASE_RENEW_MS = 60_000;
 export const MAX_ATTEMPTS = 3;
+/**
+ * How long a failed attempt's events wait before they may be claimed again, by attempt number (design §9).
+ * The third failure is the last one, so it needs no delay of its own.
+ */
+export const RETRY_DELAYS_MS = [30_000, 120_000];
+
+/** The retry delay after the `attempts`-th failed attempt of a run. */
+export function retryDelayMs(attempts: number): number {
+  return RETRY_DELAYS_MS[Math.min(Math.max(attempts, 1), RETRY_DELAYS_MS.length) - 1]!;
+}
+
+/** Where the events of an attempt that failed at `failedAt` may be claimed again. */
+const retryAt = (attempts: number, failedAt: number) => failedAt + retryDelayMs(attempts);
 
 export type WorkerOptions = {
   store: Store;
@@ -134,7 +147,7 @@ export class Worker {
   }
 
   private select(t: Tx, now: number): Selection {
-    reportDead(t, this.inboxId, t.expireLeases(this.inboxId, now, MAX_ATTEMPTS), null, now);
+    reportDead(t, this.inboxId, t.expireLeases(this.inboxId, now, MAX_ATTEMPTS, retryAt), null, now);
     const lease = t.activeLease(this.inboxId, now);
     if (lease !== null) return { claim: null, nextReadyAt: lease };
 
@@ -145,7 +158,12 @@ export class Worker {
       // A session waiting on a call runs again only with the answer to that call (I-PRM-4).
       if (existing?.status === "paused" && !group.some((e) => answers(e, existing.pending))) continue;
 
-      const readyAt = Math.max(...group.map((e) => e.receivedAt)) + this.debounceMs;
+      // A group is ready once its debounce is over and whatever failed in it has waited out its retry delay,
+      // so a delayed group holds back the session's later events too (design §9).
+      const readyAt = Math.max(
+        Math.max(...group.map((e) => e.receivedAt)) + this.debounceMs,
+        ...group.map((e) => e.nextAttemptAt),
+      );
       if (readyAt > now) {
         nextReadyAt = nextReadyAt === null ? readyAt : Math.min(nextReadyAt, readyAt);
         continue;
@@ -218,7 +236,7 @@ export class Worker {
       this.store.tx((t) => {
         const now = this.clock.now();
         t.endRun(c.runId, { error }, now);
-        reportDead(t, this.inboxId, t.releaseEvents(c.runId, MAX_ATTEMPTS), error, now);
+        reportDead(t, this.inboxId, t.releaseEvents(c.runId, now, MAX_ATTEMPTS, retryAt), error, now);
       });
       this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
       return;
