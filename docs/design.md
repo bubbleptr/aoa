@@ -1,13 +1,15 @@
 # aoa 设计文档
 
-- 状态：已实现，只在本地的假 GitHub 和脚本模型上跑过；还没接过真实的 GitHub App 和真实模型
+- 状态：已实现，只在脚本模型上跑过（本地模式和假 GitHub 两条路都有端到端测试）；还没接过真实模型和真实的 GitHub App
 - 日期：2026-11-16
 - 规范：[spec.md](spec.md)（下文的 §、I-*、C*、D-* 编号都指它）
 - 决策记录：<（链接已删除）>
 
 ## 1. 要做什么
 
-aoa 是按规范从头写的 always-on agent 内核，第一件事是写代码：带标签的 GitHub issue 或一条 `aoa send` 进来，agent 在自己的 worktree 里改，开 PR，只在需要你的时候找你。
+aoa 是按规范从头写的 always-on agent 内核，第一件事是写代码：一条 `aoa send` 进来，agent 在自己的 worktree 里改，提交到本地分支，只在需要你的时候找你。
+
+默认是本地模式，不需要 GitHub：消息写到本地文件并发桌面通知，分支由你自己合并。配置里加上 `github` 一节才接 GitHub（带标签的 issue 进、评论出、推送并开 PR）。两种模式的差别都在 §8。
 
 它要回答一个问题：只保留规范里的五个原语，不加任何外围，能不能提高生产力。所以第一版刻意精简，并且从第一天起记录能回答这个问题的数（§10）。
 
@@ -22,25 +24,24 @@ aoa 是按规范从头写的 always-on agent 内核，第一件事是写代码�
 ```ts
 // aoa.config.ts
 export default defineAgent({
-  store: sqliteStore("~/.aoa/aoa.db"),
-  memory: "~/.aoa/memory",
-  runtime: piRuntime({ model: "..." }),
+  dataDir: "~/.aoa",
   repo: { path: "~/code/some-repo", base: "main" },
-  channel: github(),
-  sources: [github({ label: "aoa" })],
-  tools: { git_push: { risk: "medium" }, github_open_pr: { risk: "medium" } },
-  policy: { low: "allow", medium: "classify", high: "defer" },
+  model: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  classifier: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  // github: { owner, repo, userLogin, botLogin, appId, installationId, privateKeyPath },  // 可选
 });
 ```
 
 ```bash
-aoa serve              # 唯一的常驻进程：handler、worker、scheduler、dispatcher
-aoa send "修掉 ..."    # 追加一个 user_message 事件，开出一项任务
-aoa answer <id> yes    # 回答一个延后的调用
-aoa status             # 各任务的结局、被问次数、提交到 PR 的时长
+aoa serve                               # 唯一的常驻进程：worker、scheduler、dispatcher
+aoa send "修掉 ..."                     # 开出一项任务
+aoa send --to <thread> "再改一下 ..."   # 给已有任务追加消息；任务在等回答时，这段文字就是回答
+aoa answer <id> approve|deny [理由]     # 回答一个延后的调用
+aoa close <thread> merged|discarded     # 本地模式：告诉它这项任务的分支最后怎样了
+aoa status                              # 各任务的结局、被问次数、时长
 ```
 
-提问和审批也可以直接在 issue 或 PR 的评论里回答。
+本地模式下消息在 `<dataDir>/messages.md`。接了 GitHub 时，提问和审批也可以直接在 issue 或 PR 的评论里回答。
 
 ## 3. 结构
 
@@ -83,7 +84,8 @@ interface Channel {
 | `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
 | `packages/runtime-pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
-| `packages/channel-github` | 轮询 issue 和评论，开 PR，发评论 |
+| `packages/channel-local` | 本地通道：消息写文件，发桌面通知 |
+| `packages/channel-github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
 | `apps/aoa` | CLI、`serve`、worktree 管理 |
 
@@ -192,11 +194,23 @@ GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里�
 
 ## 8. 发件
 
+第一版只在三种时候发消息：活干完了、需要你回答、任务失败。其余安静结束。
+
+模式由配置决定，装配时只判断一次：有 `github` 一节是 GitHub 模式，没有就是本地模式。
+
+### 本地模式（默认）
+
+- 消息追加到 `<dataDir>/messages.md`，每条带一个隐藏标记，重复投递不会写第二遍。审批请求里带着回答它要敲的 `aoa answer` 命令。
+- 写完文件后发一条 macOS 通知。通知是尽力而为：发不出来只记日志，以文件为准；别的系统上不发。消息正文作为参数交给 `osascript`，不拼进脚本。
+- agent 只提交到 worktree 里的本地分支 `aoa/<session id 前 8 位>`，不推送、不开 PR，没有 `git_push`、`github_*`、`follow` 这些工具。worktree 从本地的 base 分支切出，不 fetch，仓库没有 remote 也能用。
+- `bash` 里出现 `git push` 的调用一律延后给你。这只是约定：agent 的 shell 和你是同一个用户，用得了你的 SSH key（§6）。
+- 分支怎么收场由你用 `aoa close` 声明。它只把结果记进库里；关 session 和删 worktree 由 `serve` 在下一次 5 秒巡检时做，分支永远不删。不自动探测「分支是否合进了 base」，因为 squash 合并探测不到，丢弃的任务也本来就需要一条命令来关。
+
+### GitHub 模式
+
 agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 PR 会通知到你；轮询按作者分清三种评论：App 发的是 agent 自己的，配置里那个登录名发的是你的，其余是外部内容。宿主用 App 的私钥换短期的 installation token，私钥和 token 都不进 agent 的环境（§6）。
 
-第一版只在三种时候发消息：开了 PR、需要你回答、任务失败。其余安静结束。
-
-通道是 GitHub：消息是 issue 或 PR 上的一条评论，靠 GitHub 自己的通知送到你手上。经 `aoa send` 开出的任务没有 issue，宿主先用 App 建一个，之后的消息和提问都挂在它上面。
+消息是 issue 或 PR 上的一条评论，靠 GitHub 自己的通知送到你手上。经 `aoa send` 开出的任务没有 issue，宿主先用 App 建一个，之后的消息和提问都挂在它上面。PR 合并或关闭就是任务的结局。
 
 ## 9. 参数
 
@@ -221,9 +235,9 @@ agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 
 
 自用两周，每项任务记三样，全部从已有的表推出，不另外埋点：
 
-- 结局：合并（PR 开出后没有新的用户事件就合并了）、返工（合并前又来了用户事件）、丢弃（PR 关闭未合并，或没开出 PR）。
+- 结局：合并、返工（交付之后又来了用户事件才合并）、丢弃。本地模式下「交付」是第一条送达的消息，合并或丢弃由 `aoa close` 声明；GitHub 模式下「交付」是 PR 开出，结局看 PR 的状态，没开出 PR 就关掉的算丢弃。
 - 被问次数：`decisions` 里这个 session 裁决为 `defer` 的条数（`deferred` 表只留到答复或过期，不能数它）。
-- 时长：第一个事件的 `received_at` 到 PR 开出。
+- 时长：第一个事件的 `received_at` 到交付。
 
 `aoa status` 直接出这张表，拿去和同期 早先的项目 Inbox 的任务比。
 
@@ -240,7 +254,7 @@ agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 
 
 C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve` 读入后会从环境变量里删掉，所以 agent 的 shell 继承不到它；GitHub App 的私钥文件和 `~/.aoa` 仍然靠规则把关。C19 检查宿主放进上下文的最近消息，不检查 `reported.md`（§7）。
 
-端到端测试经过和 `serve` 同一个装配函数，用内存里的假 GitHub、脚本模型、真 git 加本地裸仓库：issue 进到 PR 出、经 GitHub 评论审批、外部内容标记、`aoa answer`、PR 关闭后收尾。
+端到端测试经过和 `serve` 同一个装配函数，两种模式各一套，都用脚本模型和真 git。本地模式：没有 remote 的仓库，`send` 到分支上的提交、消息文件和通知、`aoa answer`、`send --to`、`close` 之后的收尾。GitHub 模式：内存里的假 GitHub 加本地裸仓库，issue 进到 PR 出、经评论审批、外部内容标记、PR 关闭后收尾。
 
 标为 `POLICY` 的条目（`PointerNotCopy`、I-CTX-2）没法机械验证，测试通过不等于符合规范。
 
@@ -259,7 +273,10 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - `serve` 必须配分类器。`bash` 是中风险，没有分类器时，只读白名单之外的每条命令都会停下来等你，写代码的循环转不起来。
 - 文件工具的路径落在任务的 worktree 之外时延后。
 - PR 的状态存在 `pull_states` 表里，由存储层直接提供，内核不知道 PR。`serve` 每 5 分钟查一次；PR 合并或关闭后关掉 session、删掉 worktree。之后再来事件会重开 session，在原分支上重建 worktree。
-- `aoa status --refresh` 只更新 PR 状态，不关 session。
+- `aoa status --refresh` 只更新 PR 状态，不关 session；本地模式下它什么都不做。
+- 本地模式声明的结局存在 `declared_results` 表里，一次声明只生效一次：`serve` 关掉 session 后，之后用 `send --to` 重开的 session 不会被同一条声明再关掉。
+- session 在等回答时，它的 thread 上来的用户消息就是回答：`/approve` 批准，`/deny 理由` 拒绝，别的文字对审批算拒绝并当作理由，对提问算答案。`aoa send --to` 和 GitHub 评论走的是同一条路。
+- 本地模式的 `git push` 规则排在内核规则之后，所以强推之类仍然是直接拦掉，不会变成可以批准。
 - `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉；另外每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
 
 ## 13. 没验证的
@@ -269,6 +286,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - GitHub App 的 JWT 和 installation token 交换，经 HTTPS 带 token 的 `git push`。
 - GitHub 接口的细节：`since` 的语义、按创建时间排序、带标签的 PR 是否出现在 issues 列表里、`head=owner:branch` 过滤、经 issues 接口给 PR 加标签、真实的分页和限流。
 - 真实模型会不会照系统提示的流程走；分类器会不会只回答一个词。
+- macOS 通知从没真的发过：测试里注入了假的通知函数，`osascript` 那条命令没跑过。
 - 宿主时钟要和 GitHub 相差一分钟以内，否则换 token 会失败。
 
 已知的局限：
@@ -278,7 +296,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - agent 的工作目录里的 `pre-push` 钩子或 `url.insteadOf` 规则能看到或改走推送用的凭据；和 §6 接受的同用户风险是一回事。
 - 给 issue 打标签之前的评论不会进来，只有 issue 本身会。
 
-还要你来做的：建 GitHub App 并装到目标仓库，定下跑在哪台机器上，然后才是在真实仓库上跑通和两周自用。
+还要你来做的：给出模型的 key 和分类器配置，定下跑在哪台机器上，然后才是在真实仓库上跑通和两周自用。要接 GitHub 时再建 App 并装到目标仓库。
 
 ## 14. 暂缓
 
