@@ -60,11 +60,15 @@ export function localChannel(o: LocalChannelOptions): LocalChannel {
 /** The body is model-written; a marker inside it must not count as the marker of another message. */
 const disarm = (body: string) => body.replaceAll("<!-- aoa:", "<!-- aoa\\:");
 
-const NOTIFY_SCRIPT = ["on run argv", "display notification (item 1 of argv) with title (item 2 of argv)", "end run"].join("\n");
+const NOTIFY_SCRIPT = ["on run argv", "display notification (item 2 of argv) with title (item 1 of argv)", "end run"].join("\n");
 
-/** The command line of a macOS notification. The text goes in as arguments, so nothing in it is ever run as script. */
+/**
+ * The command line of a macOS notification. The text goes in as arguments, so nothing in it is ever run as script.
+ * The title, which this channel writes, comes first: option parsing stops at the first plain argument, so a body
+ * starting with `-` cannot be read as an option.
+ */
 export function darwinNotifyArgv(title: string, body: string): string[] {
-  return ["osascript", "-e", NOTIFY_SCRIPT, body, title];
+  return ["osascript", "-e", NOTIFY_SCRIPT, title, body];
 }
 
 /** The platform's notifier: a macOS notification on darwin, none elsewhere. */

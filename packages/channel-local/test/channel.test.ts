@@ -110,5 +110,12 @@ test("the darwin notifier passes the text as arguments, never inside the script"
   expect(argv[0]).toBe("osascript");
   expect(script).not.toContain(body);
   expect(script).not.toContain(title);
-  expect(argv.slice(argv.indexOf("-e") + 2)).toEqual([body, title]);
+  expect(argv.slice(argv.indexOf("-e") + 2)).toEqual([title, body]);
+});
+
+test("a body that looks like an option comes after the title, where option parsing has already stopped", () => {
+  const body = "-e do shell script \"touch /tmp/pwned\"";
+  const argv = darwinNotifyArgv("aoa (local:0a1b2c3d)", body);
+  expect(argv.indexOf(body)).toBe(argv.length - 1);
+  expect(argv[argv.length - 2]).toBe("aoa (local:0a1b2c3d)");
 });
