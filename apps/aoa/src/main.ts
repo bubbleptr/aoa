@@ -2,7 +2,7 @@
 import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
 import { findConfig, loadConfig, validateForServe } from "./config.ts";
 import { serve } from "./serve.ts";
-import { DEFAULT_WEB_PORT, startWeb } from "./web.ts";
+import { DEFAULT_WEB_PORT, type Web, startWeb } from "./web.ts";
 import { type Seams, assemble } from "./wiring.ts";
 
 export const HELP = `aoa: an always-on coding agent for one repository.
@@ -11,7 +11,8 @@ Without a github block in the config it runs in local mode: messages go to <data
 desktop notification, and work stays on local branches aoa/<id> that you merge yourself.
 
 Usage:
-  aoa serve                                   Run the agent until interrupted (Ctrl-C).
+  aoa serve [--port <n>]                      Run the agent until interrupted (Ctrl-C), with the page of aoa web
+                                              on http://127.0.0.1:<port>; it prints the address.
   aoa send "<text>"                           Open a task, picked up by serve (with GitHub: an issue with the text).
   aoa send --to <thread-or-prefix> "<text>"   Add to an existing task; on one waiting for an answer, the text answers it.
   aoa answer <call-id-or-prefix> approve|deny [text...]
@@ -24,15 +25,15 @@ Usage:
                                               only what came after that cursor; --wait waits that long for something new.
   aoa status [--json] [--refresh]             Sessions, outcomes, pending approvals, dead events, failed messages.
                                               --refresh looks up pull request states on GitHub first.
-  aoa web [--port <n>]                        A live, read-only page of the inbox, timers, memory, permissions and
-                                              outbox on http://127.0.0.1:<port> (default ${DEFAULT_WEB_PORT}), until Ctrl-C.
+  aoa web [--port <n>]                        Only the page: a live, read-only view of the inbox, timers, memory,
+                                              permissions and outbox, for when serve is not running.
 
 Options:
   --config <path>   The config file (default: ./aoa.config.ts, then ~/.aoa/aoa.config.ts).
   --to <thread>     For send: the task to add to.
   --since <id>      For messages: the cursor a previous aoa messages printed.
   --wait <seconds>  For messages: how long to wait when there is nothing new.
-  --port <n>        For web: the port on 127.0.0.1.
+  --port <n>        For serve and web: the page's port on 127.0.0.1 (default ${DEFAULT_WEB_PORT}; 0 picks a free one).
   -h, --help        Show this help.
 
 On GitHub, reply to an approval request with /approve, or /deny followed by a reason.`;
@@ -83,7 +84,7 @@ function parse(argv: string[]): Parsed {
       p.wait = value;
     } else if (a === "--port") {
       const value = Number(argv[++i]);
-      if (!Number.isInteger(value) || value < 1 || value > 65_535) throw new Error("--port needs a port number");
+      if (!Number.isInteger(value) || value < 0 || value > 65_535) throw new Error("--port needs a port number (0 picks a free one)");
       p.port = value;
     }
     else if (a === "--json") p.json = true;
@@ -129,8 +130,8 @@ export async function main(argv: string[], io: Io): Promise<number> {
     return 2;
   }
 
-  if (p.port !== undefined && p.command !== "web") {
-    io.err(`--port is only for web.\n\n${HELP}`);
+  if (p.port !== undefined && p.command !== "web" && p.command !== "serve") {
+    io.err(`--port is only for serve and web.\n\n${HELP}`);
     return 2;
   }
 
@@ -152,7 +153,17 @@ export async function main(argv: string[], io: Io): Promise<number> {
   try {
     switch (p.command) {
       case "serve": {
+        const port = p.port ?? DEFAULT_WEB_PORT;
+        let web: Web | null = null;
+        try {
+          web = startWeb(agent, { port });
+          io.out(`aoa web on http://127.0.0.1:${web.port}`);
+        } catch (err) {
+          // The page is for watching; the agent runs without it.
+          io.err(`aoa web could not listen on 127.0.0.1:${port} (${(err as Error).message}); serving without it.`);
+        }
         await serve(agent, (io.stopSignal ?? signals)());
+        await web?.stop();
         return 0;
       }
       case "web": {

@@ -91,7 +91,40 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     });
   });
 
-  const server = Bun.serve({
+  const quiet = () => {
+    stopWatch();
+    cancelCoalesce?.();
+    cancelFlip();
+    cancelCheck();
+  };
+
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    server = listen();
+  } catch (err) {
+    // serve keeps running without the page; a watch or timer left behind would keep this process alive after it.
+    quiet();
+    throw err;
+  }
+
+  return {
+    port: server.port!,
+    async stop() {
+      quiet();
+      for (const c of clients) {
+        try {
+          c.close();
+        } catch {
+          // Already closed by its client.
+        }
+      }
+      clients.clear();
+      await server.stop(true);
+    },
+  };
+
+  function listen() {
+    return Bun.serve({
     hostname: "127.0.0.1",
     port: o.port,
     fetch(req, srv) {
@@ -133,23 +166,5 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
       return new Response("Not Found\n", { status: 404 });
     },
   });
-
-  return {
-    port: server.port!,
-    async stop() {
-      stopWatch();
-      cancelCoalesce?.();
-      cancelFlip();
-      cancelCheck();
-      for (const c of clients) {
-        try {
-          c.close();
-        } catch {
-          // Already closed by its client.
-        }
-      }
-      clients.clear();
-      await server.stop(true);
-    },
-  };
+  }
 }

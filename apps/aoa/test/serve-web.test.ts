@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { main } from "../src/main.ts";
-import { World } from "./world.ts";
+import { KEY_ENV, World } from "./world.ts";
 
 let worlds: World[] = [];
 afterEach(() => {
@@ -26,7 +26,7 @@ async function serving(w: World, ...flags: string[]) {
       err += `${t}\n`;
       printed(t);
     },
-    seams: w.seams,
+    seams: { ...w.seams, env: { ...w.seams.env, [KEY_ENV]: "test-key" } },
     stopSignal: () => stopped,
   });
   const first = await Promise.race([firstLine, done.then((code) => `exited ${code}: ${err}`)]);
