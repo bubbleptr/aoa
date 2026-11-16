@@ -11,7 +11,9 @@
     "@aoa/kernel": "workspace:*",
     "@aoa/runtime-pi": "workspace:*",
     "@aoa/store-sqlite": "workspace:*",
-    "@earendil-works/pi-ai": "1.5.2"
+    "@earendil-works/pi-ai": "1.5.2",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@aoa/conformance": "workspace:*"
