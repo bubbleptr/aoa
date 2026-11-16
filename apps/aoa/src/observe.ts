@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import type { Decision, DecisionRecord, EventSource, EventStatus, JournalRecord, OutMsg, Tx } from "@aoa/kernel";
+import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type JournalRecord, type OutMsg, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
@@ -55,8 +55,17 @@ export const MEMORY_FILE_CAP = 64 * 1024;
 /** The most memory text a snapshot carries in all, in bytes; the latest files get it first. */
 export const MEMORY_TOTAL_CAP = 512 * 1024;
 
+/**
+ * When a run sees the file (design §7): instructions and the index are loaded into every run, a progress file into
+ * its own task's runs, notes only when the agent reads them; anything else is not part of the layout.
+ */
+export type MemoryKind = "instructions" | "index" | "progress" | "notes" | "other";
+
 export type MemoryFile = {
   path: string;
+  kind: MemoryKind;
+  /** For a progress file: the task it belongs to, by its name, and that task's state; `unknown` if no such task. */
+  task: { sessionId: string; state: "open" | "paused" | "closed" | "unknown" } | null;
   size: number;
   mtime: number;
   writtenBy: string | null;
@@ -131,7 +140,14 @@ export type Snapshot = {
   nextTimer: { id: string; kind: TimerRow["kind"]; due: number } | null;
   events: { counts: Record<InboxRow["status"], number>; rows: InboxRow[] };
   timers: { counts: { armed: number; schedule: number; done: number; cancelled: number }; rows: TimerRow[] };
-  memory: { root: string; files: MemoryFile[]; totalBytes: number; writesToday: { sessionId: string; count: number }[] };
+  memory: {
+    root: string;
+    files: MemoryFile[];
+    totalBytes: number;
+    writesToday: { sessionId: string; count: number }[];
+    /** What every run is given as "already told the user": the latest delivered messages, oldest first. */
+    told: { id: string; thread: string | null; body: string; createdAt: number }[];
+  };
   permissions: {
     waiting: WaitingCall[];
     last24h: Record<Decision, number>;
@@ -150,6 +166,16 @@ export type Snapshot = {
 const memoryPath = (path: unknown): string | null =>
   typeof path === "string" ? path.split(/[\\/]+/).filter((p) => p !== "" && p !== ".").join("/") : null;
 
+const PROGRESS_FILE = /^progress\/([^/]+)\.md$/;
+
+function kindOf(path: string): MemoryKind {
+  if (path === "instructions.md") return "instructions";
+  if (path === "index.md") return "index";
+  if (PROGRESS_FILE.test(path)) return "progress";
+  if (path.startsWith("notes/")) return "notes";
+  return "other";
+}
+
 function listFiles(root: string): MemoryFile[] {
   const files: MemoryFile[] = [];
   const walk = (dir: string) => {
@@ -166,7 +192,7 @@ function listFiles(root: string): MemoryFile[] {
       else if (e.isFile() && !e.name.endsWith(".tmp")) {
         const st = statSync(full);
         const path = relative(root, full).split(sep).join("/");
-        files.push({ path, size: st.size, mtime: st.mtimeMs, writtenBy: null, text: null, truncated: false, binary: false });
+        files.push({ path, kind: kindOf(path), task: null, size: st.size, mtime: st.mtimeMs, writtenBy: null, text: null, truncated: false, binary: false });
       }
     }
   };
@@ -376,6 +402,13 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
 
     const writes = journal.filter((j) => j.tool === "memory_write");
     for (const f of files) f.writtenBy = writes.findLast((j) => memoryPath((j.args as { path?: unknown })?.path) === f.path)?.sessionId ?? null;
+    const stateOf = new Map(sessions.map((x) => [x.id, x.status]));
+    for (const f of files) {
+      const sessionId = PROGRESS_FILE.exec(f.path)?.[1];
+      if (sessionId !== undefined) f.task = { sessionId, state: stateOf.get(sessionId) ?? "unknown" };
+    }
+    // The same read the worker makes for a run's "Already told the user".
+    const told = t.listRecentSent(inboxId, RESIDENT_RECENT_MESSAGES).map((m) => ({ id: m.id, thread: m.thread, body: m.body, createdAt: m.createdAt }));
     const today = startOfDay(now);
     const writesToday = new Map<string, number>();
     for (const j of writes) if (j.intentAt >= today) writesToday.set(j.sessionId, (writesToday.get(j.sessionId) ?? 0) + 1);
@@ -444,6 +477,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
         files,
         totalBytes: files.reduce((n, f) => n + f.size, 0),
         writesToday: [...writesToday].map(([sessionId, count]) => ({ sessionId, count })),
+        told,
       },
       permissions: {
         waiting: deferred.map((d) => ({
