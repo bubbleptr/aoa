@@ -2,12 +2,12 @@ import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import type { AgentRuntime, Clock, Store, Tx } from "./ports.ts";
 import type { Memory } from "./memory.ts";
 import { reportDead } from "./outbox.ts";
-import { askPermission } from "./permission.ts";
+import { askPermission, holdUntrusted, resolveAdmit } from "./permission.ts";
 import type { PolicyConfig } from "./policy.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
-import type { Event, InboxId, PermissionAsk, RunEnd, RunId, RunResult, Session, SessionId, ToolDef } from "./types.ts";
+import type { Event, EventId, InboxId, PermissionAsk, RunEnd, RunId, RunResult, Session, SessionId, ToolDef } from "./types.ts";
 
 export const LEASE_MS = 5 * 60_000;
 export const LEASE_RENEW_MS = 60_000;
@@ -162,11 +162,12 @@ export class Worker {
     if (lease !== null) return { claim: null, nextReadyAt: lease };
 
     let nextReadyAt: number | null = null;
-    for (const group of groupPending(t.listPending(this.inboxId))) {
+    for (let group of groupPending(t.listPending(this.inboxId))) {
       const head = group[0]!;
       const existing = head.resume === null ? null : t.getSession(head.resume);
+      const answer = existing?.status === "paused" ? group.find((e) => answers(e, existing.pending)) : undefined;
       // A session waiting on a call runs again only with the answer to that call (I-PRM-4).
-      if (existing?.status === "paused" && !group.some((e) => answers(e, existing.pending))) continue;
+      if (existing?.status === "paused" && !answer) continue;
 
       // A group is ready once its debounce is over and whatever failed in it has waited out its retry delay,
       // so a delayed group holds back the session's later events too (design §9).
@@ -177,6 +178,24 @@ export class Worker {
       if (readyAt > now) {
         nextReadyAt = nextReadyAt === null ? readyAt : Math.min(nextReadyAt, readyAt);
         continue;
+      }
+
+      if (this.permissions === "harness") {
+        let admitted = new Set<EventId>();
+        const pending = answer ? t.getDeferred(existing!.pending!) : null;
+        if (pending?.kind === "admit") ({ group, admitted } = resolveAdmit(t, this.inboxId, pending, answer!, group, now));
+        // An event a run has taken before was let in then; asking now would not take it back from the model.
+        const unadmitted = group.filter((e) => !e.trusted && e.attempts === 0 && !admitted.has(e.id));
+        if (unadmitted.length > 0) {
+          // The answer must reach its session now; untrusted input that came with it waits to be asked about next.
+          if (answer && group.includes(answer)) group = group.filter((e) => !unadmitted.includes(e));
+          else {
+            const session = existing ?? this.openSession(t, head.thread, now);
+            holdUntrusted(t, this.inboxId, session.id, group, unadmitted, now);
+            continue;
+          }
+        }
+        if (group.length === 0) continue;
       }
 
       const session = existing ?? this.openSession(t, head.thread, now);

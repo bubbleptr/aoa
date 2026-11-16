@@ -370,6 +370,8 @@ function createTx(db: Database): Tx {
       `UPDATE events SET status = 'in_run', run = $run, resume = $session, lease_until = $lease
        WHERE id = $id AND status = 'pending'`,
     ),
+    pinEvent: db.query("UPDATE events SET resume = $session WHERE id = $id AND status = 'pending'"),
+    dropEvent: db.query("UPDATE events SET status = 'dropped' WHERE id = $id AND status = 'pending'"),
     renewLease: db.query("UPDATE events SET lease_until = $lease WHERE run = $run AND status = 'in_run'"),
     completeEvents: db.query("UPDATE events SET status = 'done', lease_until = NULL WHERE run = $run AND status = 'in_run'"),
     releaseEvents: db.query(
@@ -564,6 +566,12 @@ function createTx(db: Database): Tx {
       if (!ids.every((id) => q.isPending.get(id, now)!.n === 1)) return false;
       for (const id of ids) q.claim.run({ id, run, session, lease: leaseUntil });
       return true;
+    },
+    pinEvents(ids, session) {
+      for (const id of ids) q.pinEvent.run({ id, session });
+    },
+    dropEvents(ids) {
+      for (const id of ids) q.dropEvent.run({ id });
     },
     renewLease: (run, leaseUntil) => q.renewLease.run({ run, lease: leaseUntil }).changes > 0,
     completeEvents: (run) => q.completeEvents.run({ run }).changes,

@@ -83,6 +83,10 @@ export interface Tx {
    * or the inbox already holds an unexpired lease.
    */
   claimEvents(inboxId: InboxId, ids: EventId[], run: RunId, session: SessionId, now: number, leaseUntil: number): boolean;
+  /** Pins these pending events to `session` without claiming them, so they wait with it (design §12). */
+  pinEvents(ids: EventId[], session: SessionId): void;
+  /** `pending → dropped` for these events. */
+  dropEvents(ids: EventId[]): void;
   /** Returns false if the run no longer holds its events. */
   renewLease(run: RunId, leaseUntil: number): boolean;
   /** `in_run → done` for the events this run still holds; returns how many. */

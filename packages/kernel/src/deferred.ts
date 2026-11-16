@@ -79,6 +79,16 @@ export function deferInTx(t: Tx, d: PendingCall, reason?: string): void {
 
 function requestBody(d: PendingCall, reason: string | undefined): string {
   if (d.kind === "question") return (d.args as { question: string }).question;
+  if (d.kind === "admit") {
+    const { from, preview } = d.args as { from: string; preview: string };
+    return [
+      `Input from ${from} is waiting for the agent. It is not from you, so the agent does not see it unless you let it in:`,
+      "",
+      `> ${preview}`,
+      "",
+      "Reply `/approve` to let the agent read it, or `/deny` to drop it.",
+    ].join("\n");
+  }
   return [
     `The agent wants to call \`${d.tool}\` and needs your approval:`,
     "",
@@ -115,16 +125,19 @@ export function asAnswer(
   const pending = t.getDeferred(session.pending);
   const text = (e.payload as { text?: unknown } | null)?.text;
   if (!pending || typeof text !== "string") return null;
-  return { event: answerEvent({ callId: pending.callId, ...parseReply(text, pending.kind) }, thread), resume: session.id };
+  const reply = parseReply(text, pending.kind);
+  return reply && { event: answerEvent({ callId: pending.callId, ...reply }, thread), resume: session.id };
 }
 
-function parseReply(text: string, kind: PendingCall["kind"]): Omit<AnswerPayload, "callId"> {
+function parseReply(text: string, kind: PendingCall["kind"]): Omit<AnswerPayload, "callId"> | null {
   const trimmed = text.trim();
   const command = /^\/(approve|deny)\b\s*([\s\S]*)$/i.exec(trimmed);
   if (command) {
     const rest = command[2]!.trim();
     return { verdict: command[1]!.toLowerCase() as "approve" | "deny", ...(rest === "" ? {} : { text: rest }) };
   }
+  // Held input is only let in or dropped: the user's other words are their own message, which waits with it.
+  if (kind === "admit") return null;
   // For a question any reply is the answer; for an approval it is a refusal that tells the agent why.
   return { verdict: kind === "question" ? "approve" : "deny", text: trimmed };
 }
