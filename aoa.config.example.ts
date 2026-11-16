@@ -10,6 +10,12 @@ export default {
   classifier: { provider: "anthropic", modelId: "your-small-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
   // Optional: score every classifier call with TypeSafe Jev without changing or delaying its decision (design §12).
   // shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" },
+  // Optional, local mode only: more agents in the same serve. Each has its own inbox, worktrees and memory, and takes
+  // model, classifier and risk from the top level unless it sets them. A review agent cannot edit files or change
+  // git history; the implementing agents hand it their branch with send_to, and it sends its verdict back.
+  // agents: {
+  //   reviewer: { role: "review", instructions: "Focus on missing tests." },
+  // },
   // Without a github block aoa runs in local mode. Add one to take tasks from issues and open pull requests:
   // github: {
   //   owner: "your-github-user-or-org",

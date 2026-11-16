@@ -32,6 +32,24 @@ aoa status [--json]                      # 各任务的状态、结局、被问�
 
 agent 的 `bash` 里出现 `git push` 时会先问你。这只是约定，不是隔离：agent 的 shell 就是你的 shell。
 
+## 多个 agent：实现加审查
+
+配置里可以加 `agents`，让几个有名字的 agent 同时跑在一个 `serve` 里。顶层字段就是默认 agent，和以前一样；每个具名 agent 有自己的 inbox、worker、角色、权限和记忆，没写的字段（`model`、`classifier`、`risk`）沿用顶层。角色有两种：`implement`（默认，和默认 agent 一样写代码）和 `review`（只读：没有 edit、write，改引用或历史的 git 命令一律拦掉）。
+
+```ts
+agents: {
+  reviewer: { role: "review", instructions: "Focus on missing tests." },
+},
+```
+
+有审查 agent 时，实现 agent 提交后用 `send_to` 把分支交给它；审查 agent 在一个停在那个提交上的独立 worktree 里检查能否干净合并、跑测试、看新测试去掉修复后会不会失败，然后把结论发回实现 agent，同时通知你。结论只是建议：合并、关任务、回答审批都还是你来。两个 agent 之间来回最多 4 条消息，再多就该找你了。
+
+```bash
+aoa send --agent reviewer --branch aoa/1a2b3c4d "看看这个分支"   # 直接给审查 agent 派活
+```
+
+`status`、`messages`、`answer`、`send --to`、`close` 都会在所有 agent 里找；`messages.md` 和通知里写着是哪个 agent。具名 agent 的数据在默认 agent 旁边：inbox 是 `local/<repo>@<名字>`，记忆和 worktree 在 `memory/local/<repo>@<名字>/`、`worktrees/local/<repo>@<名字>/`，分支是 `aoa/<名字>/<会话 id 前 8 位>`。只能用在本地模式。
+
 ## 看它在做什么
 
 ```bash
@@ -39,7 +57,7 @@ aoa serve                                # 启动时打印页面地址 http://12
 aoa web [--port 7878]                    # serve 没在跑时，单独开这个页面
 ```
 
-`aoa serve` 会顺带开这个页面并把地址打印到终端；端口被占用时只打一行提示，`serve` 照常跑。`--port` 换端口。`serve` 停着时用 `aoa web` 单独开，它不需要模型的 key。页面上方是流向图：事件进 inbox、worker 认领、每次工具调用过权限、定时器和记忆、outbox 发消息，哪条边上有东西经过，就有一个点沿它走一遍；没事发生时什么都不动。下面五块分别是 inbox、定时器、记忆、权限和 outbox 的计数和最近几条，等你回答的调用旁边写着该运行的 `aoa answer` 命令。页面靠推送更新，不轮询：库里每有一次提交就重读一遍，有变化才推给浏览器。头部显示 `serve` 是否在跑，超过 15 秒没心跳就显示离线。只监听 `127.0.0.1`，没有任何写操作。
+`aoa serve` 会顺带开这个页面并把地址打印到终端；端口被占用时只打一行提示，`serve` 照常跑。`--port` 换端口。`serve` 停着时用 `aoa web` 单独开，它不需要模型的 key。页面上方是流向图：事件进 inbox、worker 认领、每次工具调用过权限、定时器和记忆、outbox 发消息，哪条边上有东西经过，就有一个点沿它走一遍；没事发生时什么都不动。下面五块分别是 inbox、定时器、记忆、权限和 outbox 的计数和最近几条，等你回答的调用旁边写着该运行的 `aoa answer` 命令。页面靠推送更新，不轮询：库里每有一次提交就重读一遍，有变化才推给浏览器。头部显示 `serve` 是否在跑，超过 15 秒没心跳就显示离线。只监听 `127.0.0.1`，没有任何写操作。配置了多个 agent 时，页面顶部可以切换看哪一个。
 
 ## 让聊天里的 agent 当入口
 
