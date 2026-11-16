@@ -92,7 +92,10 @@ export async function status(agent: Agent, o: { json: boolean; refresh: boolean 
 }
 
 export type Listing = {
-  messages: Pick<OutMsg, "id" | "thread" | "sessionId" | "kind" | "body" | "callId" | "createdAt" | "status">[];
+  messages: (Pick<OutMsg, "id" | "thread" | "sessionId" | "kind" | "body" | "callId" | "createdAt" | "status"> & {
+    /** For an approval request: whether its call still waits for an answer. */
+    pending?: boolean;
+  })[];
   /** The id of the last message listed, or the cursor given when there is none: pass it as `--since` next time. */
   cursor: string | null;
 };
@@ -106,7 +109,10 @@ const WAIT_STEP_MS = 1000;
 export async function messages(agent: Agent, o: { since: string | null; waitMs: number }): Promise<Listing> {
   const deadline = agent.clock.now() + o.waitMs;
   for (;;) {
-    const all = agent.store.tx((t) => t.listOutbox(agent.inboxId));
+    const { all, waiting } = agent.store.tx((t) => ({
+      all: t.listOutbox(agent.inboxId),
+      waiting: new Set(t.listDeferred(agent.inboxId).map((d) => d.callId)),
+    }));
     const at = o.since === null ? -1 : all.findIndex((m) => m.id === o.since);
     if (o.since !== null && at < 0) throw new Error(`No message has the id "${o.since}"; run aoa messages without --since for all of them.`);
     const found = all.slice(at + 1).filter((m) => m.status !== "cancelled");
@@ -121,6 +127,7 @@ export async function messages(agent: Agent, o: { since: string | null; waitMs: 
           callId,
           createdAt,
           status,
+          ...(kind === "approval_request" && callId !== null ? { pending: waiting.has(callId) } : {}),
         })),
         cursor: all.at(-1)?.id ?? o.since,
       };
@@ -132,7 +139,7 @@ export async function messages(agent: Agent, o: { since: string | null; waitMs: 
 export function renderMessages(l: Listing): string {
   const blocks = l.messages.map((m) => {
     const lines = [`[${m.id}] ${m.thread ?? "-"} · ${m.kind}`, m.body];
-    if (m.kind === "approval_request" && m.callId !== null) {
+    if (m.pending) {
       lines.push(`Answer with: aoa answer ${m.callId} approve   or   aoa answer ${m.callId} deny <reason>`);
     }
     return lines.join("\n");

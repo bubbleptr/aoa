@@ -76,6 +76,23 @@ describe("aoa messages", () => {
     expect((await list(w)).messages).toEqual([]);
   });
 
+  test("a request that was delivered and then answered is listed without the way to answer it", async () => {
+    const w = await world();
+    w.judge = () => "unsure";
+    w.script([call("bash", { command: "echo deployed >> deploy.log" }), say("Deployed.")]);
+    await w.cli("send", "Deploy it.");
+    await w.drain();
+    await w.dispatch();
+    const [asked] = (await list(w)).messages;
+    expect(asked).toMatchObject({ kind: "approval_request", pending: true });
+
+    await w.cli("answer", asked!.callId!, "approve");
+    await w.drain();
+
+    expect((await list(w)).messages[0]).toMatchObject({ kind: "approval_request", pending: false });
+    expect((await w.cli("messages")).out).not.toContain("aoa answer");
+  });
+
   test("an unknown cursor is an error, not an empty list", async () => {
     const w = await world();
     const r = await w.cli("messages", "--since", "no-such-message");

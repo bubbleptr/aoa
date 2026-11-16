@@ -42,7 +42,9 @@ bun run aoa messages --since <游标> --wait 600   # 等 agent 的下一条消�
 bun run aoa answer <调用 id> approve|deny [理由]  # 消息是审批请求时
 ```
 
-`messages` 读的是 outbox，不是 `messages.md`，所以两种模式都能用；加 `--json` 给程序读。
+`messages` 读的是 outbox，不是 `messages.md`，所以两种模式都能用，消息在通道送达之前就能读到；加 `--json` 给程序读。
+
+两条限制：这些命令现在只能在 aoa 仓库根目录运行（或用 `--config` 指到配置）；审批是留给你的，聊天 agent 只转述请求，得到你明确同意后才运行 `aoa answer`。
 
 ## 接 GitHub（可选）
 
