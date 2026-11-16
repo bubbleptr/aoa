@@ -155,10 +155,9 @@ const migrations: string[] = [
   `,
   `
   CREATE TABLE declared_results (
-    session_id  TEXT PRIMARY KEY REFERENCES sessions (id),
-    result      TEXT NOT NULL CHECK (result IN ('merged', 'discarded')),
-    declared_at INTEGER NOT NULL,
-    applied     INTEGER NOT NULL DEFAULT 0
+    session_id TEXT PRIMARY KEY REFERENCES sessions (id),
+    result     TEXT NOT NULL CHECK (result IN ('merged', 'discarded')),
+    applied    INTEGER NOT NULL DEFAULT 0
   );
   `,
 ];

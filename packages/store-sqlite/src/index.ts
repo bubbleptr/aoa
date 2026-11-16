@@ -31,12 +31,12 @@ export type PullStates = {
 };
 
 /** How the user says a local-mode session's branch ended (`aoa close`). `applied` once serve has closed the session for it. */
-export type DeclaredResult = { result: "merged" | "discarded"; declaredAt: number; applied: boolean };
+export type DeclaredResult = { result: "merged" | "discarded"; applied: boolean };
 
 export type DeclaredResults = {
   get(sessionId: string): DeclaredResult | null;
   /** Records or replaces the declaration, not yet applied. */
-  declare(sessionId: string, result: DeclaredResult["result"], at: number): void;
+  declare(sessionId: string, result: DeclaredResult["result"]): void;
   markApplied(sessionId: string): void;
 };
 
@@ -63,12 +63,12 @@ export function sqliteStore(path: string): SqliteStore {
     `INSERT INTO pull_states (session_id, number, state, checked_at) VALUES ($session, $number, $state, $at)
      ON CONFLICT (session_id) DO UPDATE SET number = excluded.number, state = excluded.state, checked_at = excluded.checked_at`,
   );
-  const getResult = db.query<{ result: DeclaredResult["result"]; declared_at: number; applied: number }, [string]>(
-    "SELECT result, declared_at, applied FROM declared_results WHERE session_id = ?",
+  const getResult = db.query<{ result: DeclaredResult["result"]; applied: number }, [string]>(
+    "SELECT result, applied FROM declared_results WHERE session_id = ?",
   );
   const declareResult = db.query(
-    `INSERT INTO declared_results (session_id, result, declared_at, applied) VALUES ($session, $result, $at, 0)
-     ON CONFLICT (session_id) DO UPDATE SET result = excluded.result, declared_at = excluded.declared_at, applied = 0`,
+    `INSERT INTO declared_results (session_id, result, applied) VALUES ($session, $result, 0)
+     ON CONFLICT (session_id) DO UPDATE SET result = excluded.result, applied = 0`,
   );
   const applyResult = db.query("UPDATE declared_results SET applied = 1 WHERE session_id = ?");
   const firstSent = db.query<{ at: number | null }, [string]>(
@@ -88,10 +88,10 @@ export function sqliteStore(path: string): SqliteStore {
     results: {
       get(sessionId) {
         const r = getResult.get(sessionId);
-        return r ? { result: r.result, declaredAt: r.declared_at, applied: r.applied === 1 } : null;
+        return r ? { result: r.result, applied: r.applied === 1 } : null;
       },
-      declare(sessionId, result, at) {
-        declareResult.run({ session: sessionId, result, at });
+      declare(sessionId, result) {
+        declareResult.run({ session: sessionId, result });
       },
       markApplied(sessionId) {
         applyResult.run(sessionId);
