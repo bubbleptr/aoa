@@ -82,6 +82,58 @@ describe("local mode", () => {
   });
 });
 
+describe("named agents", () => {
+  const { github: _, ...local } = valid;
+  const small = { provider: "anthropic", modelId: "claude-small", apiKeyEnv: "OTHER_KEY" };
+  const base = { ...local, classifier: small, risk: { bash: "high" as const } };
+
+  test("each agent inherits what it does not set from the top level; the role defaults to implement", () => {
+    const c = validateConfig({
+      ...base,
+      agents: {
+        reviewer: { role: "review", instructions: "Be strict.", model: small },
+        helper: { risk: { bash: "medium" } },
+      },
+    });
+    expect(c.agents).toEqual({
+      reviewer: { role: "review", instructions: "Be strict.", model: small, classifier: small, risk: { bash: "high" } },
+      helper: { role: "implement", model: local.model, classifier: small, risk: { bash: "medium" } },
+    });
+    expect(validateConfig(base).agents).toBeUndefined();
+  });
+
+  test.each([
+    [{ ...base, agents: { Reviewer: {} } }, "agents.Reviewer"],
+    [{ ...base, agents: { "9lives": {} } }, "agents.9lives"],
+    [{ ...base, agents: { [`a${"b".repeat(32)}`]: {} } }, `agents.a${"b".repeat(32)}`],
+    [{ ...base, agents: { default: {} } }, "agents.default"],
+    [{ ...base, agents: { reviewer: { role: "approve" } } }, "agents.reviewer.role"],
+    [{ ...base, agents: { reviewer: { dataDir: "/x" } } }, "agents.reviewer.dataDir"],
+    [{ ...base, agents: { reviewer: { model: { provider: "x" } } } }, "agents.reviewer.model.modelId"],
+  ])("rejects a bad agent: %#", (raw, field) => {
+    expect(() => validateConfig(raw)).toThrow(new RegExp(`^Invalid config: ${field.replaceAll(".", "\\.")} `));
+  });
+
+  test("GitHub mode stays single-agent", () => {
+    expect(() => validateConfig({ ...valid, agents: { reviewer: {} } })).toThrow(/^Invalid config: agents .*github/);
+  });
+
+  test("a named agent's inbox, memory and worktrees sit beside the default agent's, never inside them", () => {
+    const c = validateConfig({ ...base, agents: { reviewer: { role: "review" } } });
+    expect(derivePaths(c, "/home/k")).toMatchObject({
+      inboxId: "local/widgets",
+      memory: "/home/k/.aoa/memory/local/widgets",
+      worktrees: "/home/k/.aoa/worktrees/local/widgets",
+    });
+    expect(derivePaths(c, "/home/k", "reviewer")).toMatchObject({
+      inboxId: "local/widgets@reviewer",
+      db: "/home/k/.aoa/aoa.db",
+      memory: "/home/k/.aoa/memory/local/widgets@reviewer",
+      worktrees: "/home/k/.aoa/worktrees/local/widgets@reviewer",
+    });
+  });
+});
+
 describe("shadow judge", () => {
   const judge = { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" };
 
