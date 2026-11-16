@@ -298,9 +298,13 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
 
     const timers = t.listTimers(inboxId);
     const armed = timers.filter((x) => x.status === "armed");
+    const expiresCallOf = (x: (typeof timers)[number]): string | null => {
+      const { expiredCall } = (x.payload ?? {}) as { expiredCall?: unknown };
+      return typeof expiredCall === "string" ? expiredCall : null;
+    };
     const timerRow = (x: (typeof timers)[number]): TimerRow => {
-      const { note, expiredCall } = (x.payload ?? {}) as { note?: unknown; expiredCall?: unknown };
-      const expiresCall = typeof expiredCall === "string" ? expiredCall : null;
+      const { note } = (x.payload ?? {}) as { note?: unknown };
+      const expiresCall = expiresCallOf(x);
       return {
         id: x.id,
         kind: x.kind,
@@ -321,11 +325,11 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
         expiresCall,
       };
     };
-    // A cancelled timer records no cancel time; its due time stands in for it.
-    const ended = timers
-      .filter((x) => x.status !== "armed")
-      .sort((a, b) => (b.lastFired ?? b.due) - (a.lastFired ?? a.due))
-      .slice(0, LATEST);
+    // A cancelled timer records no cancel time and is usually cancelled before it was due, so it cannot be placed
+    // among the fired ones; it comes after them. An expiry cancelled because its call was answered is left out.
+    const fired = timers.filter((x) => x.status === "done").sort((a, b) => b.lastFired! - a.lastFired!);
+    const cancelled = timers.filter((x) => x.status === "cancelled" && expiresCallOf(x) === null).reverse();
+    const ended = [...fired, ...cancelled].slice(0, LATEST);
     const nextTimer = armed[0] ? { id: armed[0].id, kind: armed[0].kind, due: armed[0].due } : null;
 
     const sessions = t.listSessions(inboxId);
