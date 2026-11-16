@@ -132,15 +132,15 @@ describe("codexRuntime", () => {
       const fake = new FakeAppServer([
         async (t) => {
           await commandApproval(t, "item-1");
-          // Codex may ask again before the interrupt lands; the gate is not asked twice.
-          if (!t.interrupted()) await commandApproval(t, "item-2", "ls");
+          // Codex may ask again before the interrupt lands: declined without asking the gate.
+          await commandApproval(t, "item-2", "ls");
         },
       ]);
       const gate = recordingAsk(() => "defer");
 
       const result = await setup(fake).run(runInput({ ask: gate.ask }));
 
-      expect(fake.serverRequests[0]!.reply).toEqual({ decision: "decline" });
+      expect(fake.serverRequests.map((r) => r.reply)).toEqual([{ decision: "decline" }, { decision: "decline" }]);
       expect(fake.sent("turn/interrupt")).toEqual([{ threadId: "thread-1", turnId: "turn-1" }]);
       expect(gate.asks).toHaveLength(1);
       expect(result).toEqual({ end: { kind: "deferred", callId: "session-1:turn-1:item-1" }, sessionRef: "thread-1" });
@@ -182,15 +182,17 @@ describe("codexRuntime", () => {
 
     test("a file change is identified by the changes its item carries, so the same change asked again is equal", async () => {
       const changes = [{ path: "src/a.ts", kind: { type: "update", move_path: null }, diff: "-a\n+b\n" }];
-      const fileChange = async (t: FakeTurn, itemId: string) => {
-        t.notify("item/started", { threadId: t.threadId, turnId: t.turnId, item: { type: "fileChange", id: itemId, changes: [], status: "inProgress" } });
-        t.notify("item/fileChange/patchUpdated", { threadId: t.threadId, turnId: t.turnId, itemId, changes });
+      // Codex may carry the changes on the item when it starts, or send them in a patch update afterwards.
+      const fileChange = async (t: FakeTurn, itemId: string, patchUpdate: boolean) => {
+        const item = { type: "fileChange", id: itemId, changes: patchUpdate ? [] : changes, status: "inProgress" };
+        t.notify("item/started", { threadId: t.threadId, turnId: t.turnId, item });
+        if (patchUpdate) t.notify("item/fileChange/patchUpdated", { threadId: t.threadId, turnId: t.turnId, itemId, changes });
         return t.request("item/fileChange/requestApproval", { threadId: t.threadId, turnId: t.turnId, itemId, startedAtMs: 0, reason: null });
       };
       const fake = new FakeAppServer([
         async (t) => {
-          await fileChange(t, "item-1");
-          await fileChange(t, "item-2");
+          await fileChange(t, "item-1", true);
+          await fileChange(t, "item-2", false);
         },
       ]);
       const gate = recordingAsk(() => "allow");

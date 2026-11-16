@@ -1,6 +1,6 @@
 import type { CodexProcess, SpawnCodex } from "../src/connection.ts";
 
-/** What a scripted turn can do: ask the client things, tell it things, and see whether it was interrupted. */
+/** What a scripted turn can do: ask the client things and tell it things. */
 export type FakeTurn = {
   threadId: string;
   turnId: string;
@@ -8,7 +8,6 @@ export type FakeTurn = {
   text: string;
   request<T = any>(method: string, params: object): Promise<T>;
   notify(method: string, params: object): void;
-  interrupted(): boolean;
 };
 
 /** A turn's script; it may end the turn as failed, otherwise the turn completes (or reports the interrupt). */
@@ -101,7 +100,6 @@ export class FakeAppServer {
           );
         },
         notify: (method, params) => send({ method, params }),
-        interrupted: () => interrupted,
       };
       const end = await script(turn);
       const status = end ? "failed" : interrupted ? "interrupted" : "completed";
