@@ -54,7 +54,8 @@ export async function decide(policy: PolicyConfig | undefined, call: ToolCall, c
 // evasion lands in the risk tier, never in an allow: only the read-only rule allows, and it accepts nothing
 // but a plain command made of a narrow set of characters.
 
-const commandOf = (call: ToolCall): string | null => {
+/** The command of a `bash` call; null for any other call. */
+export const commandOf = (call: ToolCall): string | null => {
   if (call.tool !== "bash" || typeof call.args !== "object" || call.args === null) return null;
   const command = (call.args as { command?: unknown }).command;
   return typeof command === "string" ? command : null;
@@ -221,7 +222,8 @@ const networkWhenTainted = bashRule("network-when-tainted", (command, ctx) => {
 
 const READ_ONLY_PROGRAMS = new Set(["ls", "cat", "head", "tail", "wc", "pwd"]);
 const READ_ONLY_GIT = new Set(["status", "diff", "log", "show", "branch"]);
-const BRANCH_LIST_FLAGS = new Set(["-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "-l", "--list", "--show-current", "--no-color"]);
+/** `git branch` flags that only list branches. */
+export const BRANCH_LIST_FLAGS: ReadonlySet<string> = new Set(["-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "-l", "--list", "--show-current", "--no-color"]);
 /** No operators, substitution, expansion, globbing or redirection: what runs is what is written. */
 const PLAIN_COMMAND = /^[\w \t./:@%+=,'"-]+$/;
 
