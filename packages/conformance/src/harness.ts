@@ -4,10 +4,12 @@ import { join } from "node:path";
 import {
   ChannelPoller,
   Dispatcher,
+  LEASE_MS,
   Scheduler,
   SimulatedCrash,
   Worker,
   appendEvent,
+  retryDelayMs,
   type AppendResult,
   type CrashHook,
   type CrashPoint,
@@ -82,6 +84,11 @@ export class Harness {
   restart(): void {
     this.db.closeAll();
     this.store = this.db.connect();
+  }
+
+  /** Moves the clock past a dead worker's lease and the retry delay after its `attempts`-th failure (design §9). */
+  waitOutLease(attempts = 1): void {
+    this.clock.advance(LEASE_MS + retryDelayMs(attempts));
   }
 
   connect(): Store {

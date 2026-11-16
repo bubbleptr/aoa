@@ -32,6 +32,13 @@ export class FakeClock implements Clock {
     return new Promise((resolve) => this.onTimer.push(resolve));
   }
 
+  /** Resolves once a pending timer is due at or before `at`, e.g. a worker's sleep until the next retry. */
+  async timerDueBy(at: number): Promise<void> {
+    while (!this.timers.some((t) => t.due <= at)) {
+      await new Promise<void>((resolve) => this.onTimer.push(resolve));
+    }
+  }
+
   advance(ms: number): void {
     const target = this.current + ms;
     for (;;) {

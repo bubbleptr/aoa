@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS } from "@aoa/kernel";
+import { LEASE_MS, retryDelayMs } from "@aoa/kernel";
 import { Harness, ScriptedRuntime, gate, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {
@@ -66,6 +66,8 @@ for (const [name, factory] of storeFactories) {
         onRunEnd: (r) => seen.push(`end ${r.runId} ${r.end?.kind ?? r.error}`),
       });
       h.append();
+      await worker.drain();
+      h.clock.advance(retryDelayMs(1));
       await worker.drain();
 
       const [first, second] = h.runs().map((r) => r.id);

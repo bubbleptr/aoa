@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash, type ToolDef } from "@aoa/kernel";
+import { SimulatedCrash, type ToolDef } from "@aoa/kernel";
 import { Harness, ScriptedRuntime, crashAt, storeFactories, type RunScript } from "../src/index.ts";
 
 /** A tool whose external effect the test can count. */
@@ -34,7 +34,7 @@ for (const [name, factory] of storeFactories) {
       await expect(h.worker({ runtime, tools: [tool], crash: crashAt(point) }).drain()).rejects.toBeInstanceOf(
         SimulatedCrash,
       );
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       expect((await h.worker({ runtime, tools: [tool], store: h.connect() }).drain()).runs).toBe(1);
       expect(h.store.tx((t) => t.getEvent(id))?.status).toBe("done");
       const [first, rerun] = runtime.runs;

@@ -9,6 +9,7 @@ import type {
   JournalEntry,
   JournalRecord,
   RunEnd,
+  RetryAt,
   RunRecord,
   Session,
   SessionStatus,
@@ -116,6 +117,7 @@ type EventRow = {
   status: EventStatus;
   lease_until: number | null;
   attempts: number;
+  next_attempt_at: number;
   run: string | null;
 };
 
@@ -132,6 +134,7 @@ const toEvent = (r: EventRow): Event => ({
   status: r.status,
   leaseUntil: r.lease_until,
   attempts: r.attempts,
+  nextAttemptAt: r.next_attempt_at,
   run: r.run,
 });
 
@@ -299,14 +302,16 @@ function createTx(db: Database): Tx {
     expireLeases: db.query(
       `UPDATE events
        SET status = CASE WHEN attempts + 1 >= $max THEN 'dead' ELSE 'pending' END,
-           attempts = attempts + 1, lease_until = NULL
+           attempts = attempts + 1
        WHERE inbox_id = $inbox AND status = 'in_run' AND lease_until <= $now
-       RETURNING id, status`,
+       RETURNING id, attempts, status, lease_until`,
     ),
     activeLease: db.query<{ until: number | null }, [string, number]>(
       "SELECT max(lease_until) AS until FROM events WHERE inbox_id = ? AND status = 'in_run' AND lease_until > ?",
     ),
-    isPending: db.query<{ n: number }, [string]>("SELECT count(*) AS n FROM events WHERE id = ? AND status = 'pending'"),
+    isPending: db.query<{ n: number }, [string, number]>(
+      "SELECT count(*) AS n FROM events WHERE id = ? AND status = 'pending' AND next_attempt_at <= ?",
+    ),
     claim: db.query(
       `UPDATE events SET status = 'in_run', run = $run, resume = $session, lease_until = $lease
        WHERE id = $id AND status = 'pending'`,
@@ -316,10 +321,12 @@ function createTx(db: Database): Tx {
     releaseEvents: db.query(
       `UPDATE events
        SET status = CASE WHEN attempts + 1 >= $max THEN 'dead' ELSE 'pending' END,
-           attempts = attempts + 1, lease_until = NULL
+           attempts = attempts + 1
        WHERE run = $run AND status = 'in_run'
-       RETURNING id, status`,
+       RETURNING id, attempts, status, lease_until`,
     ),
+    setNextAttempt: db.query("UPDATE events SET next_attempt_at = $at, lease_until = NULL WHERE id = $id"),
+    clearLease: db.query("UPDATE events SET lease_until = NULL WHERE id = $id"),
     sessionForThread: db.query<{ session_id: string }, [string, string]>(
       "SELECT session_id FROM threads WHERE inbox_id = ? AND thread_key = ?",
     ),
@@ -429,13 +436,27 @@ function createTx(db: Database): Tx {
     ),
   };
 
-  /** The rows an update moved to `dead`, as events in insertion order. */
-  const dead = (changed: unknown[]): Event[] =>
-    (changed as { id: string; status: EventStatus }[])
+  /**
+   * Takes a failed-attempt update's `RETURNING` rows: the pending ones wait until `retryAt(attempts, failedAt)`
+   * before another claim, and the ones that went `dead` are returned as events in insertion order.
+   * The update leaves `lease_until` alone, so an expired lease still says when the attempt ended.
+   */
+  const released = (
+    changed: unknown[],
+    retryAt: RetryAt,
+    failedAt: (row: { id: string; lease_until: number | null }) => number,
+  ): Event[] => {
+    const rows = changed as { id: string; attempts: number; status: EventStatus; lease_until: number | null }[];
+    for (const r of rows) {
+      if (r.status === "pending") q.setNextAttempt.run({ id: r.id, at: retryAt(r.attempts, failedAt(r)) });
+      else q.clearLease.run({ id: r.id });
+    }
+    return rows
       .filter((r) => r.status === "dead")
       .map((r) => q.getEvent.get(r.id)!)
       .sort((a, b) => a.seq - b.seq)
       .map(toEvent);
+  };
 
   const activeLease = (inboxId: string, now: number) => q.activeLease.get(inboxId, now)?.until ?? null;
 
@@ -464,17 +485,21 @@ function createTx(db: Database): Tx {
     },
     listEvents: (inboxId) => q.listEvents.all(inboxId).map(toEvent),
     listPending: (inboxId) => q.listPending.all(inboxId).map(toEvent),
-    expireLeases: (inboxId, now, maxAttempts) => dead(q.expireLeases.all({ inbox: inboxId, now, max: maxAttempts })),
+    expireLeases: (inboxId, now, maxAttempts, retryAt) =>
+      // A lease that ran out failed when it ended, not when a worker noticed (design §9).
+      released(q.expireLeases.all({ inbox: inboxId, now, max: maxAttempts }), retryAt, (r) => r.lease_until ?? now),
     activeLease,
     claimEvents(inboxId, ids, run, session, now, leaseUntil) {
       if (activeLease(inboxId, now) !== null) return false;
-      if (!ids.every((id) => q.isPending.get(id)!.n === 1)) return false;
+      if (!ids.every((id) => q.isPending.get(id, now)!.n === 1)) return false;
       for (const id of ids) q.claim.run({ id, run, session, lease: leaseUntil });
       return true;
     },
     renewLease: (run, leaseUntil) => q.renewLease.run({ run, lease: leaseUntil }).changes > 0,
     completeEvents: (run) => q.completeEvents.run({ run }).changes,
-    releaseEvents: (run, maxAttempts) => dead(q.releaseEvents.all({ run, max: maxAttempts })),
+    // A run that threw failed now; its lease still runs to the end, which is not when the attempt ended.
+    releaseEvents: (run, now, maxAttempts, retryAt) =>
+      released(q.releaseEvents.all({ run, max: maxAttempts }), retryAt, () => now),
     sessionForThread: (inboxId, thread) => q.sessionForThread.get(inboxId, thread)?.session_id ?? null,
     registerThread(inboxId, thread, session) {
       q.registerThread.run({ inbox: inboxId, thread, session });

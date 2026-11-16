@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash, outboxTools } from "@aoa/kernel";
+import { SimulatedCrash, outboxTools } from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {
@@ -30,7 +30,7 @@ for (const [name, factory] of storeFactories) {
       await expect(
         h.worker({ runtime, tools: tools(), crash: crashAt("before_complete") }).drain(),
       ).rejects.toBeInstanceOf(SimulatedCrash);
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       await h.worker({ runtime, tools: tools(), store: h.connect() }).drain();
 
       const [msg] = h.outbox();

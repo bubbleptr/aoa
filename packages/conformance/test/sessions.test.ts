@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash, addFollowUp, closeSession, type Rule, type Session, type ToolDef } from "@aoa/kernel";
+import {
+  SimulatedCrash,
+  addFollowUp,
+  closeSession,
+  retryDelayMs,
+  type Rule,
+  type Session,
+  type ToolDef,
+} from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const whereAmI: ToolDef = {
@@ -51,7 +59,7 @@ for (const [name, factory] of storeFactories) {
       await expect(h.worker({ runtime, prepareSession, crash: crashAt("before_complete") }).drain()).rejects.toBeInstanceOf(
         SimulatedCrash,
       );
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       await h.worker({ runtime, prepareSession, store: h.connect() }).drain();
       expect(runtime.runs.map((r) => r.input.session.workdir)).toEqual(["/work/1", "/work/1"]);
       expect(prepared).toBe(1);
@@ -67,7 +75,10 @@ for (const [name, factory] of storeFactories) {
       const runtime = new ScriptedRuntime();
       const worker = h.worker({ runtime, prepareSession });
 
-      expect((await worker.drain()).runs).toBe(2);
+      expect((await worker.drain()).runs).toBe(1);
+      expect(h.store.tx((t) => t.getEvent(id))).toMatchObject({ status: "pending", attempts: 1 });
+      h.clock.advance(retryDelayMs(1));
+      expect((await worker.drain()).runs).toBe(1);
       expect(h.store.tx((t) => t.getEvent(id))).toMatchObject({ status: "done", attempts: 1 });
       expect(h.runs().map((r) => r.error)).toEqual(["worktree busy", null]);
       expect(runtime.runs.map((r) => r.input.session.workdir)).toEqual(["/work/ok"]);

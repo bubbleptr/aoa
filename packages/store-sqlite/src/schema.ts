@@ -160,6 +160,10 @@ const migrations: string[] = [
     applied    INTEGER NOT NULL DEFAULT 0
   );
   `,
+  `
+  -- When a failed attempt's events may be claimed again (design §9). 0 means "not waiting".
+  ALTER TABLE events ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 /** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */

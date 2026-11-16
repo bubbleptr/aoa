@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, OUTBOX_MAX_ATTEMPTS, SimulatedCrash, outboxTools, type RatePolicy } from "@aoa/kernel";
+import { OUTBOX_MAX_ATTEMPTS, SimulatedCrash, outboxTools, type RatePolicy } from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type ScriptedCall } from "../src/index.ts";
 
 const MINUTE = 60_000;
@@ -26,7 +26,7 @@ for (const [name, factory] of storeFactories) {
       await expect(h.worker({ runtime, tools: tools(), crash: crashAt("after_tool_exec") }).drain()).rejects.toBeInstanceOf(
         SimulatedCrash,
       );
-      h.clock.advance(LEASE_MS);
+      h.waitOutLease();
       await h.worker({ runtime, tools: tools(), store: h.connect() }).drain();
 
       expect(h.outbox()).toHaveLength(1);
