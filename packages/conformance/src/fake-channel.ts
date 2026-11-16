@@ -2,6 +2,14 @@ import type { Channel, NewEvent, OutMsg } from "@aoa/kernel";
 
 export type DeliveryFailure = "before_accept" | "after_accept";
 
+/** Controls for a delivery the test holds in flight with `holdNext()`; it ends when the test releases or fails it. */
+export type HeldDelivery = {
+  /** Resolves once `deliver` has been called and is waiting. */
+  started: Promise<void>;
+  release(): void;
+  fail(err?: Error): void;
+};
+
 /**
  * A channel that behaves like a well-behaved remote: it shows each `dedupeKey` to the user once,
  * however often `deliver` is called. Tests script failures and feed inbound events.
@@ -14,6 +22,7 @@ export class FakeChannel implements Channel {
   private failures: DeliveryFailure[] = [];
   private feed: NewEvent[] = [];
   private waiters: { count: number; resolve: () => void }[] = [];
+  private held: (Omit<HeldDelivery, "started"> & { promise: Promise<void>; started: () => void }) | null = null;
 
   /** The next deliveries fail in this order; `after_accept` means the remote showed it, then the call errored. */
   failNext(...failures: DeliveryFailure[]): void {
@@ -25,7 +34,31 @@ export class FakeChannel implements Channel {
     this.feed.push(...events);
   }
 
+  /**
+   * Makes the next `deliver` wait until the test calls `release()` or `fail()`, so a test can act while
+   * the delivery is in flight. What happens afterwards is an ordinary delivery, including `failures`.
+   */
+  holdNext(): HeldDelivery {
+    let started = () => {};
+    const start = new Promise<void>((resolve) => (started = resolve));
+    let resolve = () => {};
+    let reject = (_err: Error) => {};
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    const fail = (err?: Error) => reject(err ?? new Error("connection refused"));
+    this.held = { promise, started, release: resolve, fail };
+    return { started: start, release: resolve, fail };
+  }
+
   async deliver(m: OutMsg): Promise<void> {
+    const held = this.held;
+    if (held) {
+      this.held = null;
+      held.started();
+      await held.promise;
+    }
     this.calls.push(m);
     const failure = this.failures.shift();
     if (failure === "before_accept") throw new Error("connection refused");

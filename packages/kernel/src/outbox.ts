@@ -211,6 +211,7 @@ export class Dispatcher {
       return next;
     }
     this.crashAt("after_deliver");
+    // Still `sent` if the message was cancelled mid-delivery: it did reach the user.
     this.store.tx((t) => t.markSent(m.id, this.clock.now()));
     return "sent";
   }

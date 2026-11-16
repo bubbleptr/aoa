@@ -401,7 +401,7 @@ function createTx(db: Database): Tx {
        SET attempts = attempts + 1,
            status = CASE WHEN $next IS NULL THEN 'failed' ELSE 'pending' END,
            next_attempt_at = coalesce($next, next_attempt_at)
-       WHERE id = $id`,
+       WHERE id = $id AND status = 'sending'`,
     ),
     listSentTimes: db.query<{ sent_at: number }, [string, number]>(
       "SELECT sent_at FROM outbox WHERE inbox_id = ? AND kind = 'message' AND status = 'sent' AND sent_at >= ? ORDER BY sent_at",

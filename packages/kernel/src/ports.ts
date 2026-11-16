@@ -156,7 +156,10 @@ export interface Tx {
   /** `pending → sending`; returns false if the message is not pending. */
   markSending(id: MsgId): boolean;
   markSent(id: MsgId, at: number): void;
-  /** `attempts + 1`, then back to `pending` until `nextAttemptAt`, or `failed` when it is null. */
+  /**
+   * `attempts + 1`, then back to `pending` until `nextAttemptAt`, or `failed` when it is null.
+   * A message that is no longer `sending` (cancelled mid-delivery) is left alone.
+   */
   markDeliveryFailed(id: MsgId, nextAttemptAt: number | null): void;
   /** When messages of kind `message` were sent at or after `since`. */
   listSentTimes(inboxId: InboxId, since: number): number[];

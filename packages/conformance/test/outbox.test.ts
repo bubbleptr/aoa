@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { OUTBOX_MAX_ATTEMPTS, SimulatedCrash, outboxTools, type RatePolicy } from "@aoa/kernel";
+import { OUTBOX_MAX_ATTEMPTS, SimulatedCrash, answerDeferred, outboxTools, type RatePolicy } from "@aoa/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type ScriptedCall } from "../src/index.ts";
 
 const MINUTE = 60_000;
@@ -84,8 +84,7 @@ for (const [name, factory] of storeFactories) {
       expect(channel.calls).toHaveLength(6);
     });
 
-    test("an approval request waits behind a held message of its own session", async () => {
-      h.append({ thread: "task-a" });
+    test("an approval request waits behind a held message of its own session", async () => {      h.append({ thread: "task-a" });
       const runtime = new ScriptedRuntime([{ calls: [notify("call-1", "starting the deploy"), { tool: "deploy", callId: "call-2" }] }]);
       await h.worker({ runtime, tools: [...tools(), countingTool("deploy")], policy: { risk: { notify: "low" } } }).drain();
       const quietAllDay: RatePolicy = { ...unpaced, quietPeriod: { startMinute: 0, endMinute: 24 * 60 } };
@@ -95,6 +94,49 @@ for (const [name, factory] of storeFactories) {
       await h.dispatcher({ channel, policy: unpaced }).pass();
       await h.dispatcher({ channel, policy: unpaced }).pass();
       expect(channel.visible.map((m) => m.kind)).toEqual(["message", "approval_request"]);
+    });
+
+    /** Starts a delivery of a deferred call's approval request and holds it in flight until the test ends it. */
+    const holdApprovalDelivery = async () => {
+      h.append({ thread: "task-a" });
+      await h
+        .worker({
+          runtime: new ScriptedRuntime([{ calls: [{ tool: "deploy", callId: "call-1" }] }]),
+          tools: [countingTool("deploy")],
+          policy: { risk: {} },
+        })
+        .drain();
+      const dispatcher = h.dispatcher({ channel, policy: unpaced });
+      const held = channel.holdNext();
+      const pass = dispatcher.pass();
+      await held.started;
+      answerDeferred(h.store, h.clock, h.inboxId, "call-1", "approve");
+      return { dispatcher, held, pass };
+    };
+
+    test("a request cancelled while its delivery is in flight stays cancelled when that delivery fails", async () => {
+      const { dispatcher, held, pass } = await holdApprovalDelivery();
+      held.fail();
+      await pass;
+
+      // Well past every backoff, and more passes: a withdrawn request must never go out.
+      h.clock.advance(60 * MINUTE);
+      await dispatcher.pass();
+      h.clock.advance(60 * MINUTE);
+      await dispatcher.pass();
+
+      expect(channel.calls).toEqual([]);
+      expect(channel.visible).toEqual([]);
+      expect(h.outbox()).toMatchObject([{ kind: "approval_request", status: "cancelled", attempts: 0 }]);
+    });
+
+    test("a request cancelled while its delivery is in flight is still sent when that delivery succeeds", async () => {
+      const { held, pass } = await holdApprovalDelivery();
+      held.release();
+      await pass;
+
+      expect(channel.visible.map((m) => m.kind)).toEqual(["approval_request"]);
+      expect(h.outbox()).toMatchObject([{ kind: "approval_request", status: "sent" }]);
     });
 
     test("serve delivers after a wake and goes back to sleep", async () => {
