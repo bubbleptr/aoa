@@ -206,10 +206,19 @@ const migrations: string[] = [
   `,
 ];
 
-/** Reads the version inside the write transaction so two connections opening a new file cannot both migrate. */
+/**
+ * Reads the version inside the write transaction so two connections opening a new file cannot both migrate.
+ * Refuses a database from a newer aoa and changes nothing.
+ */
 export function migrate(db: Database): void {
   db.transaction(() => {
     const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
+    // Lowering the version would make the next upgrade run migrations this database already has.
+    if (user_version > migrations.length) {
+      throw new Error(
+        `This database was written by a newer aoa (schema version ${user_version}); this aoa knows up to version ${migrations.length}. Upgrade aoa.`,
+      );
+    }
     for (let v = user_version; v < migrations.length; v++) db.exec(migrations[v]!);
     db.exec(`PRAGMA user_version = ${migrations.length}`);
   }).immediate();
