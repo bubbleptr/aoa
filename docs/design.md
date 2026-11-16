@@ -38,6 +38,7 @@ aoa send "修掉 ..."                     # 开出一项任务
 aoa send --to <thread> "再改一下 ..."   # 给已有任务追加消息；任务在等回答时，这段文字就是回答
 aoa answer <id> approve|deny [理由]     # 回答一个延后的调用
 aoa close <thread> merged|discarded     # 本地模式：告诉它这项任务的分支最后怎样了
+aoa messages --since <id> --wait 600    # agent 说了什么；给聊天里的 agent 当回程用
 aoa status                              # 各任务的结局、被问次数、时长
 ```
 
@@ -276,6 +277,8 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - `aoa status --refresh` 只更新 PR 状态，不关 session；本地模式下它什么都不做。
 - 本地模式声明的结局存在 `declared_results` 表里，一次声明只生效一次：`serve` 关掉 session 后，之后用 `send --to` 重开的 session 不会被同一条声明再关掉。
 - session 在等回答时，它的 thread 上来的用户消息就是回答：`/approve` 批准，`/deny 理由` 拒绝，别的文字对审批算拒绝并当作理由，对提问算答案。`aoa send --to` 和 GitHub 评论走的是同一条路。
+- 没有主会话。入口只是往 inbox 追加事件，谁来追加都行；聊天里的 agent 用 `aoa send` 派活、`aoa messages --since <游标> --wait <秒>` 读回程、`aoa answer` 回答。`messages` 直接读 outbox，游标是最后一条消息的 id，不依赖通道把消息送到了哪里。
+- 调用一旦被回答，outbox 里还没送出的那条审批请求就撤回，不会再问一遍。
 - 本地模式的 `git push` 规则排在内核规则之后，所以强推之类仍然是直接拦掉，不会变成可以批准。
 - GitHub 模式下 `serve` 自己每 60 秒驱动一次轮询并记下错误，网络出错不会让轮询停掉。两种模式都每 5 秒叫醒一次 worker 和 dispatcher，因为 `aoa send` 和 `aoa answer` 是别的进程。
 

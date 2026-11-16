@@ -32,6 +32,18 @@ bun run aoa status [--json]                      # 各任务的状态、结局�
 
 agent 的 `bash` 里出现 `git push` 时会先问你。这只是约定，不是隔离：agent 的 shell 就是你的 shell。
 
+## 让聊天里的 agent 当入口
+
+aoa 自己没有主会话。你在别的聊天 agent（比如 Claude Code）里说话，由它敲命令就够了：
+
+```bash
+bun run aoa send "..."                          # 派活，记下输出的线程
+bun run aoa messages --since <游标> --wait 600   # 等 agent 的下一条消息；输出末尾是新游标
+bun run aoa answer <调用 id> approve|deny [理由]  # 消息是审批请求时
+```
+
+`messages` 读的是 outbox，不是 `messages.md`，所以两种模式都能用；加 `--json` 给程序读。
+
 ## 接 GitHub（可选）
 
 在配置里加上 `github` 一段（示例在 `aoa.config.example.ts` 里），并建一个 GitHub App 装到目标仓库，权限给 Issues、Pull requests、Contents 的读写，私钥文件放在本机。之后 `send` 会开一个带标签的 issue，agent 推送分支、开 PR，并在 issue 上评论；在评论里回复 `/approve` 或 `/deny 理由`。PR 合并或关闭就结束任务，`aoa close` 不可用；`status --refresh` 先去 GitHub 查 PR 状态。
