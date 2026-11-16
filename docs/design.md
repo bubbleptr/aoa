@@ -344,6 +344,31 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - `answer` 写下的 `approval_answer` 在 payload 里多一个 `via: "mcp"`；CLI 和 thread 上的回复不带它，所以库里分得清答复从哪来。这是 `AnswerPayload` 上新增的可选字段，`answerDeferred` 多一个可选参数，规范里没有，这里加上，表结构不变。
 - 安全只靠两样：`answer` 的工具说明写明只有在用户在对话里对那个调用明确说了同意或拒绝之后才能调用；以及 harness 自己对工具调用的确认。这和让 shell 去跑 `aoa answer` 是同一种信任，没有另加机制。
 
+### 权限归 harness 的 agent
+
+runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，下一步接入）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一步只做内核和一致性测试；配置里还没有对应字段，测试用一个扮演 harness 的脚本 runtime。
+
+- 模式：`WorkerOptions.permissions`，`"kernel"`（默认，和以前一样）或 `"harness"`。放在 worker 上，因为一个 worker 就是一个 agent 的 inbox，而这个模式同时改两处：`select()` 怎么挑事件，以及 run 拿到什么（`RunInput` 多一个 `ask`）。策略（`policy`）本来也在这里。
+- 转达询问：harness 要为一次调用征求同意时，runtime 调 `RunInput.ask({ callId, tool, args, reason? })`，只会得到 `allow` 或 `defer`。内核对 harness 的调用没有规则，所以不会当场拒绝；用户的拒绝和以前一样，在之后的 run 里通过 `RunInput.answer` 到达。`defer` 时内核建一个新种类 `harness` 的延后调用：审批请求进 outbox、24 小时到期、session 停下、run 以 `deferred` 结束。session 已经在等别的调用时只返回 `defer`，什么都不建，和 `invoke` 的规则一样。每个结果都在 `decisions` 里记一行。
+- 批准之后不执行，而是发许可。§6「批准之后谁执行」定的是内核自己执行被批准的调用；对 harness 做不到：它的工具在 harness 进程里，内核没有通用的办法替它运行一条命令。所以批准只在 `grants` 表里记一条许可（工具名加参数，属于这个 session，只能用一次），日志里这次调用的结果是一段话，告诉模型调用已批准但还没运行，要用同样的参数再调一次。适配器随后让 harness 重试；harness 再问同一个调用（工具名相同、参数深度相等）时，内核找到没用过的许可，立即答 `allow` 并把许可标为已用。参数不同就不算，照常再问。拒绝和到期和以前一样，`answer` 里带着拒绝，不留许可。
+- 许可按调用 id 记下用掉它的那次询问。失败的 run 重试时会用同样的 id 再问，这时直接答 `allow`，不会再问用户一遍。用一个已经被回答过的调用 id 重新询问会抛错：请求、到期定时器和答复都按调用 id 去重，重用的 id 发不出新的请求，session 会永远停着。
+- 扣住不可信输入：harness 模式下，一组待处理事件里只要有一条 `trusted = false` 的事件，在用户放行前整组都不会交给 runtime。拦在 `select()` 里，紧挨着「暂停的 session 只能被它的答复唤醒」那条检查：事件保持 `pending`，不认领也不完成，否则等于没人看就把它们用掉了。内核建一个新种类 `admit` 的延后调用并让 session 停在上面；请求写明输入来自哪里（来源、thread、对方 agent 的名字），并引用第一条的前 200 个字符。新 thread 上的事件这时还没有 session，`select()` 当场开一个，把整组事件钉到这个 session 上（`pinEvents`，只设 `resume`，不认领），这样回答它的那条 `approval_answer` 才会落进同一组；没有 thread 的事件也靠这一步找回来。
+- 放行的粒度是一批：一次请求覆盖请求发出时那组里的不可信事件，记在延后调用的参数里。用户自己的消息（可信）从不需要放行。批准后，下一次 run 的 `events` 里是这些事件加上那条答复，session 照旧标为 tainted；`answer` 不设，因为模型从没发起过调用。拒绝或到期时，这些事件和那条答复一起变成 `dropped`，runtime 根本不被调用；它们的去重键另记进 `consumed_keys`，重复投递不会再问一遍。
+- 请求等待期间新来的不可信事件不算被那次批准放行：带着答复的那组先去掉它们再认领，它们留在 `pending`，下一轮 `select()` 再为它们单独发请求。在等 harness 询问时进来的不可信事件也一样：答复照常送到，不可信的事件之后单独问。所以一个 session 同时只有一个待答的调用，两种新的延后调用也遵守这一条。
+- 被某次 run 认领过的不可信事件（`attempts > 0`）不再问：run 失败重试时，延后调用已经删掉，模型也已经见过它们，再问也收不回来。
+- 等待放行时，用户在同一 thread 上发的不是 `/approve` 或 `/deny` 的消息不算答复，而是用户自己的消息，和被扣住的那组一起等，放行或拒绝之后照常交给 runtime。对审批来说其他文字算拒绝（§6），对放行不这样，是为了不把用户的话当成拒绝理由吞掉。
+- 存储：`deferred.kind` 的 CHECK 多了 `harness` 和 `admit`。SQLite 改不了 CHECK，所以这次迁移按原样重建这张表（列不变，数据照抄），并新建 `grants` 表。许可没有复用 `decisions`：「还没用过」只能靠解析 `basis` 字符串表达，而这次迁移本来就省不掉。`Tx` 多了 `insertGrant`、`listGrants`、`useGrant`、`pinEvents`、`dropEvents`。
+
+哪些一致性测试和权限有关：规范 §9 的 C13（凭据不进上下文）、C14（未授权的调用不执行）、C15（延后时 worker 不闲着）、C16（答复只生效一次）、C20（审批请求只发一次）。在第二档 runtime 上，这几项要么由 harness 自己的配置负责，要么只覆盖它主动询问的那部分调用，需要单独写。另外 C3（重跑不重复副作用）和 C12（恢复会话不重放旧调用）靠的是内核执行工具时记的日志，第二档的工具不经过内核，这两项也不能原样搬过去。其余各项（C1、C2、C4–C11、C17–C19）不涉及谁执行工具，可以直接拿第二档 runtime 跑。
+
+和规范不一致的地方（规范不改）：
+
+- I-PRM-2「没有授权就不执行」只覆盖 harness 主动询问的调用。harness 不问就执行的调用，内核既看不到也拦不住；给这类调用补记录（`record()`）是下一步的事，在那之前 I-PRM-7（每次裁决都有记录）对它们也不成立。I-PRM-6（高风险操作必须由人审）同样取决于用户怎么配置 harness。
+- §6.2 的 `Policy`（未知调用默认延后）不用于 harness 的调用。
+- §6.4 F-DEFER 第 7 步：批准后内核不执行被批准的调用，而是发一次性许可，由 harness 自己再发起一次。
+- `admit` 不对应任何工具调用，但用的是 `PendingCall` 这个结构；规范里的 `PendingCall` 只包着一个 `ToolCall`。它的 session 也不是在 run 里停下的，而是在 `select()` 里，没有 run 以 `deferred` 结束。
+- §3.3 的 `dropped` 原本只表示重复投递。这里多了一条 `pending → dropped`：被拒绝或过期的不可信输入，以及回答这次放行请求的那条 `approval_answer`。答复依然只生效一次（I-PRM-5），只是它的行是 `dropped`，不是 `done`。
+
 ## 13. 没验证的
 
 下面这些只能接上真实服务才知道，现在都只是按文档写的：
