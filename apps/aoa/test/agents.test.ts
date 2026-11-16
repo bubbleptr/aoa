@@ -5,7 +5,7 @@ import { runGitWithBun } from "@aoa/channel-github";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentInput } from "../src/config.ts";
 import type { Snapshot } from "../src/observe.ts";
-import { SERVE_SEEN } from "../src/serve.ts";
+import { SERVE_SEEN, serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
 import { World, call, lastResult, say, type Step } from "./world.ts";
 
@@ -14,6 +14,15 @@ afterEach(async () => {
   for (const fn of cleanup.reverse()) await fn();
   cleanup = [];
 });
+
+/** Yields to the event loop until `ok()` holds; real git and SQLite work in between, so no fixed delay fits. */
+async function until(ok: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  while (!ok()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
 
 const REVIEWER: Record<string, AgentInput> = { reviewer: { role: "review" } };
 
@@ -111,8 +120,9 @@ describe("named agents", () => {
     expect(w.runs().map((r) => r.sessionId)).toEqual([implementing!.id, implementing!.id]);
   });
 
-  test("the fifth hop on one chain is refused and appends nothing", async () => {
+  test("the fifth hop on one chain is refused and appends nothing, even from a later run of the session", async () => {
     const w = await world();
+    w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
     const hop = (agent: string, text: string): Step[] => [call("send_to", { agent, text }), say("Sent.")];
     w.script(hop("reviewer", "one"));
     await w.cli("send", "Start a chain.");
@@ -124,9 +134,17 @@ describe("named agents", () => {
     w.script(hop("default", "four"), "reviewer");
     await w.drain("reviewer");
 
+    // An approval between the verdict and the next send: that run holds no agent message, and the count must not restart.
     let refused = "";
-    w.script([call("send_to", { agent: "reviewer", text: "five" }), (m) => ((refused = lastResult(m)), say("Stopping."))]);
+    w.script([
+      call("bash", { command: "echo deploy" }),
+      call("send_to", { agent: "reviewer", text: "five" }),
+      (m) => ((refused = lastResult(m)), say("Stopping.")),
+    ]);
     const before = w.events("reviewer").length;
+    await w.drain();
+    const { pending } = JSON.parse((await w.cli("status", "--json")).out);
+    expect((await w.cli("answer", pending[0].callId, "approve")).code).toBe(0);
     await w.drain();
     expect(refused).toMatch(/notify/);
     expect(w.events("reviewer")).toHaveLength(before);
@@ -176,7 +194,7 @@ describe("named agents", () => {
     expect(await git(implementing!.workdir!, "branch", "--show-current")).toBe(branch);
   });
 
-  test("two agents run at once, and each inbox still has at most one run", async () => {
+  test("serve runs two agents at once, and each inbox still has at most one run", async () => {
     const w = await world();
     const gate = Promise.withResolvers<void>();
     const started = { default: Promise.withResolvers<void>(), reviewer: Promise.withResolvers<void>() };
@@ -187,12 +205,14 @@ describe("named agents", () => {
     };
     w.script([held("default"), say("Second done.")]);
     w.script([held("reviewer")], "reviewer");
+    let stop = () => {};
+    const serving = serve(w.agent, new Promise<void>((resolve) => (stop = resolve)));
     await w.cli("send", "First task.");
     await w.cli("send", "Second task.");
     await w.cli("send", "--agent", "reviewer", "Review task.");
-    w.advance(2000);
+    // The nudge that wakes the workers for another process's sends, after the debounce.
+    w.advance(5000);
 
-    const draining = [w.named().worker.drain(), w.named("reviewer").worker.drain()];
     await Promise.all([started.default.promise, started.reviewer.promise]);
     const inFlight = (agent?: string) => w.runs(agent).filter((r) => r.endedAt === null).length;
     expect(inFlight()).toBe(1);
@@ -200,9 +220,9 @@ describe("named agents", () => {
     expect(w.events().filter((e) => e.status === "pending")).toHaveLength(1);
 
     gate.resolve();
-    const [mine, theirs] = await Promise.all(draining);
-    expect(mine!.runs).toBe(2);
-    expect(theirs!.runs).toBe(1);
+    await until(() => w.runs().filter((r) => r.endedAt !== null).length === 2 && w.runs("reviewer")[0]!.endedAt !== null, "all three runs");
+    stop();
+    await serving;
   });
 
   test("answer, messages, status, send --to and close reach every agent's inbox", async () => {
@@ -228,9 +248,13 @@ describe("named agents", () => {
     const callId = listing.messages[1]!.callId!;
     expect((await w.cli("messages")).out).toContain("reviewer");
 
+    w.script([call("notify", { body: "Default again." }), say("Done.")]);
+    await w.cli("send", "Say it again.");
+    await w.drain();
+
     const status = JSON.parse((await w.cli("status", "--json")).out);
     expect(status.pending).toMatchObject([{ callId, agent: "reviewer" }]);
-    expect(status.sessions.map((s: { agent: string }) => s.agent)).toEqual(["default", "reviewer"]);
+    expect(status.sessions.map((s: { agent: string }) => s.agent)).toEqual(["default", "default", "reviewer"]);
     expect((await w.cli("status")).out).toContain("reviewer");
 
     expect((await w.cli("answer", callId.slice(0, 8), "approve")).code).toBe(0);
@@ -239,7 +263,10 @@ describe("named agents", () => {
     expect(readFileSync(join(w.sessions("reviewer")[0]!.workdir!, "deploy.log"), "utf8")).toBe("deployed\n");
 
     const later = JSON.parse((await w.cli("messages", "--json", "--since", listing.cursor)).out) as Listing;
-    expect(later.messages.map((m) => [m.agent, m.body])).toEqual([["reviewer", "Reviewer done."]]);
+    expect(later.messages.map((m) => [m.agent, m.body])).toEqual([
+      ["default", "Default again."],
+      ["reviewer", "Reviewer done."],
+    ]);
 
     expect((await w.cli("send", "--to", reviewThread, "One more look.")).code).toBe(0);
     expect(w.events("reviewer").at(-1)).toMatchObject({ source: "user_message", thread: reviewThread });
