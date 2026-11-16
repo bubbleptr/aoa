@@ -37,6 +37,8 @@ describe("snapshot", () => {
     ]);
     const thread = (await w.cli("send", "Deploy it.")).out.trim();
     await w.drain();
+    // The dispatcher sends one message per session per pass.
+    await w.dispatch();
     await w.dispatch();
 
     const s = observe(w);

@@ -46,6 +46,10 @@ export type SqliteStore = Store & {
   results: DeclaredResults;
   /** When the session's first message of kind `message` was delivered; null if none was. */
   firstMessageSentAt(sessionId: string): number | null;
+  /** When each delivered message of the inbox was sent, by message id. */
+  sentTimes(inboxId: string): Map<string, number>;
+  /** SQLite's `data_version`: it changes whenever another connection commits to the database. */
+  dataVersion(): number;
   close(): void;
 };
 
@@ -75,6 +79,10 @@ export function sqliteStore(path: string): SqliteStore {
   const firstSent = db.query<{ at: number | null }, [string]>(
     "SELECT MIN(sent_at) AS at FROM outbox WHERE session_id = ? AND kind = 'message' AND status = 'sent'",
   );
+  const sentTimes = db.query<{ id: string; sent_at: number }, [string]>(
+    "SELECT id, sent_at FROM outbox WHERE inbox_id = ? AND sent_at IS NOT NULL",
+  );
+  const dataVersion = db.query<{ data_version: number }, []>("PRAGMA data_version");
   return {
     tx: (fn) => db.transaction(() => fn(t)).immediate(),
     pulls: {
@@ -99,6 +107,8 @@ export function sqliteStore(path: string): SqliteStore {
       },
     },
     firstMessageSentAt: (sessionId) => firstSent.get(sessionId)?.at ?? null,
+    sentTimes: (inboxId) => new Map(sentTimes.all(inboxId).map((r) => [r.id, r.sent_at])),
+    dataVersion: () => dataVersion.get()!.data_version,
     close: () => db.close(),
   };
 }

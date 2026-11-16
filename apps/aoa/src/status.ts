@@ -113,7 +113,7 @@ export type StatusReport = {
 
 const ASK_LIMIT = 120;
 
-function asks(tool: string, kind: "approval" | "question", args: unknown): string {
+export function asks(tool: string, kind: "approval" | "question", args: unknown): string {
   const text = kind === "question" ? String((args as { question?: unknown }).question) : `${tool} ${JSON.stringify(args)}`;
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > ASK_LIMIT ? `${line.slice(0, ASK_LIMIT - 1)}…` : line;
