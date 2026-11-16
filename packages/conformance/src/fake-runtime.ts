@@ -1,7 +1,10 @@
 import type { AgentRuntime, CallId, RunEnd, RunInput, RunResult, ToolResult } from "@aoa/kernel";
 
-/** `args` may be computed from the run's input, e.g. to name the session's own progress file. */
-export type ScriptedCall = { tool: string; callId: CallId; args?: object | ((input: RunInput) => unknown) };
+/**
+ * `args` may be computed from the run's input, e.g. to name the session's own progress file.
+ * With `harness`, the call is the harness's own tool: the runtime asks the kernel's gate and "executes" it on allow.
+ */
+export type ScriptedCall = { tool: string; callId: CallId; args?: object | ((input: RunInput) => unknown); harness?: true };
 
 /** What one run does. Fixed call ids make a rerun replay the same ids, as a resumed transcript would. */
 export type RunScript = {
@@ -14,11 +17,13 @@ export type RunScript = {
   sessionRef?: string;
 };
 
-export type ObservedRun = { input: RunInput; toolResults: ToolResult[] };
+export type ObservedRun = { input: RunInput; toolResults: ToolResult[]; asks: ("allow" | "defer")[] };
 
 /** Plays one script per run, in order; runs past the end of the script list end silently. */
 export class ScriptedRuntime implements AgentRuntime {
   readonly runs: ObservedRun[] = [];
+  /** The harness calls that ran because the gate allowed them, in order. */
+  readonly harnessEffects: { tool: string; args: unknown }[] = [];
   active = 0;
   maxActive = 0;
   private waiters: { count: number; resolve: () => void }[] = [];
@@ -27,7 +32,7 @@ export class ScriptedRuntime implements AgentRuntime {
 
   async run(input: RunInput): Promise<RunResult> {
     const script = this.scripts[this.runs.length] ?? {};
-    const observed: ObservedRun = { input, toolResults: [] };
+    const observed: ObservedRun = { input, toolResults: [], asks: [] };
     this.runs.push(observed);
     this.active++;
     this.maxActive = Math.max(this.maxActive, this.active);
@@ -35,9 +40,16 @@ export class ScriptedRuntime implements AgentRuntime {
     try {
       await script.gate;
       for (const call of script.calls ?? []) {
+        const args = typeof call.args === "function" ? call.args(input) : (call.args ?? {});
+        if (call.harness) {
+          if (!input.ask) throw new Error("the kernel gave this run no permission gate");
+          const verdict = await input.ask({ callId: call.callId, tool: call.tool, args });
+          observed.asks.push(verdict);
+          if (verdict === "allow") this.harnessEffects.push({ tool: call.tool, args });
+          continue;
+        }
         const tool = input.tools.find((t) => t.name === call.tool);
         if (!tool) throw new Error(`script calls unknown tool ${call.tool}`);
-        const args = typeof call.args === "function" ? call.args(input) : (call.args ?? {});
         observed.toolResults.push(await tool.invoke(call.callId, args));
       }
       if (script.fail) throw script.fail;
