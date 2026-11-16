@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decide } from "@aoa/kernel";
-import { agentPolicy, deferPush } from "../src/policy.ts";
+import { agentPolicy, deferPush, reviewReadOnly } from "../src/policy.ts";
 
 // Through tmpdir's symlink (/var -> /private/var on macOS), as a configured path may arrive.
 const root = mkdtempSync(join(tmpdir(), "aoa-policy-"));
@@ -82,5 +82,32 @@ describe("local mode: no pushing without the user", () => {
       decision: "allow",
       basis: "classifier:allow",
     });
+  });
+});
+
+describe("a reviewer cannot change refs or history", () => {
+  const review = agentPolicy({ ahead: [reviewReadOnly], classify: async () => "allow" });
+
+  test.each([
+    ["merge", "git merge main"],
+    ["rebase", "git rebase main"],
+    ["reset", "git reset --hard HEAD"],
+    ["cherry-pick", "git cherry-pick 1a2b3c4"],
+    ["revert", "git revert HEAD"],
+    ["tag", "git tag v1"],
+    ["am", "git am < patch"],
+    ["apply", "git apply patch.diff"],
+    ["stash", "git stash"],
+    ["checkout", "git checkout main"],
+    ["switch", "git switch main"],
+    ["worktree", "git worktree add ../elsewhere"],
+    ["branch", "git branch -D aoa/x"],
+  ])("git %s is blocked, not deferred or offered to the classifier", async (_sub, command) => {
+    expect(await decide(review, { tool: "bash", args: { command } }, ctx)).toEqual({ decision: "block", basis: "rule:review-read-only" });
+  });
+
+  // The other half of the branch clause: listing branches is reading, not changing refs.
+  test.each(["git branch --show-current", "git branch -vv"])("%s is still allowed", async (command) => {
+    expect(await decide(review, { tool: "bash", args: { command } }, ctx)).toEqual({ decision: "allow", basis: "rule:read-only-commands" });
   });
 });
