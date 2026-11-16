@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
-import { findConfig, loadConfig, validateForServe } from "./config.ts";
+import { type RuntimeChoice, findConfig, loadConfig, validateForServe } from "./config.ts";
 import { mcpServer } from "./mcp.ts";
 import { serve } from "./serve.ts";
 import { DEFAULT_WEB_PORT, type Web, startWeb } from "./web.ts";
@@ -180,7 +180,9 @@ export async function main(argv: string[], io: Io): Promise<number> {
     if (p.command === "serve") {
       validateForServe(config);
       const env = io.seams?.env ?? process.env;
-      const models = [config.model, config.classifier, ...Object.values(config.agents ?? {}).flatMap((a) => [a.model, a.classifier])];
+      // A codex agent's model is a Codex model id: Codex holds its own credentials.
+      const piModel = (a: RuntimeChoice) => (a.runtime === "pi" ? a.model : undefined);
+      const models = [piModel(config), config.classifier, ...Object.values(config.agents ?? {}).flatMap((a) => [piModel(a), a.classifier])];
       for (const m of models) {
         if (m && !env[m.apiKeyEnv]) throw new Error(`The model API key is missing: set the environment variable ${m.apiKeyEnv}.`);
       }

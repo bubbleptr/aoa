@@ -21,10 +21,21 @@ import {
   type RunOutcome,
   type ToolDef,
 } from "@aoa/kernel";
+import { type SpawnCodex, codexRuntime } from "@aoa/runtime-codex";
 import { codingTools, piClassifier, piRuntime } from "@aoa/runtime-pi";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
-import { type AgentConfig, DEFAULT_AGENT, type ModelRef, type NamedAgent, type Paths, type Role, derivePaths } from "./config.ts";
+import {
+  type AgentConfig,
+  DEFAULT_AGENT,
+  type ModelRef,
+  type NamedAgent,
+  type Paths,
+  type Role,
+  type Runtime,
+  derivePaths,
+  permissionOwner,
+} from "./config.ts";
 import { agentPolicy, deferPush, reviewReadOnly } from "./policy.ts";
 import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT, handOffPrompt, reviewPrompt } from "./prompt.ts";
 import { sendToTool } from "./send-to.ts";
@@ -44,6 +55,8 @@ export type Seams = {
   log?: (line: string) => void;
   /** Local mode's desktop notification; by default the platform's. */
   notify?: Notifier;
+  /** Starts a Codex app server for a codex agent's run; by default the `codex` on the PATH. */
+  spawnCodex?: SpawnCodex;
 };
 
 /**
@@ -76,6 +89,9 @@ export type Agent = {
   /** `default` for the agent the config's top level describes. */
   name: string;
   role: Role;
+  runtime: Runtime;
+  /** Who decides what the agent's own tools may do (design §12). */
+  permissions: "kernel" | "harness";
   /** Every agent of the config, the default one first; they share one store, clock and process. */
   agents: Agent[];
   config: AgentConfig;
@@ -215,7 +231,9 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     {
       name: DEFAULT_AGENT,
       role: "implement",
-      model: config.model,
+      ...(config.runtime === "pi"
+        ? { runtime: "pi" as const, model: config.model }
+        : { runtime: "codex" as const, ...(config.model === undefined ? {} : { model: config.model }) }),
       ...(config.classifier ? { classifier: config.classifier } : {}),
       ...(config.risk ? { risk: config.risk } : {}),
     },
@@ -226,7 +244,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   const store = sqliteStore(db);
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
   const keys = new Map(
-    [...roster.flatMap((a) => [a.model, a.classifier]), config.shadowJudge]
+    [...roster.flatMap((a) => [a.runtime === "pi" ? a.model : undefined, a.classifier]), config.shadowJudge]
       .filter((m): m is ModelRef => m !== undefined)
       .map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]),
   );
@@ -268,16 +286,26 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     : reviewers.length > 0
       ? `${front.systemPrompt}\n\n${handOffPrompt(reviewers)}`
       : front.systemPrompt;
-  const runtime = piRuntime({
-    provider: spec.model.provider,
-    modelId: spec.model.modelId,
-    apiKey: s.keyOf(spec.model),
-    agentDir: paths.piAgent,
-    sessionsDir: paths.sessions,
-    cwd: paths.repo,
-    systemPrompt: spec.instructions === undefined ? rolePrompt : `${rolePrompt}\n\n${spec.instructions}`,
-    providers: seams.providers,
-  });
+  const systemPrompt = spec.instructions === undefined ? rolePrompt : `${rolePrompt}\n\n${spec.instructions}`;
+  const runtime =
+    spec.runtime === "pi"
+      ? piRuntime({
+          provider: spec.model.provider,
+          modelId: spec.model.modelId,
+          apiKey: s.keyOf(spec.model),
+          agentDir: paths.piAgent,
+          sessionsDir: paths.sessions,
+          cwd: paths.repo,
+          systemPrompt,
+          providers: seams.providers,
+        })
+      : codexRuntime({
+          developerInstructions: systemPrompt,
+          cwd: paths.repo,
+          ...(spec.model === undefined ? {} : { model: spec.model }),
+          ...(seams.spawnCodex ? { spawn: seams.spawnCodex } : {}),
+        });
+  const permissions = permissionOwner(spec.runtime);
   const classify = spec.classifier
     ? withShadowJudge(
         piClassifier({
@@ -301,7 +329,8 @@ function assembleOne(spec: Spec, s: Shared): Agent {
 
   const deps = { store, clock, inboxId };
   const all = [
-    ...codingTools(),
+    // Codex reads, edits and runs commands with its own tools; it is offered only aoa's.
+    ...(spec.runtime === "pi" ? codingTools() : []),
     ...timerTools(deps),
     ...outboxTools(deps),
     ...memoryTools(memory),
@@ -340,6 +369,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     tools,
     memory,
     policy: agentPolicy({ risk: spec.risk, classify, ahead: review ? [reviewReadOnly] : [], rules: front.rules }),
+    permissions,
     debounceMs: 2000,
     prepareSession: async (session) => {
       await removals.get(session.id);
@@ -389,6 +419,8 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   return {
     name: spec.name,
     role: spec.role,
+    runtime: spec.runtime,
+    permissions,
     agents: s.agents,
     config,
     paths,

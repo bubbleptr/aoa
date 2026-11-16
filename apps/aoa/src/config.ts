@@ -14,24 +14,41 @@ export type ModelRef = {
 
 export type Role = "implement" | "review";
 
+/**
+ * What runs an agent (design §12). `pi`: aoa's own loop, every tool call decided by aoa. `codex`: a Codex app-server
+ * thread whose own tools Codex runs under the user's Codex configuration; Codex authenticates itself, and `model`,
+ * when set, is a Codex model id.
+ */
+export type RuntimeChoice = { runtime: "pi"; model: ModelRef } | { runtime: "codex"; model?: string };
+
+export type Runtime = RuntimeChoice["runtime"];
+
+/** Who decides what the agent's own tools may do: aoa's kernel, or the harness the agent runs in. */
+export const permissionOwner = (runtime: Runtime): "kernel" | "harness" => (runtime === "codex" ? "harness" : "kernel");
+
 /** A named agent with everything it did not set taken from the top level. */
 export type NamedAgent = {
   role: Role;
   /** Appended to the role's system prompt. */
   instructions?: string;
-  model: ModelRef;
+  classifier?: ModelRef;
+  risk?: Record<string, Risk>;
+} & RuntimeChoice;
+
+/** What a config file writes for one named agent. */
+export type AgentInput = {
+  role?: Role;
+  instructions?: string;
+  runtime?: Runtime;
+  model?: ModelRef | string;
   classifier?: ModelRef;
   risk?: Record<string, Risk>;
 };
 
-/** What a config file writes for one named agent. */
-export type AgentInput = Partial<NamedAgent>;
-
 export type AgentConfig = {
   dataDir: string;
   repo: { path: string; base: string };
-  model: ModelRef;
-  /** Judges `medium` calls; without one they wait for the user. Required by `serve`. */
+  /** Judges `medium` calls of the agents that run on pi; without one they wait for the user. */
   classifier?: ModelRef;
   /** Scores every classifier call with TypeSafe Jev but never changes the decision (design §12). */
   shadowJudge?: ModelRef;
@@ -52,12 +69,14 @@ export type AgentConfig = {
   rate?: RatePolicy;
   /** Agents besides the default one, which the top-level fields describe. Local mode only. */
   agents?: Record<string, NamedAgent>;
-};
+} & RuntimeChoice;
 
 type GitHubConfig = NonNullable<AgentConfig["github"]>;
 
-/** What a config file writes; the App ids may be numbers. */
-export type AgentConfigInput = Omit<AgentConfig, "github" | "agents"> & {
+/** What a config file writes; the App ids may be numbers, and the runtime defaults to pi. */
+export type AgentConfigInput = Omit<AgentConfig, "github" | "agents" | "runtime" | "model"> & {
+  runtime?: Runtime;
+  model?: ModelRef | string;
   agents?: Record<string, AgentInput>;
   github?: Omit<GitHubConfig, "appId" | "installationId"> & { appId: string | number; installationId: string | number };
 };
@@ -98,6 +117,31 @@ function modelRef(value: unknown, field: string): ModelRef {
   const o = object(value, field, ["provider", "modelId", "apiKeyEnv"]);
   const p = `${field}.`;
   return { provider: str(o, "provider", p), modelId: str(o, "modelId", p), apiKeyEnv: str(o, "apiKeyEnv", p) };
+}
+
+function runtimeOf(value: unknown, field: string): Runtime | undefined {
+  if (value === undefined || value === "pi" || value === "codex") return value;
+  throw new ConfigError(field, "must be pi or codex");
+}
+
+/** A Codex model id; Codex holds its own credentials, so there is nothing else to name. */
+function codexModel(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") throw new ConfigError(field, "must be a Codex model id (a string) for a codex agent");
+  return value;
+}
+
+/** The runtime and model an agent ends up with; `inherited` is what the top level has for a field the agent left out. */
+function runtimeChoice(o: Obj, field: string, inherited: RuntimeChoice | null): RuntimeChoice {
+  const p = field === "" ? "" : `${field}.`;
+  const runtime = runtimeOf(o.runtime, `${p}runtime`) ?? inherited?.runtime ?? "pi";
+  const same = inherited?.runtime === runtime ? inherited : null;
+  if (runtime === "codex") {
+    if (o.model !== undefined) return { runtime, model: codexModel(o.model, `${p}model`) };
+    return same?.model === undefined ? { runtime } : { runtime, model: same.model as string };
+  }
+  if (o.model === undefined && same) return { runtime, model: same.model as ModelRef };
+  if (o.model === undefined && inherited) throw new ConfigError(`${p}model`, "is required for a pi agent when the top level runs codex");
+  return { runtime, model: modelRef(o.model, `${p}model`) };
 }
 
 function nonNegative(o: Obj, key: string, field: string, positive = false): number {
@@ -164,12 +208,13 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
     const field = `agents.${name}`;
     if (!AGENT_NAME.test(name)) throw new ConfigError(field, "is not a valid agent name: a lowercase letter, then up to 31 lowercase letters, digits or -");
     if (name === DEFAULT_AGENT) throw new ConfigError(field, "is reserved for the agent the top-level fields describe");
-    const a = object(raw, field, ["role", "instructions", "model", "classifier", "risk"]);
+    const a = object(raw, field, ["role", "instructions", "runtime", "model", "classifier", "risk"]);
     if (a.role !== undefined && a.role !== "implement" && a.role !== "review") throw new ConfigError(`${field}.role`, "must be implement or review");
-    const agent: NamedAgent = {
-      role: (a.role as Role | undefined) ?? "implement",
-      model: a.model === undefined ? top.model : modelRef(a.model, `${field}.model`),
-    };
+    const role = (a.role as Role | undefined) ?? "implement";
+    const choice = runtimeChoice(a, field, top);
+    // The review role's read-only rules are aoa policy; they would not reach Codex's own tools.
+    if (role === "review" && choice.runtime === "codex") throw new ConfigError(`${field}.role`, "review cannot run on codex: aoa's read-only rules do not reach Codex's own tools");
+    const agent: NamedAgent = { role, ...choice };
     if (a.instructions !== undefined) agent.instructions = str(a, "instructions", `${field}.`);
     const classifier = a.classifier === undefined ? top.classifier : modelRef(a.classifier, `${field}.classifier`);
     if (classifier) agent.classifier = classifier;
@@ -182,14 +227,18 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
 
 /** Checks a loaded config; the error names the first bad field. */
 export function validateConfig(raw: unknown): AgentConfig {
-  const c = object(raw, "config", ["dataDir", "repo", "model", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
+  const c = object(raw, "config", ["dataDir", "repo", "runtime", "model", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
   const repo = object(c.repo, "repo", ["path", "base"]);
   const config: AgentConfig = {
     dataDir: str(c, "dataDir", ""),
     repo: { path: str(repo, "path", "repo."), base: str(repo, "base", "repo.") },
-    model: modelRef(c.model, "model"),
+    ...runtimeChoice(c, "", null),
   };
-  if (c.github !== undefined) config.github = github(c.github);
+  if (c.github !== undefined) {
+    // GitHub mode's push and pull request tools are aoa's; a Codex agent would push with its own, unasked.
+    if (config.runtime === "codex") throw new ConfigError("runtime", "cannot be codex with github: GitHub mode runs on pi");
+    config.github = github(c.github);
+  }
   if (c.classifier !== undefined) config.classifier = modelRef(c.classifier, "classifier");
   if (c.shadowJudge !== undefined) {
     const judge = modelRef(c.shadowJudge, "shadowJudge");
@@ -208,12 +257,19 @@ export function validateConfig(raw: unknown): AgentConfig {
 
 /**
  * What `serve` needs beyond a valid config. `bash` and `git_push` are `medium`, and a `medium` call with no
- * classifier waits for the user, so without one the agent cannot even run the project's checks unattended.
+ * classifier waits for the user, so without one a pi agent cannot even run the project's checks unattended. A codex
+ * agent runs commands with Codex's own tools, and every aoa tool it is offered is `low`, so it needs none.
  */
 export function validateForServe(c: AgentConfig): void {
-  if (!c.classifier) {
+  const missing = [
+    ...(c.runtime === "pi" && !c.classifier ? ["classifier"] : []),
+    ...Object.entries(c.agents ?? {})
+      .filter(([, a]) => a.runtime === "pi" && !a.classifier)
+      .map(([name]) => `agents.${name}.classifier`),
+  ];
+  if (missing.length > 0) {
     throw new ConfigError(
-      "classifier",
+      missing[0]!,
       "is required for serve: without it every bash and git_push call waits for your approval, so the agent cannot run checks or commit on its own",
     );
   }
