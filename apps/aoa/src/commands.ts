@@ -1,4 +1,4 @@
-import { type Session, answerDeferred, appendEvent } from "@aoa/kernel";
+import { type OutMsg, type Session, answerDeferred, appendEvent } from "@aoa/kernel";
 import { collectStatus, renderStatus, resolveCallId } from "./status.ts";
 import type { Agent } from "./wiring.ts";
 
@@ -89,4 +89,53 @@ export async function status(agent: Agent, o: { json: boolean; refresh: boolean 
   if (o.refresh) await agent.refreshPulls();
   const report = collectStatus(agent.store, agent.inboxId, agent.statusColumns);
   return o.json ? JSON.stringify(report, null, 2) : renderStatus(report);
+}
+
+export type Listing = {
+  messages: Pick<OutMsg, "id" | "thread" | "sessionId" | "kind" | "body" | "callId" | "createdAt" | "status">[];
+  /** The id of the last message listed, or the cursor given when there is none: pass it as `--since` next time. */
+  cursor: string | null;
+};
+
+const WAIT_STEP_MS = 1000;
+
+/**
+ * What the agent said after the message `since`, oldest first, read from the outbox rather than from where a
+ * channel delivered it. A withdrawn approval request is left out. With `waitMs`, waits that long for a first message.
+ */
+export async function messages(agent: Agent, o: { since: string | null; waitMs: number }): Promise<Listing> {
+  const deadline = agent.clock.now() + o.waitMs;
+  for (;;) {
+    const all = agent.store.tx((t) => t.listOutbox(agent.inboxId));
+    const at = o.since === null ? -1 : all.findIndex((m) => m.id === o.since);
+    if (o.since !== null && at < 0) throw new Error(`No message has the id "${o.since}"; run aoa messages without --since for all of them.`);
+    const found = all.slice(at + 1).filter((m) => m.status !== "cancelled");
+    if (found.length > 0 || agent.clock.now() >= deadline) {
+      return {
+        messages: found.map(({ id, thread, sessionId, kind, body, callId, createdAt, status }) => ({
+          id,
+          thread,
+          sessionId,
+          kind,
+          body,
+          callId,
+          createdAt,
+          status,
+        })),
+        cursor: all.at(-1)?.id ?? o.since,
+      };
+    }
+    await new Promise<void>((resolve) => agent.clock.setTimer(WAIT_STEP_MS, resolve));
+  }
+}
+
+export function renderMessages(l: Listing): string {
+  const blocks = l.messages.map((m) => {
+    const lines = [`[${m.id}] ${m.thread ?? "-"} · ${m.kind}`, m.body];
+    if (m.kind === "approval_request" && m.callId !== null) {
+      lines.push(`Answer with: aoa answer ${m.callId} approve   or   aoa answer ${m.callId} deny <reason>`);
+    }
+    return lines.join("\n");
+  });
+  return [...(blocks.length > 0 ? blocks : ["No new messages."]), `cursor: ${l.cursor ?? "-"}`].join("\n\n");
 }

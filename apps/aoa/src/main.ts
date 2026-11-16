@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { answer, close, send, sendTo, status } from "./commands.ts";
+import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
 import { loadConfig, validateForServe } from "./config.ts";
 import { serve } from "./serve.ts";
 import { type Seams, assemble } from "./wiring.ts";
@@ -18,12 +18,17 @@ Usage:
   aoa close <thread-or-session-prefix> merged|discarded
                                               Local mode: say how a task's branch ended; serve then closes the task
                                               and removes its worktree, keeping the branch.
+  aoa messages [--since <id>] [--wait <seconds>] [--json]
+                                              What the agent said, oldest first, ending with a cursor. --since lists
+                                              only what came after that cursor; --wait waits that long for something new.
   aoa status [--json] [--refresh]             Sessions, outcomes, pending approvals, dead events, failed messages.
                                               --refresh looks up pull request states on GitHub first.
 
 Options:
   --config <path>   The config file (default: ./aoa.config.ts).
   --to <thread>     For send: the task to add to.
+  --since <id>      For messages: the cursor a previous aoa messages printed.
+  --wait <seconds>  For messages: how long to wait when there is nothing new.
   -h, --help        Show this help.
 
 On GitHub, reply to an approval request with /approve, or /deny followed by a reason.`;
@@ -42,13 +47,15 @@ type Parsed = {
   args: string[];
   config: string;
   to: string | undefined;
+  since: string | undefined;
+  wait: number | undefined;
   json: boolean;
   refresh: boolean;
   help: boolean;
 };
 
 function parse(argv: string[]): Parsed {
-  const p: Parsed = { command: undefined, args: [], config: "aoa.config.ts", to: undefined, json: false, refresh: false, help: false };
+  const p: Parsed = { command: undefined, args: [], config: "aoa.config.ts", to: undefined, since: undefined, wait: undefined, json: false, refresh: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--config") {
@@ -61,6 +68,15 @@ function parse(argv: string[]): Parsed {
       if (value === undefined) throw new Error("--to needs a thread");
       p.to = value;
     } else if (a.startsWith("--to=")) p.to = a.slice("--to=".length);
+    else if (a === "--since") {
+      const value = argv[++i];
+      if (value === undefined) throw new Error("--since needs a message id");
+      p.since = value;
+    } else if (a === "--wait") {
+      const value = Number(argv[++i]);
+      if (!Number.isFinite(value) || value < 0) throw new Error("--wait needs a number of seconds");
+      p.wait = value;
+    }
     else if (a === "--json") p.json = true;
     else if (a === "--refresh") p.refresh = true;
     else if (a === "-h" || a === "--help") p.help = true;
@@ -89,13 +105,18 @@ export async function main(argv: string[], io: Io): Promise<number> {
     (p.command === undefined && !p.help ? io.err : io.out)(HELP);
     return p.command === undefined && !p.help ? 2 : 0;
   }
-  if (!["serve", "send", "answer", "close", "status"].includes(p.command)) {
+  if (!["serve", "send", "answer", "close", "messages", "status"].includes(p.command)) {
     io.err(`Unknown command "${p.command}".\n\n${HELP}`);
     return 2;
   }
 
   if (p.to !== undefined && p.command !== "send") {
     io.err(`--to is only for send.\n\n${HELP}`);
+    return 2;
+  }
+
+  if ((p.since !== undefined || p.wait !== undefined) && p.command !== "messages") {
+    io.err(`--since and --wait are only for messages.\n\n${HELP}`);
     return 2;
   }
 
@@ -139,6 +160,11 @@ export async function main(argv: string[], io: Io): Promise<number> {
         if (prefix === undefined || verdict === undefined) throw new Error("Usage: aoa answer <call-id-or-prefix> approve|deny [text...]");
         const callId = answer(agent, prefix, verdict, words.length > 0 ? words.join(" ") : undefined);
         io.out(`Answered ${callId}: ${verdict}`);
+        return 0;
+      }
+      case "messages": {
+        const listing = await messages(agent, { since: p.since ?? null, waitMs: (p.wait ?? 0) * 1000 });
+        io.out(p.json ? JSON.stringify(listing, null, 2) : renderMessages(listing));
         return 0;
       }
       default:
