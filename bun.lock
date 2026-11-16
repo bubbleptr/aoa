@@ -17,6 +17,7 @@
       },
       "dependencies": {
         "@aoa/channel-github": "workspace:*",
+        "@aoa/channel-local": "workspace:*",
         "@aoa/kernel": "workspace:*",
         "@aoa/runtime-pi": "workspace:*",
         "@aoa/store-sqlite": "workspace:*",

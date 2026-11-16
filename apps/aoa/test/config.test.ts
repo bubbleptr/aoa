@@ -27,7 +27,7 @@ const without = (path: string[]) => {
 
 describe("validateConfig", () => {
   test("accepts a complete config and takes numeric App ids as strings", () => {
-    expect(validateConfig(valid).github.appId).toBe("4242");
+    expect(validateConfig(valid).github?.appId).toBe("4242");
   });
 
   test.each([
@@ -57,5 +57,24 @@ test("paths are derived from dataDir and the repo, with ~ expanded", () => {
     worktrees: "/home/k/.aoa/worktrees/acme/widgets",
     repo: "/home/k/code/widgets",
     privateKey: "/home/k/.aoa/app.pem",
+  });
+});
+
+describe("local mode", () => {
+  const { github: _, ...local } = valid;
+
+  test("a config without github is valid", () => {
+    expect(validateConfig(local).github).toBeUndefined();
+  });
+
+  test("the inbox is named after the repo directory, and memory and worktrees follow it", () => {
+    const paths = derivePaths(validateConfig({ ...local, repo: { path: "~/code/widgets/", base: "main" } }), "/home/k");
+    expect(paths).toMatchObject({
+      inboxId: "local/widgets",
+      memory: "/home/k/.aoa/memory/local/widgets",
+      worktrees: "/home/k/.aoa/worktrees/local/widgets",
+      repo: "/home/k/code/widgets",
+      privateKey: null,
+    });
   });
 });

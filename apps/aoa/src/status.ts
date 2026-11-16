@@ -1,4 +1,4 @@
-import type { Tx } from "@aoa/kernel";
+import type { Event, Session, Tx } from "@aoa/kernel";
 import type { SqliteStore } from "@aoa/store-sqlite";
 
 export type PullRef = { number: number; url: string; thread: string; openedAt: number };
@@ -29,6 +29,19 @@ export function outcome(o: {
   return "in progress";
 }
 
+/** GitHub mode: the session's pull request. */
+export type PullColumns = {
+  pull: { number: number; url: string; state: "open" | "merged" | "closed" | null } | null;
+  timeToPullMs: number | null;
+};
+
+/** Local mode: the session's branch, which the user merges themself and reports with `aoa close`. */
+export type BranchColumns = {
+  branch: string;
+  /** From the session's first event to its first delivered message. */
+  timeToMessageMs: number | null;
+};
+
 export type SessionStatus = {
   session: string;
   thread: string | null;
@@ -36,8 +49,59 @@ export type SessionStatus = {
   outcome: Outcome;
   /** How many of its calls were deferred to the user. */
   asked: number;
-  pull: { number: number; url: string; state: "open" | "merged" | "closed" | null } | null;
-  timeToPullMs: number | null;
+} & (PullColumns | BranchColumns);
+
+/** The mode's part of a session's status: what its work led to, and the outcome that follows from it. */
+export type ModeColumns = (
+  t: Tx,
+  store: SqliteStore,
+  session: Session,
+  events: Event[],
+) => { outcome: Outcome; columns: PullColumns | BranchColumns };
+
+/** Trusted events after `since` in which the user stepped in; an answer that only expired is not one. */
+const userEventsAfter = (events: Event[], since: number): number =>
+  events.filter(
+    (e) =>
+      e.trusted &&
+      e.receivedAt > since &&
+      (e.source === "user_message" || (e.source === "approval_answer" && !(e.payload as { expired?: true }).expired)),
+  ).length;
+
+const firstEventAt = (events: Event[]): number | null => {
+  const first = Math.min(...events.map((e) => e.receivedAt));
+  return Number.isFinite(first) ? first : null;
+};
+
+export const pullColumns: ModeColumns = (t, store, s, events) => {
+  const pr = pullOf(t, s.id);
+  const stored = store.pulls.get(s.id);
+  const first = firstEventAt(events);
+  return {
+    outcome: outcome({
+      pull: pr ? (stored?.state ?? "unknown") : null,
+      userEventsAfterPull: pr ? userEventsAfter(events, pr.openedAt) : 0,
+      sessionClosed: s.status === "closed",
+    }),
+    columns: {
+      pull: pr ? { number: pr.number, url: pr.url, state: stored?.state ?? null } : null,
+      timeToPullMs: pr && first !== null ? pr.openedAt - first : null,
+    },
+  };
+};
+
+export const branchColumns: ModeColumns = (_t, store, s, events) => {
+  const declared = store.results.get(s.id)?.result;
+  const firstMessage = store.firstMessageSentAt(s.id);
+  const first = firstEventAt(events);
+  const reworked = declared === "merged" && firstMessage !== null && userEventsAfter(events, firstMessage) > 0;
+  return {
+    outcome: declared === "discarded" ? "discarded" : declared === "merged" ? (reworked ? "reworked" : "merged") : "in progress",
+    columns: {
+      branch: `aoa/${s.id.slice(0, 8)}`,
+      timeToMessageMs: firstMessage !== null && first !== null ? firstMessage - first : null,
+    },
+  };
 };
 
 export type StatusReport = {
@@ -56,35 +120,19 @@ function asks(tool: string, kind: "approval" | "question", args: unknown): strin
 }
 
 /** Everything `aoa status` shows, read from the store alone. */
-export function collectStatus(store: SqliteStore, inboxId: string): StatusReport {
+export function collectStatus(store: SqliteStore, inboxId: string, mode: ModeColumns): StatusReport {
   return store.tx((t) => {
     const events = t.listEvents(inboxId);
     const sessions = t.listSessions(inboxId).map((s): SessionStatus => {
       const mine = events.filter((e) => e.resume === s.id && e.status !== "dropped");
-      const pr = pullOf(t, s.id);
-      const stored = store.pulls.get(s.id);
-      // A reply that answered a deferred call is the user stepping in too; an expiry is not.
-      const userEventsAfterPull = pr
-        ? mine.filter(
-            (e) =>
-              e.trusted &&
-              e.receivedAt > pr.openedAt &&
-              (e.source === "user_message" || (e.source === "approval_answer" && !(e.payload as { expired?: true }).expired)),
-          ).length
-        : 0;
-      const first = Math.min(...mine.map((e) => e.receivedAt));
+      const { outcome, columns } = mode(t, store, s, mine);
       return {
         session: s.id,
         thread: t.primaryThread(s.id),
         state: s.status === "paused" ? "waiting for you" : s.status,
-        outcome: outcome({
-          pull: pr ? (stored?.state ?? "unknown") : null,
-          userEventsAfterPull,
-          sessionClosed: s.status === "closed",
-        }),
+        outcome,
         asked: t.listDecisions(s.id).filter((d) => d.decision === "defer").length,
-        pull: pr ? { number: pr.number, url: pr.url, state: stored?.state ?? null } : null,
-        timeToPullMs: pr && Number.isFinite(first) ? pr.openedAt - first : null,
+        ...columns,
       };
     });
     return {
@@ -122,17 +170,20 @@ export function renderStatus(r: StatusReport): string {
   const lines: string[] = [];
   if (r.sessions.length === 0) lines.push("No sessions yet.");
   else {
+    const duration = (ms: number | null) => (ms === null ? "-" : formatDuration(ms));
+    const local = "branch" in r.sessions[0]!;
     lines.push(
       ...table(
-        ["SESSION", "THREAD", "STATE", "OUTCOME", "ASKED", "PR", "TIME TO PR"],
+        ["SESSION", "THREAD", "STATE", "OUTCOME", "ASKED", ...(local ? ["BRANCH", "TIME TO MESSAGE"] : ["PR", "TIME TO PR"])],
         r.sessions.map((s) => [
           s.session.slice(0, 8),
           s.thread ?? "-",
           s.state,
           s.outcome,
           String(s.asked),
-          s.pull ? `#${s.pull.number}` : "-",
-          s.timeToPullMs === null ? "-" : formatDuration(s.timeToPullMs),
+          ...("branch" in s
+            ? [s.branch, duration(s.timeToMessageMs)]
+            : [s.pull ? `#${s.pull.number}` : "-", duration(s.timeToPullMs)]),
         ]),
       ),
     );

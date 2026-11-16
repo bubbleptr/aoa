@@ -45,6 +45,7 @@ async function git(args: string[], cwd: string): Promise<string> {
 /**
  * Everything the agent touches, local and in memory: a git repo whose origin is a bare repo, an in-memory
  * GitHub behind `fetch`, scripted models for the agent and the classifier, and one fake clock for all of it.
+ * With `local`, the config has no github block and the repo has no remote at all; any network call fails.
  */
 export class World {
   readonly root = realpathSync(mkdtempSync(join(tmpdir(), "aoa-e2e-")));
@@ -57,6 +58,9 @@ export class World {
   /** Every request each scripted model received. */
   readonly modelRequests: Context[] = [];
   readonly pushes: { args: string[]; env: Record<string, string> }[] = [];
+  /** Every desktop notification the agent asked for. */
+  readonly notes: { title: string; body: string }[] = [];
+  readonly local: boolean;
   /** The classifier's verdict for a call, given the text it was shown. */
   judge: (shown: string) => string = () => "allow";
   readonly configPath = join(this.root, "aoa.config.ts");
@@ -68,23 +72,28 @@ export class World {
   /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
   readonly env: Record<string, string | undefined>;
 
-  constructor(o: { classifier?: boolean; env?: Record<string, string | undefined> } = {}) {
+  constructor(o: { classifier?: boolean; env?: Record<string, string | undefined>; local?: boolean } = {}) {
     this.env = o.env ?? { [KEY_ENV]: MODEL_KEY };
+    this.local = o.local ?? false;
     this.config = {
       dataDir: join(this.root, "data"),
       repo: { path: this.repo, base: "main" },
       model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV },
       ...(o.classifier === false ? {} : { classifier: { provider: "judge", modelId: "judge", apiKeyEnv: KEY_ENV } }),
-      github: {
-        owner: OWNER,
-        repo: REPO,
-        label: "aoa",
-        userLogin: USER,
-        botLogin: BOT,
-        appId: APP_ID,
-        installationId: INSTALLATION_ID,
-        privateKeyPath: key.path,
-      },
+      ...(this.local
+        ? {}
+        : {
+            github: {
+              owner: OWNER,
+              repo: REPO,
+              label: "aoa",
+              userLogin: USER,
+              botLogin: BOT,
+              appId: APP_ID,
+              installationId: INSTALLATION_ID,
+              privateKeyPath: key.path,
+            },
+          }),
       rate: { maxMsgs: 100, windowMs: 3_600_000, minIntervalMs: 0 },
     };
     this.judgeModel.setResponses(
@@ -98,6 +107,7 @@ export class World {
 
   /** The real GitHub API host goes to the fake; nothing leaves the process. */
   readonly fetch = (input: string | URL | Request, init?: RequestInit) => {
+    if (this.local) throw new Error("local mode must not use the network");
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     return this.gh.fetch(url.replace(/^https:\/\/api\.github\.com/, "https://api.github.test"), init);
   };
@@ -123,11 +133,12 @@ export class World {
       clock: this.clock,
       env: this.env,
       log: (line: string) => this.logs.push(line),
+      // Always injected, so no test ever shows a real notification.
+      notify: async (title: string, body: string) => void this.notes.push({ title, body }),
     };
   }
 
   async start(): Promise<this> {
-    await git(["init", "--bare", "-b", "main", this.origin], this.root);
     await git(["init", "-b", "main", this.repo], this.root);
     await git(["config", "user.name", "Test User"], this.repo);
     await git(["config", "user.email", "test@example.com"], this.repo);
@@ -135,8 +146,11 @@ export class World {
     writeFileSync(join(this.repo, "README.md"), "# widgets\n");
     await git(["add", "README.md"], this.repo);
     await git(["commit", "-qm", "Initial commit"], this.repo);
-    await git(["remote", "add", "origin", this.origin], this.repo);
-    await git(["push", "-q", "origin", "main"], this.repo);
+    if (!this.local) {
+      await git(["init", "--bare", "-b", "main", this.origin], this.root);
+      await git(["remote", "add", "origin", this.origin], this.repo);
+      await git(["push", "-q", "origin", "main"], this.repo);
+    }
 
     writeFileSync(
       this.configPath,
@@ -209,6 +223,11 @@ export class World {
 
   originLog(ref: string): Promise<string> {
     return git(["--git-dir", this.origin, "log", "-1", "--format=%s", ref], this.root);
+  }
+
+  /** git in the user's repo, as they would run it to look at the agent's branches. */
+  repoGit(...args: string[]): Promise<string> {
+    return git(args, this.repo);
   }
 
   privateKeyPem(): string {

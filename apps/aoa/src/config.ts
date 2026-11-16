@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RatePolicy, Risk } from "@aoa/kernel";
 
@@ -17,7 +17,8 @@ export type AgentConfig = {
   model: ModelRef;
   /** Judges `medium` calls; without one they wait for the user. Required by `serve`. */
   classifier?: ModelRef;
-  github: {
+  /** Absent: local mode, where tasks come from `aoa send` and work stays on local branches. */
+  github?: {
     owner: string;
     repo: string;
     /** Default `aoa`. */
@@ -33,9 +34,11 @@ export type AgentConfig = {
   rate?: RatePolicy;
 };
 
+type GitHubConfig = NonNullable<AgentConfig["github"]>;
+
 /** What a config file writes; the App ids may be numbers. */
 export type AgentConfigInput = Omit<AgentConfig, "github"> & {
-  github: Omit<AgentConfig["github"], "appId" | "installationId"> & { appId: string | number; installationId: string | number };
+  github?: Omit<GitHubConfig, "appId" | "installationId"> & { appId: string | number; installationId: string | number };
 };
 
 export const defineAgent = (config: AgentConfigInput): AgentConfigInput => config;
@@ -105,35 +108,30 @@ function rate(value: unknown): RatePolicy {
   return r;
 }
 
+function github(value: unknown): GitHubConfig {
+  const gh = object(value, "github", ["owner", "repo", "label", "userLogin", "botLogin", "appId", "installationId", "privateKeyPath"]);
+  return {
+    owner: str(gh, "owner", "github."),
+    repo: str(gh, "repo", "github."),
+    label: gh.label === undefined ? "aoa" : str(gh, "label", "github."),
+    userLogin: str(gh, "userLogin", "github."),
+    botLogin: str(gh, "botLogin", "github."),
+    appId: id(gh, "appId", "github."),
+    installationId: id(gh, "installationId", "github."),
+    privateKeyPath: str(gh, "privateKeyPath", "github."),
+  };
+}
+
 /** Checks a loaded config; the error names the first bad field. */
 export function validateConfig(raw: unknown): AgentConfig {
   const c = object(raw, "config", ["dataDir", "repo", "model", "classifier", "github", "risk", "rate"]);
   const repo = object(c.repo, "repo", ["path", "base"]);
-  const gh = object(c.github, "github", [
-    "owner",
-    "repo",
-    "label",
-    "userLogin",
-    "botLogin",
-    "appId",
-    "installationId",
-    "privateKeyPath",
-  ]);
   const config: AgentConfig = {
     dataDir: str(c, "dataDir", ""),
     repo: { path: str(repo, "path", "repo."), base: str(repo, "base", "repo.") },
     model: modelRef(c.model, "model"),
-    github: {
-      owner: str(gh, "owner", "github."),
-      repo: str(gh, "repo", "github."),
-      label: gh.label === undefined ? "aoa" : str(gh, "label", "github."),
-      userLogin: str(gh, "userLogin", "github."),
-      botLogin: str(gh, "botLogin", "github."),
-      appId: id(gh, "appId", "github."),
-      installationId: id(gh, "installationId", "github."),
-      privateKeyPath: str(gh, "privateKeyPath", "github."),
-    },
   };
+  if (c.github !== undefined) config.github = github(c.github);
   if (c.classifier !== undefined) config.classifier = modelRef(c.classifier, "classifier");
   if (c.risk !== undefined) {
     const risk = object(c.risk, "risk", Object.keys(c.risk as Obj));
@@ -168,26 +166,28 @@ export type Paths = {
   piAgent: string;
   worktrees: string;
   repo: string;
-  privateKey: string;
+  /** The GitHub App key; null in local mode. */
+  privateKey: string | null;
 };
 
 const expand = (path: string, home: string): string =>
-  path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : resolve(path);
+  path === "~" ? home : path.startsWith("~/") ? resolve(home, path.slice(2)) : resolve(path);
 
 /** Everything below `dataDir` is derived, never configured (one layout per inbox). */
 export function derivePaths(c: AgentConfig, home = homedir()): Paths {
   const dataDir = expand(c.dataDir, home);
-  const { owner, repo } = c.github;
+  const repo = expand(c.repo.path, home);
+  const [owner, name] = c.github ? [c.github.owner, c.github.repo] : ["local", basename(repo)];
   return {
-    inboxId: `${owner}/${repo}`,
+    inboxId: `${owner}/${name}`,
     dataDir,
     db: join(dataDir, "aoa.db"),
-    memory: join(dataDir, "memory", owner, repo),
+    memory: join(dataDir, "memory", owner, name),
     sessions: join(dataDir, "sessions"),
     piAgent: join(dataDir, "pi"),
-    worktrees: join(dataDir, "worktrees", owner, repo),
-    repo: expand(c.repo.path, home),
-    privateKey: expand(c.github.privateKeyPath, home),
+    worktrees: join(dataDir, "worktrees", owner, name),
+    repo,
+    privateKey: c.github ? expand(c.github.privateKeyPath, home) : null,
   };
 }
 

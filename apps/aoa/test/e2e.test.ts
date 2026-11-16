@@ -202,7 +202,7 @@ describe("end to end", () => {
     // Preparing again, as the kernel does after a crash, reuses the worktree.
     expect(await w.agent.worktrees.prepare(session)).toEqual({ workdir: session.workdir! });
 
-    await w.agent.checkPulls();
+    await w.agent.closeFinished();
     expect(w.sessions()[0]).toMatchObject({ status: "open" });
 
     // A check that lands while the session's run is in flight leaves its worktree alone.
@@ -210,7 +210,7 @@ describe("end to end", () => {
     w.script([
       async () => {
         w.gh.closePull(pr.number);
-        await w.agent.checkPulls();
+        await w.agent.closeFinished();
         return say("Okay.");
       },
     ]);
@@ -219,7 +219,7 @@ describe("end to end", () => {
     expect(w.sessions()[0]).toMatchObject({ status: "open", workdir: session.workdir });
     expect(existsSync(session.workdir!)).toBe(true);
 
-    await w.agent.checkPulls();
+    await w.agent.closeFinished();
     expect(w.sessions()[0]).toMatchObject({ status: "closed", workdir: null });
     expect(existsSync(session.workdir!)).toBe(false);
 
@@ -251,7 +251,7 @@ describe("end to end", () => {
       reached();
       await held;
     };
-    const checking = w.agent.checkPulls();
+    const checking = w.agent.closeFinished();
     await removing;
 
     // The user comments while the removal is in progress; the worker picks the session up right then.

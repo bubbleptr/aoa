@@ -3,7 +3,7 @@ import type { Agent } from "./wiring.ts";
 
 /** How often `serve` looks for work written by other processes (`aoa send`, `aoa answer`). */
 export const NUDGE_INTERVAL_MS = 5_000;
-/** How often `serve` checks the pull requests of open sessions. */
+/** How often `serve` checks the pull requests of open sessions (GitHub mode). */
 export const PULL_CHECK_INTERVAL_MS = 5 * 60_000;
 
 /**
@@ -53,12 +53,12 @@ export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
     }),
   );
 
-  every(POLL_INTERVAL_MS, "polling GitHub", () => agent.poller.pass());
+  if (agent.schedule.polls) every(POLL_INTERVAL_MS, "polling the channel", () => agent.poller.pass());
   every(NUDGE_INTERVAL_MS, "waking the worker", () => {
     agent.worker.wake();
     agent.dispatcher.wake();
   });
-  every(PULL_CHECK_INTERVAL_MS, "checking pull requests", () => agent.checkPulls());
+  every(agent.schedule.finishCheckMs, "closing finished sessions", () => agent.closeFinished());
 
   await Promise.race([stop, failure]);
   for (const [, loop] of loops) loop.stop();
