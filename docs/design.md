@@ -1,6 +1,6 @@
 # aoa 设计文档
 
-- 状态：已实现，只在脚本模型上跑过（本地模式和假 GitHub 两条路都有端到端测试）；还没接过真实模型和真实的 GitHub App
+- 状态：已实现。本地模式在一次性仓库上用真实模型（DeepSeek flash）冒烟跑通过一次；GitHub 模式只在假 GitHub 和脚本模型上跑过，还没接过真实的 GitHub App
 - 日期：2026-11-16
 - 规范：[spec.md](spec.md)（下文的 §、I-*、C*、D-* 编号都指它）
 - 决策记录：<（链接已删除）>
@@ -285,7 +285,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 
 - GitHub App 的 JWT 和 installation token 交换，经 HTTPS 带 token 的 `git push`。
 - GitHub 接口的细节：`since` 的语义、按创建时间排序、带标签的 PR 是否出现在 issues 列表里、`head=owner:branch` 过滤、经 issues 接口给 PR 加标签、真实的分页和限流。
-- 真实模型会不会照系统提示的流程走；分类器会不会只回答一个词。
+- 真实模型会不会照系统提示的流程走；分类器会不会只回答一个词。本地模式下用 DeepSeek flash 试过一次（2026-11-16）：派活到提交 19 秒，返工、越界读文件的审批、`close` 后收尾都按设计走，被要求推送时它拒绝了；只有这一个模型、一项任务，别的模型没试过。
 - macOS 通知从没真的发过：测试里注入了假的通知函数，`osascript` 那条命令没跑过。
 - 宿主时钟要和 GitHub 相差一分钟以内，否则换 token 会失败。
 
