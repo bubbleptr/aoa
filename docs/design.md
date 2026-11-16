@@ -102,7 +102,7 @@ runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消�
 
 | 表 | 对应 | 关键列 |
 | --- | --- | --- |
-| `events` | §3.2 `Event` | `(source, dedupe_key)` 唯一，`status`，`lease_until`，`attempts`，`thread`，`resume`，`trusted` |
+| `events` | §3.2 `Event` | `(source, dedupe_key)` 唯一，`status`，`lease_until`，`attempts`，`next_attempt_at`，`thread`，`resume`，`trusted` |
 | `timers` | §4.2 `Timer` | `kind`，`due`，`recurrence`，`status` |
 | `sessions` | §1.2 `Session` | `status`，`pending`，`runtime_ref`，`workdir` |
 | `outbox` | §7.2 `OutMsg` | `dedupe_key` 唯一，`status`，`attempts` |
@@ -127,6 +127,8 @@ runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消�
 ### worker
 
 照 §8.2。每个 inbox 一个 worker，每次醒来都重新从 `events` 拉取，不信唤醒信号里带的内容。互斥由数据库保证，不靠进程里的锁：claim 是一个事务，只有这个 inbox 没有未过期的租约时才成功。run 的结局、session 的更新和事件标 `done` 在同一个事务里提交。
+
+一次尝试失败时（runtime 抛出，或租约过期），这批事件带着 `next_attempt_at` 回到 `pending`：第一次失败后 30 秒，第二次后 2 分钟（§9）。租约过期的算在租约到期那一刻，不是某个 worker 发现它的时刻。延迟期间同一 inbox 里别的 session 照常运行；同一 session 之后来的事件排在它们后面，所以 session 内的顺序不变。worker 按 `next_attempt_at` 睡到点，自己醒来。
 
 每个提交点都有名字：`after_append`、`after_claim`、`after_tool_exec`、`after_tool_result`、`before_complete`。一致性测试靠这些名字在指定位置杀进程。
 
@@ -171,7 +173,7 @@ GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里�
 
 - 怎么回答。session 停在延后调用上时，你在它的 thread 上发的下一条评论就是答复：`/approve` 是批准，`/deny 理由` 是拒绝；其他内容对提问来说是答案，对审批来说算拒绝并把内容当作你的意见交给 agent。通道不解析，它只按作者标出这是你的话；改写成 `approval_answer` 在内核收事件时做。
 - 批准之后谁执行。内核在新 run 开始前自己执行被批准的那次调用（照常记日志），把结果连同答复一起交给 runtime；runtime 只告诉模型结果，不让模型再调一次。这样不用改写 transcript 里停在半路的那次调用。
-- 失败的 run 立刻重试，不退避，三次后事件进 `dead`。
+- 失败的 run 按 §9 的延迟重试，三次后事件进 `dead`。
 
 ## 7. 记忆
 
@@ -220,6 +222,7 @@ agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 
 | `ACK_MAX` | 1 秒；没有 HTTP handler，C5 对着 `aoa send` 的追加路径测 |
 | `LEASE` | 5 分钟，run 活着时每分钟续租；worker 死了租约才会过期 |
 | `MAX_ATTEMPTS` | 3，之后进死信 |
+| `RETRY_DELAYS_MS` | 30 秒、2 分钟：第一次和第二次失败后事件要等多久才能再被取走；第三次失败进死信 |
 | `POLL_INTERVAL` | 定时器最长 60 秒；GitHub 60 秒 |
 | `COMPACT_THRESHOLD` | 75% |
 | D-EVT-1 | `next_run` |
@@ -295,7 +298,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 
 已知的局限：
 
-- 失败的 run 立刻重试，不退避。pi 自己会在一次 run 里对限流、过载和网络错误重试 3 次（2 秒起，翻倍），所以一次限流不会直接耗掉一次尝试；分类器没有重试，出错时那次调用会交给你。
+- pi 自己会在一次 run 里对限流、过载和网络错误重试 3 次（2 秒起，翻倍），所以一次限流不会直接耗掉一次尝试；分类器没有重试，出错时那次调用会交给你。
 - 同一批里有一个调用被延后时，同批的其他调用照常执行。
 - agent 的工作目录里的 `pre-push` 钩子或 `url.insteadOf` 规则能看到或改走推送用的凭据；和 §6 接受的同用户风险是一回事。
 - 给 issue 打标签之前的评论不会进来，只有 issue 本身会。
