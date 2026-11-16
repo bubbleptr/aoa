@@ -148,6 +148,41 @@ describe("snapshot", () => {
     expect(files.find((f) => f.path === "blob.bin")).toMatchObject({ text: null, binary: true, size: 4 });
   });
 
+  test("memory files are grouped by when a run loads them, and progress files name their task's state", async () => {
+    const w = await world();
+    w.script([say("Done.")]);
+    await w.cli("send", "Look at it.");
+    await w.drain();
+    const task = w.sessions()[0]!.id;
+    const dir = w.agent.paths.memory;
+    mkdirSync(join(dir, "notes"), { recursive: true });
+    mkdirSync(join(dir, "progress"), { recursive: true });
+    for (const path of ["instructions.md", "index.md", "notes/user.md", `progress/${task}.md`, "progress/gone.md", "scratch.txt"]) {
+      writeFileSync(join(dir, path), path);
+    }
+
+    const kinds = Object.fromEntries(observe(w).memory.files.map((f) => [f.path, [f.kind, f.task]]));
+    expect(kinds).toEqual({
+      "instructions.md": ["instructions", null],
+      "index.md": ["index", null],
+      "notes/user.md": ["notes", null],
+      [`progress/${task}.md`]: ["progress", { sessionId: task, state: "open" }],
+      "progress/gone.md": ["progress", { sessionId: "gone", state: "unknown" }],
+      "scratch.txt": ["other", null],
+    });
+  });
+
+  test("the messages a run is told it already sent are the latest five delivered, oldest first", async () => {
+    const w = await world();
+    for (let i = 1; i <= 6; i++) {
+      w.script([call("notify", { body: `Update ${i}.` }), say("Done.")]);
+      await w.cli("send", `Task ${i}.`);
+      await w.drain();
+      await w.dispatch();
+    }
+    expect(observe(w).memory.told.map((m) => m.body)).toEqual(["Update 2.", "Update 3.", "Update 4.", "Update 5.", "Update 6."]);
+  });
+
   test("memory text past the total cap goes to the latest files; older ones keep only a head", async () => {
     const w = await world();
     const dir = w.agent.paths.memory;
