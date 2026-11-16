@@ -22,7 +22,7 @@ export type InboxRow = {
   source: EventSource;
   thread: string | null;
   sessionId: string | null;
-  status: Exclude<EventStatus, "pending"> | "pending" | "retrying";
+  status: EventStatus | "retrying";
   attempts: number;
   receivedAt: number;
   /** When a retrying event may be claimed again; null otherwise. */
@@ -211,8 +211,9 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const nextTimer = armed[0] ? { id: armed[0].id, kind: armed[0].kind, due: armed[0].due } : null;
 
     const sessions = t.listSessions(inboxId);
-    const journal: JournalRecord[] = sessions.flatMap((x) => t.listJournal(x.id));
-    const decisions = sessions.flatMap((x) => t.listDecisions(x.id));
+    // Both are read per session; "latest" below means latest across all of them.
+    const journal: JournalRecord[] = sessions.flatMap((x) => t.listJournal(x.id)).sort((a, b) => a.intentAt - b.intentAt);
+    const decisions = sessions.flatMap((x) => t.listDecisions(x.id)).sort((a, b) => a.at - b.at);
     const deferred = t.listDeferred(inboxId);
     const argsOf = new Map<string, string>();
     for (const j of journal) argsOf.set(j.callId, asks(j.tool, "approval", j.args));

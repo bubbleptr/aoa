@@ -372,7 +372,7 @@ function row(key, o) {
   return li;
 }
 
-/** Fills a panel and returns its rows that were not there before. */
+/** Fills a panel and returns the keys of its rows that were not there before. */
 function fillPanel(id, counts, extra, title, rows, emptyText) {
   const panel = document.getElementById("panel-" + id);
   panel.querySelector(".counts").replaceChildren(...counts);
@@ -383,7 +383,7 @@ function fillPanel(id, counts, extra, title, rows, emptyText) {
   const items = rows.map(([key, o]) => row(key, o));
   list.replaceChildren(...(items.length ? items : [el("li", "row empty", emptyText)]));
   seen[id] = new Set(rows.map(([key]) => key));
-  return before ? items.filter((li) => !before.has(li.dataset.key)) : [];
+  return before ? rows.map(([key]) => key).filter((key) => !before.has(key)) : [];
 }
 
 const eventTone = { in_run: "info", retrying: "warn", dead: "bad", pending: "quiet", done: "quiet", dropped: "quiet" };
@@ -472,8 +472,12 @@ function renderPanels(s) {
   return fresh;
 }
 
-function flash(rows) {
-  for (const li of rows || []) {
+/** Looks the rows up when it runs: a later update may have replaced the panel's list since. */
+function flash(id, keys) {
+  if (!keys || !keys.length) return;
+  const wanted = new Set(keys);
+  for (const li of document.getElementById("panel-" + id).querySelectorAll("li.row")) {
+    if (!wanted.has(li.dataset.key)) continue;
     li.classList.remove("flash");
     void li.offsetWidth;
     li.classList.add("flash");
@@ -528,8 +532,8 @@ function apply(update) {
   const moved = update.flows || {};
   const targets = new Set(Object.keys(moved).map((e) => EDGES[e] && EDGES[e].to));
   // Rows a dot is heading for flash when it arrives; the rest flash now.
-  for (const id of Object.keys(fresh)) if (reducedMotion.matches || !targets.has(id)) flash(fresh[id]);
-  if (!reducedMotion.matches) playDots(moved, (to) => flash(fresh[to]));
+  for (const id of Object.keys(fresh)) if (reducedMotion.matches || !targets.has(id)) flash(id, fresh[id]);
+  if (!reducedMotion.matches) playDots(moved, (to) => flash(to, fresh[to]));
 }
 
 buildMap();
