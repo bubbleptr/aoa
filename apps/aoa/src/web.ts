@@ -1,6 +1,7 @@
 import { watch as watchFile } from "node:fs";
 import { join } from "node:path";
-import { type Snapshot, changed, flows, snapshot } from "./observe.ts";
+import type { Role } from "./config.ts";
+import { type Edge, type Snapshot, changed, flows, snapshot } from "./observe.ts";
 import type { Agent } from "./wiring.ts";
 
 export const DEFAULT_WEB_PORT = 7878;
@@ -23,6 +24,18 @@ export type WebOptions = {
 export type Web = { port: number; stop(): Promise<void> };
 
 /**
+ * What `/snapshot` serves and every update carries: the default agent's snapshot, with each named agent's alongside.
+ * The page is read from disk per request while `serve` keeps running, so a page from before named agents reads this
+ * as the one agent it knows.
+ */
+export type View = Snapshot & { agents: { name: string; role: Role; snapshot: Snapshot }[] };
+
+type Flows = Partial<Record<Edge, number>>;
+
+/** A view with every `at` zeroed: when it was taken does not make it different. */
+const timeless = (v: View) => ({ ...v, agents: v.agents.map((a) => ({ ...a, snapshot: { ...a.snapshot, at: 0 } })) });
+
+/**
  * Watching the WAL file sees every commit from another process within a millisecond; watching its directory misses
  * some. The agent's own connection is open, so the file exists and stays.
  */
@@ -40,7 +53,7 @@ const encoder = new TextEncoder();
 export function startWeb(agent: Agent, o: WebOptions): Web {
   const { clock } = agent;
   const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
-  let current: Snapshot;
+  let current: View;
   let version: number;
   let cancelCoalesce: (() => void) | null = null;
   let cancelFlip = () => {};
@@ -56,16 +69,24 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     cancelFlip = at === null ? () => {} : clock.setTimer(Math.max(0, at - clock.now()), rebuild);
   };
 
-  function build(): Snapshot {
+  function build(): View {
     // Read before the tables, so a commit landing in between is caught by the next check.
     version = agent.store.dataVersion();
-    return snapshot(agent);
+    const [first, ...named] = agent.agents.map((a) => ({ name: a.name, role: a.role, snapshot: snapshot(a) }));
+    const later = [first!.snapshot, ...named.map((a) => a.snapshot)].map((s) => s.nextChangeAt).filter((at) => at !== null);
+    return { ...first!.snapshot, agents: named, nextChangeAt: later.length > 0 ? Math.min(...later) : null };
   }
 
   function rebuild(): void {
     const next = build();
-    if (changed(current, next)) {
-      const update = { snapshot: next, flows: flows(current, next) };
+    if (changed(timeless(current), timeless(next))) {
+      const flowsByAgent: Record<string, Flows> = {};
+      for (const a of next.agents) {
+        const before = current.agents.find((b) => b.name === a.name);
+        const moved = before ? flows(before.snapshot, a.snapshot) : {};
+        if (Object.keys(moved).length > 0) flowsByAgent[a.name] = moved;
+      }
+      const update = { snapshot: next, flows: flows(current, next), flowsByAgent };
       current = next;
       for (const c of clients) {
         try {
@@ -157,7 +178,7 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
             start(c) {
               self = c;
               clients.add(c);
-              send(c, { snapshot: current, flows: {} });
+              send(c, { snapshot: current, flows: {}, flowsByAgent: {} });
             },
             cancel() {
               clients.delete(self);

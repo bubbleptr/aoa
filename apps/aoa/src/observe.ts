@@ -159,6 +159,8 @@ export type Snapshot = {
   };
   outbox: { counts: Record<OutMsg["status"], number>; rows: OutboxRow[] };
   edges: Record<Edge, Count>;
+  /** Of the events counted on the `in` edge, those another agent sent with send_to. */
+  inFromAgents: Count;
   /** The next moment the snapshot changes with no write: serve going stale, a retry delay or a lease running out. */
   nextChangeAt: number | null;
 };
@@ -258,9 +260,13 @@ function recentlyDecided(decisions: DecisionRecord[], isClassifier: (basis: stri
     .slice(0, LATEST);
 }
 
-/** Reads everything in one transaction, so the counts and totals agree with each other. */
-export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "paths">): Snapshot {
+/**
+ * One agent's view, read in one transaction, so the counts and totals agree with each other. `serve` is one process
+ * for every agent, so its heartbeat is read from the default agent's inbox.
+ */
+export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
   const { inboxId } = agent;
+  const serveInbox = agent.agents[0]!.inboxId;
   const now = agent.clock.now();
   const since = now - DAY_MS;
   const recent = (at: number | null) => at !== null && at >= since;
@@ -269,8 +275,8 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
 
   const files = listFiles(agent.paths.memory);
   const s = agent.store.tx((t: Tx): Snapshot => {
-    const seenAt = Number(t.getCursor(inboxId, SERVE_SEEN) ?? NaN);
-    const startedAt = Number(t.getCursor(inboxId, SERVE_STARTED) ?? NaN);
+    const seenAt = Number(t.getCursor(serveInbox, SERVE_SEEN) ?? NaN);
+    const startedAt = Number(t.getCursor(serveInbox, SERVE_STARTED) ?? NaN);
     const seen = Number.isFinite(seenAt) ? seenAt : null;
     if (seen !== null && seen + SERVE_STALE_MS >= now) later.push(seen + SERVE_STALE_MS + 1);
     const serve: Snapshot["serve"] = {
@@ -514,6 +520,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
         fires: count(appended.filter((e) => e.source === "timer" || expired(e)).map((e) => e.receivedAt)),
         delivered: count([...sentAt.values()]),
       },
+      inFromAgents: count(appended.filter((e) => e.source === "agent_message").map((e) => e.receivedAt)),
       nextChangeAt: null,
     };
   });
