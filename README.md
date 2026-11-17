@@ -27,23 +27,6 @@
 
 ## 设计和实现
 
-### 内核只认三个端口
-
-内核不知道 GitHub、worktree 和具体模型，只认存储、runtime 和通道：
-
-```ts
-interface Store { tx<T>(fn: (t: Tx) => T): T }   // 一个事务 = 规范里的 ATOMIC
-interface AgentRuntime { run(input: RunInput): Promise<RunResult> }
-interface Channel {
-  deliver(m: OutMsg): Promise<void>;
-  poll(cursor: string | null): Promise<{ events: NewEvent[]; cursor: string }>;
-}
-```
-
-- runtime 拿到的工具是内核包好的：`invoke` 里先裁决，再记日志，再执行，适配器绕不过去。pi 自带的 bash、read、edit、write 也被包成内核工具，pi 自己不直接执行任何工具。
-- 一次 run 的结局只有三种：发了消息、没说话、停在一个延后的调用上。
-- 「任务」不是内核概念。内核只有 session；`apps/aoa` 给新 session 建一个 worktree，一项任务就是一个 session 加一个 worktree。
-
 ### 一次工具调用
 
 <picture>
@@ -57,6 +40,30 @@ interface Channel {
 - **只有你的话能批准。** 按作者判断，不按内容：issue 正文、别人的评论、另一个 agent 发来的消息都是外部内容，永远变不成审批答复。
 - **凭据不进 agent。** GitHub 模式下 `git_push`、`github_open_pr`、`github_comment` 在宿主进程里执行，宿主加上凭据再发请求，agent 的上下文和参数里没有凭据。模型的 API key 在 `serve` 读入后从环境变量里删掉。aoa 不做沙箱：agent 的 shell 和宿主是同一个系统用户，所以碰 `~/.aoa` 或凭据路径的命令不会被直接放行，要问你。
 - **auto review** 只用在 Codex 上的审查 agent：它的审批交给 Codex 自己的自动审查，不经过内核，也不问你。
+
+### 多个 agent：实现加审查
+
+在配置里加 `agents`，就能让几个具名 agent 跑在同一个 `serve` 里。顶层字段就是默认 agent；每个具名 agent 有自己的 inbox、worker、角色、权限和记忆，没写的字段（`model`、`classifier`、`risk`）沿用顶层。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/multi-agent-dark.png">
+  <img alt="多 agent：实现 agent 和审查 agent 各有自己的 Inbox、Worker 和 pi；实现 agent 用 send_to 把分支交给审查 agent，审查 agent 把结论发回；两者共用一个 SQLite 库，表按 inbox 分" src="docs/diagrams/multi-agent-light.png">
+</picture>
+
+每个 agent 一个 inbox、一个 worker：一个 inbox 同时只有一个 run，不同 agent 的 run 可以同时跑。agent 之间只通过往对方的 inbox 写事件合作，所有 agent 共用一个库和一个时钟。
+
+- `implement`（默认）：写代码。
+- `review`：只读。没有 edit、write，改引用或改历史的 git 命令一律拦掉。
+
+```ts
+agents: {
+  reviewer: { role: "review", instructions: "Focus on missing tests." },
+},
+```
+
+有审查 agent 时，实现 agent 提交后用 `send_to` 把分支交给它。审查 agent 在一个停在那个提交上的独立 worktree 里检查能否干净合并、跑测试、确认新测试去掉修复后会失败，然后把结论发回实现 agent，同时通知你。结论只是建议，合并、关任务、回答审批都由你来。两个 agent 之间来回最多 4 条消息，再多就会转来找你。
+
+具名 agent 的 inbox 是 `local/<repo>@<名字>`，记忆和 worktree 在 `memory/local/<repo>@<名字>/`、`worktrees/local/<repo>@<名字>/` 下，分支是 `aoa/<名字>/<会话 id 前 8 位>`。`status`、`messages`、`answer`、`send --to`、`close` 会在所有 agent 里找。只能用在本地模式。
 
 ### 崩溃后接着做
 
@@ -103,30 +110,6 @@ aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，�
 - agent 找你时，消息追加到 `<dataDir>/messages.md`，macOS 上同时弹通知。要你批准时，消息里写着对应的 `aoa answer` 命令。
 - 你自己看分支、合并，然后用 `aoa close` 告诉 aoa 结局。`close` 只做记录；`serve` 在下一次检查（5 秒内）关掉任务、删掉 worktree，分支保留。
 - `bash` 里出现 `git push` 时会先问你。这只是约定，不是隔离：agent 的 shell 就是你的 shell。
-
-## 多个 agent：实现加审查
-
-在配置里加 `agents`，就能让几个具名 agent 跑在同一个 `serve` 里。顶层字段就是默认 agent；每个具名 agent 有自己的 inbox、worker、角色、权限和记忆，没写的字段（`model`、`classifier`、`risk`）沿用顶层。
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/multi-agent-dark.png">
-  <img alt="多 agent：实现 agent 和审查 agent 各有自己的 Inbox、Worker 和 pi；实现 agent 用 send_to 把分支交给审查 agent，审查 agent 把结论发回；两者共用一个 SQLite 库，表按 inbox 分" src="docs/diagrams/multi-agent-light.png">
-</picture>
-
-每个 agent 一个 inbox、一个 worker：一个 inbox 同时只有一个 run，不同 agent 的 run 可以同时跑。agent 之间只通过往对方的 inbox 写事件合作，所有 agent 共用一个库和一个时钟。
-
-- `implement`（默认）：写代码。
-- `review`：只读。没有 edit、write，改引用或改历史的 git 命令一律拦掉。
-
-```ts
-agents: {
-  reviewer: { role: "review", instructions: "Focus on missing tests." },
-},
-```
-
-有审查 agent 时，实现 agent 提交后用 `send_to` 把分支交给它。审查 agent 在一个停在那个提交上的独立 worktree 里检查能否干净合并、跑测试、确认新测试去掉修复后会失败，然后把结论发回实现 agent，同时通知你。结论只是建议，合并、关任务、回答审批都由你来。两个 agent 之间来回最多 4 条消息，再多就会转来找你。
-
-具名 agent 的 inbox 是 `local/<repo>@<名字>`，记忆和 worktree 在 `memory/local/<repo>@<名字>/`、`worktrees/local/<repo>@<名字>/` 下，分支是 `aoa/<名字>/<会话 id 前 8 位>`。`status`、`messages`、`answer`、`send --to`、`close` 会在所有 agent 里找。只能用在本地模式。
 
 ## Runtime：pi、Codex、dsh
 

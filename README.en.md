@@ -27,23 +27,6 @@ Status: the kernel, the SQLite store, three runtimes (pi, Codex, dsh), the local
 
 ## Design and implementation
 
-### The kernel knows three ports
-
-The kernel knows nothing about GitHub, worktrees or specific models. It only knows storage, runtimes and channels:
-
-```ts
-interface Store { tx<T>(fn: (t: Tx) => T): T }   // one transaction = ATOMIC in the spec
-interface AgentRuntime { run(input: RunInput): Promise<RunResult> }
-interface Channel {
-  deliver(m: OutMsg): Promise<void>;
-  poll(cursor: string | null): Promise<{ events: NewEvent[]; cursor: string }>;
-}
-```
-
-- The tools a runtime receives are wrapped by the kernel: `invoke` decides first, then logs, then executes, and an adapter cannot go around it. pi's own bash, read, edit and write are wrapped as kernel tools too, so pi never executes a tool directly.
-- A run ends in one of three ways: it sent a message, it stayed silent, or it stopped on a deferred call.
-- A "task" is not a kernel concept. The kernel only has sessions; `apps/aoa` creates a worktree for each new session, so a task is a session plus a worktree.
-
 ### A tool call
 
 <picture>
@@ -57,6 +40,30 @@ interface Channel {
 - **Only your words can approve.** This is decided by author, not by content: issue bodies, other people's comments and messages from another agent are all outside content and can never become an approval.
 - **Credentials stay out of the agent.** In GitHub mode, `git_push`, `github_open_pr` and `github_comment` run in the host process, which adds the credentials before sending the request, so they never appear in the agent's context or arguments. The model's API key is removed from the environment after `serve` reads it. aoa does not sandbox: the agent's shell runs as the same system user as the host, so commands that touch `~/.aoa` or credential paths are never allowed automatically and are put to you instead.
 - **auto review** applies only to a review agent on Codex: its approvals go to Codex's own auto review, bypassing the kernel and without asking you.
+
+### Multiple agents: implement plus review
+
+Add `agents` to the config to run several named agents in the same `serve`. The top-level fields are the default agent; each named agent has its own inbox, worker, role, permissions and memory, and fields it leaves out (`model`, `classifier`, `risk`) come from the top level.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/multi-agent-en-dark.png">
+  <img alt="Multiple agents: the implementation agent and the review agent each have their own Inbox, Worker and pi; the implementation agent hands its branch over with send_to and the review agent sends its findings back; both share one SQLite database whose tables are split by inbox" src="docs/diagrams/multi-agent-en-light.png">
+</picture>
+
+One inbox and one worker per agent: an inbox has at most one run at a time, while runs of different agents can proceed in parallel. Agents only cooperate by writing events into each other's inboxes, and all of them share one database and one clock.
+
+- `implement` (default): writes code.
+- `review`: read-only. No edit or write, and git commands that move refs or rewrite history are blocked.
+
+```ts
+agents: {
+  reviewer: { role: "review", instructions: "Focus on missing tests." },
+},
+```
+
+With a review agent configured, the implementation agent hands its branch over with `send_to` after committing. In a separate worktree pinned to that commit, the review agent checks that it merges cleanly, runs the tests, and confirms that new tests fail with the fix removed, then sends its findings back to the implementation agent and notifies you. The findings are advice only: merging, closing the task and answering approvals stay with you. The two agents exchange at most 4 messages before the thread is turned over to you.
+
+A named agent's inbox is `local/<repo>@<name>`, its memory and worktrees live under `memory/local/<repo>@<name>/` and `worktrees/local/<repo>@<name>/`, and its branches are `aoa/<name>/<first 8 characters of the session id>`. `status`, `messages`, `answer`, `send --to` and `close` search all agents. Local mode only.
 
 ### Picking up after a crash
 
@@ -103,30 +110,6 @@ Without a `github` section you are in local mode: no GitHub, no pushes, no PRs.
 - When the agent needs you, the message is appended to `<dataDir>/messages.md`, with a notification on macOS. When it needs approval, the message includes the matching `aoa answer` command.
 - You review and merge the branch yourself, then tell aoa the outcome with `aoa close`. `close` only records it; at its next check (within 5 seconds) `serve` closes the task and removes the worktree, keeping the branch.
 - A `git push` inside `bash` asks you first. This is a convention, not isolation: the agent's shell is your shell.
-
-## Multiple agents: implement plus review
-
-Add `agents` to the config to run several named agents in the same `serve`. The top-level fields are the default agent; each named agent has its own inbox, worker, role, permissions and memory, and fields it leaves out (`model`, `classifier`, `risk`) come from the top level.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/multi-agent-en-dark.png">
-  <img alt="Multiple agents: the implementation agent and the review agent each have their own Inbox, Worker and pi; the implementation agent hands its branch over with send_to and the review agent sends its findings back; both share one SQLite database whose tables are split by inbox" src="docs/diagrams/multi-agent-en-light.png">
-</picture>
-
-One inbox and one worker per agent: an inbox has at most one run at a time, while runs of different agents can proceed in parallel. Agents only cooperate by writing events into each other's inboxes, and all of them share one database and one clock.
-
-- `implement` (default): writes code.
-- `review`: read-only. No edit or write, and git commands that move refs or rewrite history are blocked.
-
-```ts
-agents: {
-  reviewer: { role: "review", instructions: "Focus on missing tests." },
-},
-```
-
-With a review agent configured, the implementation agent hands its branch over with `send_to` after committing. In a separate worktree pinned to that commit, the review agent checks that it merges cleanly, runs the tests, and confirms that new tests fail with the fix removed, then sends its findings back to the implementation agent and notifies you. The findings are advice only: merging, closing the task and answering approvals stay with you. The two agents exchange at most 4 messages before the thread is turned over to you.
-
-A named agent's inbox is `local/<repo>@<name>`, its memory and worktrees live under `memory/local/<repo>@<name>/` and `worktrees/local/<repo>@<name>/`, and its branches are `aoa/<name>/<first 8 characters of the session id>`. `status`, `messages`, `answer`, `send --to` and `close` search all agents. Local mode only.
 
 ## Runtimes: pi, Codex, dsh
 
