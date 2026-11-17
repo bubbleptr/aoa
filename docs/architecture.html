@@ -74,6 +74,10 @@ body {
 .tile b { font: 600 15.5px var(--display); }
 .tile.prim b { color: var(--prim); }
 .tile span { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.chips { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.chips i { font: 500 11.5px var(--body); font-style: normal; color: var(--muted); background: var(--chip); border: 1px solid var(--tile-edge); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
+.tile .chips i { background: var(--kernel); }
+.chips em { font-style: normal; color: var(--line); font-size: 13px; }
 .col1 { left: 248px; width: 186px; }
 .col2 { left: 494px; width: 186px; }
 .wide { left: 248px; width: 432px; }
@@ -122,7 +126,8 @@ body {
   </div>
   <div class="abs tile wide" style="top:236px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg></div>
-    <div class="tx"><b>Worker</b><span>认领事件，开一次 run</span></div>
+    <div class="tx"><b>Worker</b><span>每批事件一次 run</span></div>
+    <div class="chips"><i>认领</i><em>›</em><i>run</i><em>›</em><i>记结局</i></div>
   </div>
   <div class="abs tile prim col1" style="top:344px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
@@ -135,11 +140,13 @@ body {
   <div class="abs tile prim wide" style="top:452px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div>
     <div class="tx"><b>Outbox</b><span>消息和审批请求</span></div>
+    <div class="chips"><i>messages.md</i><i>桌面通知</i><i>GitHub</i></div>
   </div>
 
   <div class="abs region store">
     <svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
     <b>SQLite</b><span>全部状态在一个文件里</span>
+    <div class="chips"><i>事件</i><i>会话</i><i>日志</i><i>消息</i></div>
   </div>
 
   <div class="abs region runtime"><div class="label">Runtime<small>每个 agent 选一个</small></div></div>
