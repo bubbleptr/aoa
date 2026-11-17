@@ -124,3 +124,11 @@ for (const { name, title } of boards) {
   screenshot(`${name}-en`, width, height);
   console.log(`${name}: ${width}×${height}`);
 }
+
+// GitHub's social preview wants 2:1; the English architecture board is close, so trim the bottom margin to fit.
+const preview = Bun.spawnSync([
+  chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2",
+  "--window-size=1288,644", "--virtual-time-budget=4000",
+  `--screenshot=${join(out, "social-preview.png")}`, `file://${join(out, "architecture-en.html")}#light`,
+], { stderr: "ignore" });
+if (preview.exitCode !== 0) throw new Error("chrome failed on the social preview");
