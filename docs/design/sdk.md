@@ -171,6 +171,14 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段到对应的步骤再去掉：`AgentSpec.permissions`（第 3 步换成 runtime 的类型）、`AgentSpec.pollMs` 只在给了时才轮询（第 4 步 `poll` 变可选后改成默认 60 秒）、`agent.wake()`（第 4 步追加和答复自己唤醒）。`serve` 的心跳和每 5 秒的唤醒还在 `apps/aoa`，第 4 步随 `serving()` 和 `watch` 搬走。第 2 步已完成（2026-11-18）：工具自带风险等级，不传 `policy` 按等级走，内核不再带规则，编码规则在 `@aoa/sdk/tools/coding`。
 
+第 3 步已完成（2026-11-18）：`AgentRuntime` 是 `KernelRuntime | HarnessRuntime`，worker 看 `runtime.kind`，`ask` 只在 `HarnessRunInput` 上；`RunInput.signal` 和 `ToolExecContext.signal` 在 `stop()` 时触发。pi 在 `@aoa/sdk/pi`，`codingTools` 在 `@aoa/sdk/tools/coding`，Codex 和 dsh 在 `examples/`（`@aoa/example-codex`、`@aoa/example-dsh`）。和上文不同或上文没写的地方：
+
+- 被停下的 run 不算失败：它的事件回到 `pending`，不等重试间隔，停多少次都不会进死信；但次数照样加一，下一次 run 才知道上一次可能做了一半（Codex、dsh 靠它加重试提示）。一直停在同一组事件上，会比正常失败更快用完三次，这在真的失败时才显出来。
+- 停下时正在跑的工具不记结果，下一次 run 再调同一个 id 得到「结果未知」，和崩溃一样；可重入的工具照常重跑。停下之后 `invoke` 不再开始新的调用。
+- 运行时之间共用的渲染（事件块、答复、`encode`、`resultText`）放在 `@aoa/sdk/prompt`，第二档适配器从这里取，不用装 pi。
+- pi 的依赖现在是 `@aoa/sdk` 的普通依赖：仓库没发布，分不出可选依赖。发布时改成可选的 peer 依赖，`@aoa/sdk/pi` 以外的子路径不引用它们。
+- 第六条约定的写法：Codex 等手上的回复都发出去再 `turn/interrupt`，等 Codex 回 `turn/completed` 再结束；dsh 走和 `idle` 一样的 `shutdown`。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |

@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RatePolicy, Risk } from "@aoa/kernel";
-import type { PermissionPreset } from "@aoa/runtime-dsh";
+import type { PermissionPreset } from "@aoa/example-dsh";
 
 export type ModelRef = {
   /** pi provider id, e.g. `anthropic`. */

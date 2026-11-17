@@ -1,6 +1,9 @@
 import type { Event, RunInput, ToolResult } from "@aoa/kernel";
 import { resultText } from "./results.ts";
 
+// For harness adapters: how a tool output reads as text.
+export { resultText };
+
 export type Answer = NonNullable<RunInput["answer"]>;
 
 /** Put before events the transcript already holds: an earlier attempt at them stopped before it finished. */

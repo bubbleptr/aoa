@@ -39,11 +39,10 @@ interface Channel {
 | 包 | 内容 |
 | --- | --- |
 | `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
-| `packages/sdk` | `createHost`：把每个 agent 的循环、内置工具、session 的关闭和清理组装起来（§15） |
+| `packages/sdk` | `createHost`：把每个 agent 的循环、内置工具、session 的关闭和清理组装起来；`@aoa/sdk/pi` 是内置的 pi runtime，`@aoa/sdk/prompt` 是 runtime 共用的渲染，`@aoa/sdk/tools/coding` 是编码工具和规则（§15） |
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
-| `packages/runtimes/pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
-| `packages/runtimes/codex` | Codex app-server 适配器：Codex 用自己的工具，aoa 转达它的询问（§12） |
-| `packages/runtimes/dsh` | DeepSeek Harness（dsh）SDK 适配器：dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
+| `examples/codex` | 示例：Codex app-server 适配器，Codex 用自己的工具，aoa 转达它的询问（§12） |
+| `examples/dsh` | 示例：DeepSeek Harness（dsh）SDK 适配器，dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
 | `packages/channels/local` | 本地通道：消息写文件，发桌面通知 |
 | `packages/channels/github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |

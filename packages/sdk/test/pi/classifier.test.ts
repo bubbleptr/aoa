@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fauxAssistantMessage, fauxProvider, type Context } from "@earendil-works/pi-ai";
-import { piClassifier } from "../src/index.ts";
+import { piClassifier } from "../../src/pi/index.ts";
 import { API_KEY, textOf } from "./harness.ts";
 
 function setup(answer: string) {

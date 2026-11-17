@@ -8,7 +8,7 @@ import { codexRuntime } from "../src/index.ts";
 
 /**
  * Against the real `codex app-server`, with the user's own Codex login and configuration, so it calls a model.
- * Run it by hand: AOA_CODEX_SMOKE=1 bun test packages/runtimes/codex/test/smoke.test.ts
+ * Run it by hand: AOA_CODEX_SMOKE=1 bun test examples/codex/test/smoke.test.ts
  */
 test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
   "a real Codex thread calls aoa's dynamic tool, and a second process resumes the thread with the tool still offered",

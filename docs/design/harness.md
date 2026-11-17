@@ -1,9 +1,9 @@
 # 权限归 harness 的 agent（§12）
 
-runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，见下一节）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一节讲内核这边；一致性测试用一个扮演 harness 的脚本 runtime。
+runtime 分两档。第一档（内置的 pi，`@aoa/sdk/pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，见下一节）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一节讲内核这边；一致性测试用一个扮演 harness 的脚本 runtime。
 
-- 模式：`WorkerOptions.permissions`，`"kernel"`（默认，和以前一样）或 `"harness"`。放在 worker 上，因为一个 worker 就是一个 agent 的 inbox，而这个模式同时改两处：`select()` 怎么挑事件，以及 run 拿到什么（`RunInput` 多一个 `ask`）。策略（`policy`）本来也在这里。
-- 转达询问：harness 要为一次调用征求同意时，runtime 调 `RunInput.ask({ callId, tool, args, reason? })`，只会得到 `allow` 或 `defer`。内核对 harness 的调用没有规则，所以不会当场拒绝；用户的拒绝和以前一样，在之后的 run 里通过 `RunInput.answer` 到达。`defer` 时内核建一个新种类 `harness` 的延后调用：审批请求进 outbox、24 小时到期、session 停下、run 以 `deferred` 结束。session 已经在等别的调用时只返回 `defer`，什么都不建也不记，和 `invoke` 的规则一样。新建的询问记一行 `defer`，用掉许可记一行 `allow`（依据写明是哪次批准的许可）；重试时按调用 id 重放的 `allow` 不再记。
+- 模式：runtime 的类型说了算（§15「两档 runtime」）。`kind: "kernel"` 是第一档；`kind: "harness"` 是第二档，它同时改两处：`select()` 怎么挑事件，以及 run 拿到什么（`HarnessRunInput` 多一个 `ask`）。原先是 `WorkerOptions.permissions`，第 3 步换成了类型。
+- 转达询问：harness 要为一次调用征求同意时，runtime 调 `ask({ callId, tool, args, reason? })`，只会得到 `allow` 或 `defer`。内核对 harness 的调用没有规则，所以不会当场拒绝；用户的拒绝和以前一样，在之后的 run 里通过 `RunInput.answer` 到达。`defer` 时内核建一个新种类 `harness` 的延后调用：审批请求进 outbox、24 小时到期、session 停下、run 以 `deferred` 结束。session 已经在等别的调用时只返回 `defer`，什么都不建也不记，和 `invoke` 的规则一样。新建的询问记一行 `defer`，用掉许可记一行 `allow`（依据写明是哪次批准的许可）；重试时按调用 id 重放的 `allow` 不再记。
 - 批准之后不执行，而是发许可。§6「批准之后谁执行」定的是内核自己执行被批准的调用；对 harness 做不到：它的工具在 harness 进程里，内核没有通用的办法替它运行一条命令。所以批准只在 `grants` 表里记一条许可（工具名加参数，属于这个 session，只能用一次），日志里这次调用的结果是一段话，告诉模型调用已批准但还没运行，要用同样的参数再调一次。适配器随后让 harness 重试；harness 再问同一个调用（工具名相同、参数深度相等）时，内核找到没用过的许可，立即答 `allow` 并把许可标为已用。参数不同就不算，照常再问。拒绝和到期和以前一样，`answer` 里带着拒绝，不留许可。
 - 许可按调用 id 记下用掉它的那次询问。失败的 run 重试时会用同样的 id 再问，这时直接答 `allow`，不会再问用户一遍。用一个已经被回答过的调用 id 重新询问会抛错：请求、到期定时器和答复都按调用 id 去重，重用的 id 发不出新的请求，session 会永远停着。
 - 扣住不可信输入：harness 模式下，一组待处理事件里只要有一条 `trusted = false` 的事件，在用户放行前整组都不会交给 runtime。拦在 `select()` 里，紧挨着「暂停的 session 只能被它的答复唤醒」那条检查：事件保持 `pending`，不认领也不完成，否则等于没人看就把它们用掉了。内核建一个新种类 `admit` 的延后调用并让 session 停在上面；请求写明输入来自哪里（来源、thread、对方 agent 的名字），并引用第一条的前 200 个字符。新 thread 上的事件这时还没有 session，`select()` 当场开一个，把整组事件钉到这个 session 上（`pinEvents`，只设 `resume`，不认领），这样回答它的那条 `approval_answer` 才会落进同一组；没有 thread 的事件也靠这一步找回来。
@@ -23,9 +23,9 @@ runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，�
 - `admit` 不对应任何工具调用，但用的是 `PendingCall` 这个结构；规范里的 `PendingCall` 只包着一个 `ToolCall`。它的 session 也不是在 run 里停下的，而是在 `select()` 里，没有 run 以 `deferred` 结束。
 - §3.3 的 `dropped` 原本只表示重复投递。这里多了一条 `pending → dropped`：被拒绝或过期的不可信输入，以及回答这次放行请求的那条 `approval_answer`。答复依然只生效一次（I-PRM-5），只是它的行是 `dropped`，不是 `done`。
 
-## Codex runtime（`packages/runtimes/codex`）
+## Codex runtime（`examples/codex`）
 
-第二档的第一个 runtime。配置里 `runtime: "codex"`（顶层或具名 agent，默认 `pi`），这个 agent 的 worker 就是 `permissions: "harness"`；pi 的 agent 永远是 `"kernel"`。
+第二档的第一个 runtime。配置里 `runtime: "codex"`（顶层或具名 agent，默认 `pi`），这个 agent 的 runtime 是第二档（`kind: "harness"`）；pi 永远是第一档。`autoReview` 是为 `apps/aoa` 的审查角色加的选项：Codex 的询问交给它自己的自动审查，不找用户。
 
 - 进程和线程：每次 run 起一个 `codex app-server` 子进程，工作目录是 session 的 worktree，stdio 上走 JSON-RPC（每行一条，不带 `jsonrpc` 字段），run 结束就杀掉。一个 aoa session 对应一个 Codex 线程，`sessionRef` 就是线程 id：新 session 用 `thread/start`，之后用 `thread/resume`。aoa 的系统提示作为 `developerInstructions` 传入（resume 时再传一遍），本次 run 的事件按 pi 的格式写成 `turn/start` 的输入（渲染代码和 pi 共用）。一次 run 就是一个 turn：turn 完成时 run 以 `silent` 结束（调过 notify 时由内核改成 `sent`），turn 失败或进程退出就抛错，内核照常重试。
 - 不覆盖 Codex 的设置：`thread/start` 不传 `approvalPolicy` 和 `sandbox`，模型只在配置写了 `model`（Codex 的模型名）时才传。Codex 用自己的登录或环境变量认证，aoa 不读也不传它的密钥。`initialize` 声明 `experimentalApi`，因为 `dynamicTools` 是实验字段。
@@ -59,11 +59,11 @@ Codex 的请求怎么对应到 aoa：
 - Codex 会把每个新的 cwd 写进 `~/.codex/config.toml`，成为一条 `[projects."…"]` 记录。aoa 的每个 worktree 都是新目录，所以你的配置会跟着变长，目前没有拦。
 - 如果配置里某个 `apiKeyEnv` 和 Codex 用的是同一个环境变量，aoa 启动时会把它从环境里删掉，Codex 子进程也就拿不到。
 
-## DeepSeek Harness runtime（`packages/runtimes/dsh`）
+## DeepSeek Harness runtime（`examples/dsh`）
 
 第二档的第二个 runtime，接的是 dsh 的 SDK 档：`dsh --profile sdk`，stdio 上换行分隔的 JSON-RPC 2.0（[方案](../proposals/deepseek-harness.md)，依据 dsh `0.2.2-rc.3`）。
 
-- 配置：`runtime: "dsh"`（顶层或具名 agent），要写 `model`（dsh 的模型名）和 `apiKeyEnv`（密钥所在的环境变量），可选 `dsh: { command, preset }`：`command` 默认 `dsh`；`preset` 是权限预设（`read-only`、`workspace-write`（默认）、`danger-full-access`），aoa 把它写进 patch，profile 固定是 `sdk`。这个 agent 的 worker 是 `permissions: "harness"`。只能用在本地模式；审查角色不支持（dsh 的工具不经过 aoa 的只读规则，拦不住）。provider 固定是 `deepseek-official`，aoa 不提供别的路由。`serve` 不要求 dsh agent 配分类器：它自己的工具不经过 aoa，aoa 给它的工具都是 `low`。
+- 配置：`runtime: "dsh"`（顶层或具名 agent），要写 `model`（dsh 的模型名）和 `apiKeyEnv`（密钥所在的环境变量），可选 `dsh: { command, preset }`：`command` 默认 `dsh`；`preset` 是权限预设（`read-only`、`workspace-write`（默认）、`danger-full-access`），aoa 把它写进 patch，profile 固定是 `sdk`。这个 agent 的 runtime 是第二档。只能用在本地模式；审查角色不支持（dsh 的工具不经过 aoa 的只读规则，拦不住）。provider 固定是 `deepseek-official`，aoa 不提供别的路由。`serve` 不要求 dsh agent 配分类器：它自己的工具不经过 aoa，aoa 给它的工具都是 `low`。
 - 进程和会话：每次 run 起一个 dsh 子进程，工作目录是 session 的 worktree，run 结束就停掉。`initialize` 带 `cwd`、`provider`、`model`、`approvalRequests: true` 和 `capabilities: { userQuestions: true }`。新会话的 `sessionId` 由 aoa 生成，直接 `session/prompt`，它就是这个 session 的 `sessionRef`；已有的会话先 `session/resume`，再用 dsh 自己的 `/permission <预设>` 命令把权限预设重新设一遍（dsh 把 sandbox 和 approval 策略存在会话里，恢复时它们优先于 patch 的默认值，所以从 `danger-full-access` 改成 `workspace-write` 之后继续同一个任务，下一次 run 就是 workspace-write；dsh 没有这个命令、或者命令报错时 run 直接失败，不会带着旧权限往下跑），最后才 prompt。`session.status` 进入 `idle` 就是 run 结束。但 idle 不等于成功：`turn/end` 事件的 `reason.kind` 是 `error` 时这次 run 直接抛错交给内核重试（鉴权失败、模型报错都会走到这里）；日志里没有结论时再问一次 `session/wait`，让 dsh 手里的 live failure 也冒出来。本次 run 的事件按 pi 的格式写成一个 text block。
 - 版本：dsh 握手里的 `version` 固定写死是 `0.0.1`，分不出发布版本，所以启动前先跑 `<command> --version`，要求等于代码里的常量 `0.2.2-rc.3`，不一致就让这次 run 失败并说明原因。dsh 还在开发者预览阶段，换版本时 patch 里的行 id 也要重新核对一遍。
 - 独立的 home 和 patch：`$DSH_HOME` 是 `<dataDir>/dsh-home`，不带用户的 dsh 插件、MCP 和设置。每次 run 在 `<dataDir>/dsh-home/patches/` 下写一个 patch：把权限预设写成 `sandbox-policy` 的 `mode` 和 `approval` 的 `policy`（用户 dsh 里的设置放宽不了它）；关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理器，以及它自己的提问和调度工具（这样提问只有 aoa 的 `ask_user`、定时只有 `wake_me_at`）；插入一行 `dsh-mcp-client`，server 名 `aoa`，指向这次 run 的桥；再用 `system-prompt` 行的 `personaSuffix` 把 aoa 的系统提示交给 dsh，因为 SDK 协议没有 instructions 字段。行 id 逐项对照过 dsh 的 base 和 sdk-app profile。
@@ -73,7 +73,7 @@ Codex 的请求怎么对应到 aoa：
 - aoa 的工具走 MCP 桥：每次 run 在本进程起一个 streamable-http MCP server，只监听 `127.0.0.1`、端口随机，路径里带这次 run 才有的 token（每次询问都是新的），dsh 看到的工具名是 `mcp__aoa__<名字>`。dsh 发给 MCP 的只有名字和参数，不带它自己的 callId，所以桥按「同一会话、工具名对应、参数深度相等、还没被认领、最早的一条」从调用表里认领，内核 call id 用 `<session>:<dsh callId>`；认领不到就回 MCP 错误、不执行。延后的 aoa 工具回一句「等用户决定」然后停下；重试时同一个 dsh callId 得到同一个内核 call id，日志里已有结果的直接重放，不会再执行一次。
 - 停下和恢复：dsh 没有取消方法。要停时先回复手上的请求（审批回 `rejected`，aoa 工具回「等用户决定」），之后来的审批请求和 MCP 调用一律拒绝、不再问内核；**正在执行的 aoa 工具调用要等它做完并回完话**——桥记着在途的调用数，run 不会带着一个还在跑的旧调用结束，也不会在它的回复送出之前停 dsh。然后发 `shutdown`：dsh 是先回话、再 flush 会话、再退出，所以等的是**进程退出**而不是回话，最多 10 秒，超时 SIGTERM，再等 10 秒，还不走就 SIGKILL。`shutdown` 回的错只记日志、不改这次 run 的结局：那时 run 已经做完了，抛错只会让内核把同一件事再做一遍。正常 `idle` 也走这一套。会话用 JSONL 持久化、锁是 flock，进程一死就释放，所以下一次 run 能 resume；在途调用的结果 dsh 自己会标成未知，模型从修好的历史里看到。
 - 和 Codex 一样：dsh 不问就执行的、它的沙箱允许的操作，aoa 既看不到也拦不住，aoa 的推送规则、`~/.aoa` 规则和 worktree 边界对 dsh 自己的工具不起作用。`serve` 启动时为每个 dsh agent 提醒一次，`aoa status` 和观察页标出 runtime 和权限归谁。
-- 冒烟测试只在 `AOA_DSH_SMOKE=1` 时跑（真的要 dsh 和真的 key，`bun test packages/runtimes/dsh/test/smoke.test.ts`）：冷启动时间、aoa 的 MCP 工具没有被 gate 拦、patch 关掉的工具确实不在模型能看到的工具列表里（从会话的 `request/header` 事件里读，dsh 自己的读写、bash 工具照常留着）、杀掉进程后能恢复。
+- 冒烟测试只在 `AOA_DSH_SMOKE=1` 时跑（真的要 dsh 和真的 key，`bun test examples/dsh/test/smoke.test.ts`）：冷启动时间、aoa 的 MCP 工具没有被 gate 拦、patch 关掉的工具确实不在模型能看到的工具列表里（从会话的 `request/header` 事件里读，dsh 自己的读写、bash 工具照常留着）、杀掉进程后能恢复。
 
 和方案不完全一样、或者没做到的：
 

@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolDef, ToolExecContext } from "@aoa/kernel";
-import { codingTools } from "../src/index.ts";
+import { codingTools } from "../src/tools/coding/index.ts";
 
 let dirs: string[] = [];
 afterEach(() => {

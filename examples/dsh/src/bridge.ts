@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { SessionId, Tool, ToolResult } from "@aoa/kernel";
-import { resultText } from "@aoa/runtime-pi/results";
+import { resultText } from "@aoa/sdk/prompt";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";

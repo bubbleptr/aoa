@@ -38,7 +38,7 @@
 | --- | --- | --- |
 | C1–C10、C14–C20 | `packages/conformance` | 真内核、真 SQLite，假 runtime 和假时钟，在命名的提交点崩溃 |
 | C11 | 没有 | 压缩由 pi 自己做，内核看不到；靠常驻上下文里要求 agent 随时更新 `progress/` |
-| C12 | `packages/runtimes/pi` | 恢复 transcript 后不重跑旧调用 |
+| C12 | `packages/sdk`（pi） | 恢复 transcript 后不重跑旧调用 |
 | C13 | `apps/aoa` 的端到端测试 | 扫描模型收到的每个请求、每张表的每一行、数据目录下的每个文件、日志 |
 
 C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve` 读入后会从环境变量里删掉，所以 agent 的 shell 继承不到它；GitHub App 的私钥文件和 `~/.aoa` 仍然靠规则把关。C19 检查宿主放进上下文的最近消息，不检查 `reported.md`（§7）。

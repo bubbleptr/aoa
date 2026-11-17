@@ -14,8 +14,8 @@ import type { TSchema } from "typebox";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createModelRuntime, redact } from "./models.ts";
-import { eventMarker, renderUserMessage } from "./prompt.ts";
-import { okToPi, text } from "./results.ts";
+import { eventMarker, renderUserMessage } from "../prompt.ts";
+import { okToPi, text } from "../results.ts";
 
 export type PiRuntimeConfig = {
   /** pi provider id, e.g. `anthropic`. */

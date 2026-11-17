@@ -193,7 +193,8 @@ Bun + TypeScript 的 monorepo。
 |---|---|
 | `packages/kernel` | 五个原语、worker、策略、调度，不依赖存储和模型 |
 | `packages/store-sqlite` | SQLite 存储和迁移 |
-| `packages/runtimes/`：`pi` · `codex` · `dsh` | 三个 runtime 适配器 |
+| `packages/sdk` | 组装 agent 的宿主、内置的 pi runtime（`@aoa/sdk/pi`）、可选的编码工具和规则（`@aoa/sdk/tools/coding`） |
+| `examples/`：`codex` · `dsh` | 两个第二档 harness 适配器的示例，`aoa` 从这里引用 |
 | `packages/channels/`：`local` · `github` | 本地和 GitHub 通道 |
 | `packages/conformance` | 规范 §9 的 C1–C20 一致性测试 |
 | `apps/aoa` | `aoa` 命令：配置、接线、serve、MCP |
@@ -202,6 +203,6 @@ Bun + TypeScript 的 monorepo。
 bun test               # 全部测试，不调用真实模型
 bun run typecheck
 bun scripts/diagrams/build.ts   # 从 docs/diagrams/boards 重新生成 README 里的图（需要 Chrome）
-AOA_CODEX_SMOKE=1 bun test packages/runtimes/codex/test/smoke.test.ts   # 真实 Codex，会消耗额度
-AOA_DSH_SMOKE=1 bun test packages/runtimes/dsh/test/smoke.test.ts       # 真实 dsh 和 DeepSeek key
+AOA_CODEX_SMOKE=1 bun test examples/codex/test/smoke.test.ts   # 真实 Codex，会消耗额度
+AOA_DSH_SMOKE=1 bun test examples/dsh/test/smoke.test.ts       # 真实 dsh 和 DeepSeek key
 ```

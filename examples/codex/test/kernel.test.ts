@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { askUserTools, outboxTools } from "@aoa/kernel";
-import { RETRY_NOTICE } from "@aoa/runtime-pi/prompt";
+import { RETRY_NOTICE } from "@aoa/sdk/prompt";
 import { Harness, sqliteFactory } from "@aoa/conformance";
 import { codexRuntime } from "../src/index.ts";
 import { FakeAppServer, type FakeTurn, type TurnScript } from "./fake-app-server.ts";

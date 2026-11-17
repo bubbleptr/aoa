@@ -3,7 +3,12 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "workspaces": ["packages/*", "packages/runtimes/*", "packages/channels/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "packages/channels/*",
+    "apps/*",
+    "examples/*"
+  ],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",

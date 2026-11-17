@@ -1,5 +1,5 @@
 import type { DecisionRecord, Event, PolicyConfig, Store, ToolCall } from "@aoa/kernel";
-import { encode } from "@aoa/runtime-pi/prompt";
+import { encode } from "@aoa/sdk/prompt";
 import type { Role } from "./config.ts";
 
 /**

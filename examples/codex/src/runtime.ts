@@ -1,6 +1,6 @@
 import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
-import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/runtime-pi/prompt";
-import { resultText } from "@aoa/runtime-pi/results";
+import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/sdk/prompt";
+import { resultText } from "@aoa/sdk/prompt";
 import { Connection, RpcError, type SpawnCodex, spawnAppServer } from "./connection.ts";
 import type {
   ApprovalDecision,

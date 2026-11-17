@@ -18,15 +18,37 @@
       "dependencies": {
         "@aoa/channel-github": "workspace:*",
         "@aoa/channel-local": "workspace:*",
+        "@aoa/example-codex": "workspace:*",
+        "@aoa/example-dsh": "workspace:*",
         "@aoa/kernel": "workspace:*",
-        "@aoa/runtime-codex": "workspace:*",
-        "@aoa/runtime-dsh": "workspace:*",
-        "@aoa/runtime-pi": "workspace:*",
         "@aoa/sdk": "workspace:*",
         "@aoa/store-sqlite": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
         "@modelcontextprotocol/sdk": "1.32.2",
         "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+      },
+    },
+    "examples/codex": {
+      "name": "@aoa/example-codex",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+        "@aoa/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+      },
+    },
+    "examples/dsh": {
+      "name": "@aoa/example-dsh",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+        "@aoa/sdk": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.32.2",
       },
       "devDependencies": {
         "@aoa/conformance": "workspace:*",
@@ -58,45 +80,14 @@
       "name": "@aoa/kernel",
       "version": "0.0.0",
     },
-    "packages/runtimes/codex": {
-      "name": "@aoa/runtime-codex",
-      "version": "0.0.0",
-      "dependencies": {
-        "@aoa/kernel": "workspace:*",
-        "@aoa/runtime-pi": "workspace:*",
-      },
-      "devDependencies": {
-        "@aoa/conformance": "workspace:*",
-      },
-    },
-    "packages/runtimes/dsh": {
-      "name": "@aoa/runtime-dsh",
-      "version": "0.0.0",
-      "dependencies": {
-        "@aoa/kernel": "workspace:*",
-        "@aoa/runtime-pi": "workspace:*",
-        "@modelcontextprotocol/sdk": "1.32.2",
-      },
-      "devDependencies": {
-        "@aoa/conformance": "workspace:*",
-      },
-    },
-    "packages/runtimes/pi": {
-      "name": "@aoa/runtime-pi",
+    "packages/sdk": {
+      "name": "@aoa/sdk",
       "version": "0.0.0",
       "dependencies": {
         "@aoa/kernel": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
         "@earendil-works/pi-coding-agent": "1.5.2",
         "typebox": "1.3.27",
-      },
-    },
-    "packages/sdk": {
-      "name": "@aoa/sdk",
-      "version": "0.0.0",
-      "dependencies": {
-        "@aoa/kernel": "workspace:*",
-        "@aoa/runtime-pi": "workspace:*",
       },
       "devDependencies": {
         "@aoa/conformance": "workspace:*",
@@ -122,13 +113,11 @@
 
     "@aoa/conformance": ["@aoa/conformance@workspace:packages/conformance"],
 
+    "@aoa/example-codex": ["@aoa/example-codex@workspace:examples/codex"],
+
+    "@aoa/example-dsh": ["@aoa/example-dsh@workspace:examples/dsh"],
+
     "@aoa/kernel": ["@aoa/kernel@workspace:packages/kernel"],
-
-    "@aoa/runtime-codex": ["@aoa/runtime-codex@workspace:packages/runtimes/codex"],
-
-    "@aoa/runtime-dsh": ["@aoa/runtime-dsh@workspace:packages/runtimes/dsh"],
-
-    "@aoa/runtime-pi": ["@aoa/runtime-pi@workspace:packages/runtimes/pi"],
 
     "@aoa/sdk": ["@aoa/sdk@workspace:packages/sdk"],
 

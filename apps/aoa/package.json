@@ -3,15 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": { "aoa": "./src/main.ts" },
-  "exports": { ".": "./src/index.ts" },
+  "bin": {
+    "aoa": "./src/main.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@aoa/channel-github": "workspace:*",
     "@aoa/channel-local": "workspace:*",
+    "@aoa/example-codex": "workspace:*",
+    "@aoa/example-dsh": "workspace:*",
     "@aoa/kernel": "workspace:*",
-    "@aoa/runtime-codex": "workspace:*",
-    "@aoa/runtime-dsh": "workspace:*",
-    "@aoa/runtime-pi": "workspace:*",
     "@aoa/sdk": "workspace:*",
     "@aoa/store-sqlite": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",

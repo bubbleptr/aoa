@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type PolicyConfig, type Rule, decide } from "@aoa/kernel";
-import { createModelRuntime, redact } from "../../../packages/runtimes/pi/src/models.ts";
+import { createModelRuntime, redact } from "../../../packages/sdk/src/pi/models.ts";
 import { agentPolicy, deferPush, reviewReadOnly, toolRisk } from "../src/policy.ts";
 import { REVIEWER_PROMPT, type ReviewToggles, reviewMessage } from "../src/reviewer.ts";
 import { type AgentInfo, type CallRecord, reviewInputOf } from "./export.ts";

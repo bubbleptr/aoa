@@ -193,7 +193,8 @@ A Bun + TypeScript monorepo.
 |---|---|
 | `packages/kernel` | The five primitives, worker, policy and scheduling, independent of storage and models |
 | `packages/store-sqlite` | SQLite storage and migrations |
-| `packages/runtimes/`: `pi` · `codex` · `dsh` | The three runtime adapters |
+| `packages/sdk` | The host that assembles agents, the built-in pi runtime (`@aoa/sdk/pi`), and the optional coding tools and rules (`@aoa/sdk/tools/coding`) |
+| `examples/`: `codex` · `dsh` | Two example tier-2 harness adapters; `aoa` uses them from here |
 | `packages/channels/`: `local` · `github` | Local and GitHub channels |
 | `packages/conformance` | The C1–C20 conformance tests from §9 of the spec |
 | `apps/aoa` | The `aoa` command: config, wiring, serve, MCP |
@@ -202,6 +203,6 @@ A Bun + TypeScript monorepo.
 bun test               # all tests, no real models called
 bun run typecheck
 bun scripts/diagrams/build.ts   # rebuild the README diagrams from docs/diagrams/boards (needs Chrome)
-AOA_CODEX_SMOKE=1 bun test packages/runtimes/codex/test/smoke.test.ts   # real Codex, uses quota
-AOA_DSH_SMOKE=1 bun test packages/runtimes/dsh/test/smoke.test.ts       # real dsh and a DeepSeek key
+AOA_CODEX_SMOKE=1 bun test examples/codex/test/smoke.test.ts   # real Codex, uses quota
+AOA_DSH_SMOKE=1 bun test examples/dsh/test/smoke.test.ts       # real dsh and a DeepSeek key
 ```

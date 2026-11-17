@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { FakeAppServer, type FakeTurn } from "../../../packages/runtimes/codex/test/fake-app-server.ts";
+import { FakeAppServer, type FakeTurn } from "../../../examples/codex/test/fake-app-server.ts";
 import { snapshot } from "../src/observe.ts";
 import { serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
