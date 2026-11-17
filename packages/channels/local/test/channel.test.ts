@@ -49,6 +49,27 @@ describe("deliver", () => {
     expect(notes).toHaveLength(2);
   });
 
+  test("an approval request leaves the desktop notification to an open page that notifies, and names the page otherwise", async () => {
+    const notes: [string, string][] = [];
+    let page: { url: string; notifying: boolean } | null = { url: "http://127.0.0.1:7878", notifying: true };
+    const channel = localChannel({ file: fresh(), notify: async (title, body) => void notes.push([title, body]), page: () => page });
+    const ask = (n: number) => msg({ id: `a${n}`, kind: "approval_request", callId: `s1:t${n}`, dedupeKey: `approval:s1:t${n}`, body: "May I?" });
+
+    await channel.deliver(ask(1));
+    expect(notes).toHaveLength(0);
+    await channel.deliver(msg());
+    expect(notes).toHaveLength(1);
+
+    page = { url: "http://127.0.0.1:7878", notifying: false };
+    await channel.deliver(ask(2));
+    expect(notes.at(-1)![1]).toContain("http://127.0.0.1:7878");
+
+    page = null;
+    await channel.deliver(ask(3));
+    expect(notes).toHaveLength(3);
+    expect(notes.at(-1)![1]).not.toContain("http://");
+  });
+
   test("an approval request says how to answer it with aoa answer", async () => {
     const file = fresh();
     const channel = localChannel({ file });

@@ -117,7 +117,7 @@ claude mcp add aoa -- aoa mcp        # optional: use it straight from Claude Cod
 ## How a task goes (local mode)
 
 - Each task gets its own worktree under `<dataDir>/worktrees/` and commits to the local branch `aoa/<first 8 characters of the session id>`.
-- When the agent needs you, the message is appended to `<dataDir>/messages.md`, with a notification on macOS. When it needs approval, the message includes the matching `aoa answer` command; you can also open the page (the address `serve` prints, `http://127.0.0.1:7878` by default), read the whole call under Permissions and click Approve or Deny there, or type the answer to a question.
+- When the agent needs you, the message is appended to `<dataDir>/messages.md`, with a notification on macOS. When it needs approval, the message includes the matching `aoa answer` command; you can also open the page (the address `serve` prints, `http://127.0.0.1:7878` by default), read the whole call under Permissions and click Approve or Deny there, or type the answer to a question. Click "Notify me when it waits for me" on the page and allow notifications: while the page is open, each call waiting for you raises a browser notification that opens its answer box, and approval requests no longer raise the macOS notification.
 - You review and merge the branch yourself, then tell aoa the outcome with `aoa close`. `close` only records it; at its next check (within 5 seconds) `serve` closes the task and removes the worktree, keeping the branch.
 - A `git push` inside `bash` asks you first. This is a convention, not isolation: the agent's shell is your shell.
 

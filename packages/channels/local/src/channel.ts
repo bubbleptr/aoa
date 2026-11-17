@@ -17,6 +17,12 @@ export type LocalChannelOptions = {
   log?: (line: string) => void;
   /** With several agents writing to one file, the agent this channel speaks for; named in every entry and notification. */
   agent?: string;
+  /**
+   * The observation page this process serves, if any, and whether a browser has it open with notifications on. Such
+   * a page notifies about an approval request itself, with a click that leads to its buttons, so the desktop
+   * notification is left out; without one, the notification names the page.
+   */
+  page?: () => { url: string; notifying: boolean } | null;
 };
 
 const NOTIFY_LIMIT = 200;
@@ -44,9 +50,12 @@ export function localChannel(o: LocalChannelOptions): LocalChannel {
       appendFileSync(o.file, lines.join("\n"));
 
       if (!o.notify) return;
+      const page = m.kind === "approval_request" ? (o.page?.() ?? null) : null;
+      if (page?.notifying) return;
       const who = o.agent === undefined ? "aoa" : `aoa ${o.agent}`;
       const title = m.kind === "approval_request" ? `${who} needs your answer (${m.thread ?? "-"})` : `${who} (${m.thread ?? "-"})`;
-      const body = m.body.length > NOTIFY_LIMIT ? `${m.body.slice(0, NOTIFY_LIMIT - 1)}…` : m.body;
+      const clipped = m.body.length > NOTIFY_LIMIT ? `${m.body.slice(0, NOTIFY_LIMIT - 1)}…` : m.body;
+      const body = page ? `${clipped}\nAnswer at ${page.url}` : clipped;
       try {
         await o.notify(title, body);
       } catch (err) {

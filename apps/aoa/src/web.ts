@@ -93,7 +93,8 @@ function answerFromPage(agent: Agent, body: unknown): Response {
  */
 export function startWeb(agent: Agent, o: WebOptions): Web {
   const { clock } = agent;
-  const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  /** Each open stream, with what forgets it: it counted toward `page.notifying` if its page notifies. */
+  const clients = new Map<ReadableStreamDefaultController<Uint8Array>, () => void>();
   let current: View;
   let version: number;
   let cancelCoalesce: (() => void) | null = null;
@@ -141,12 +142,12 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
       }
       const update = { snapshot: next, flows: flows(current, next), flowsByAgent };
       current = next;
-      for (const c of clients) {
+      for (const [c, forget] of clients) {
         try {
           send(c, update);
         } catch {
           // Its client went away without the stream being cancelled.
-          clients.delete(c);
+          forget();
         }
       }
     }
@@ -184,11 +185,16 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     throw err;
   }
 
+  agent.page.url = `http://127.0.0.1:${server.port}`;
+  agent.page.notifying = 0;
+
   return {
     port: server.port!,
     async stop() {
       quiet();
-      for (const c of clients) {
+      agent.page.url = null;
+      agent.page.notifying = 0;
+      for (const c of clients.keys()) {
         try {
           c.close();
         } catch {
@@ -242,17 +248,27 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
       if (pathname === "/events") {
         // An event stream is idle between changes; the server's idle timeout would cut it.
         srv.timeout(req, 0);
+        // A page that shows notifications itself says so; while one is open, approvals skip the desktop notification.
+        const notifies = new URL(req.url).searchParams.get("notify") === "1";
         let self: ReadableStreamDefaultController<Uint8Array>;
+        let open = true;
+        const forget = () => {
+          if (!open) return;
+          open = false;
+          clients.delete(self);
+          if (notifies) agent.page.notifying--;
+        };
+        // A closed tab aborts the request at once; the stream itself only notices on its next write.
+        req.signal.addEventListener("abort", forget);
         return new Response(
           new ReadableStream<Uint8Array>({
             start(c) {
               self = c;
-              clients.add(c);
+              clients.set(c, forget);
+              if (notifies) agent.page.notifying++;
               send(c, { snapshot: current, flows: {}, flowsByAgent: {} });
             },
-            cancel() {
-              clients.delete(self);
-            },
+            cancel: forget,
           }),
           { headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-content-type-options": "nosniff" } },
         );

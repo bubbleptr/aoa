@@ -28,6 +28,9 @@ header .brand { font-weight: 600; font-size: 15px; }
 #conn { margin-left: auto; }
 .switch { display: flex; flex-wrap: wrap; gap: 6px; }
 .switch[hidden], .group[hidden] { display: none; }
+.notify-btn { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber-text); cursor: pointer; }
+.notify-btn:disabled { cursor: default; border-color: var(--node-line); background: var(--surface); color: var(--muted); }
+.notify-btn[hidden] { display: none; }
 .switch button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--node-line); background: var(--surface); color: var(--text); cursor: pointer; }
 .switch button .muted { margin-left: 6px; font-size: 12px; }
 .switch button[aria-pressed="true"] { background: var(--blue-bg); border-color: var(--blue-line); color: var(--blue-text); font-weight: 500; }
@@ -162,6 +165,7 @@ ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5e
   <div class="group"><span class="dot" id="serve-dot" aria-hidden="true"></span><span class="strong" id="serve-state">serve</span><span class="muted" id="serve-detail"></span></div>
   <div class="group"><span class="muted">worker</span><span class="strong" id="worker-state"></span><span class="mono" id="worker-run"></span><span class="muted" id="worker-detail"></span></div>
   <div class="group"><span class="muted">next timer</span><span id="next-timer"></span></div>
+  <button type="button" class="notify-btn" id="notify" hidden>Notify me when it waits for me</button>
   <div class="muted" id="conn" role="status">connecting…</div>
 </header>
 
@@ -921,14 +925,76 @@ function apply(update) {
   if (!reducedMotion.matches) playDots(moved, (to) => flash(to, fresh[to]));
 }
 
+// ---- browser notifications ----
+// A page with notifications on says so when it connects; serve then leaves approvals' desktop notification to it.
+const canNotify = "Notification" in window;
+let notifyOn = canNotify && Notification.permission === "granted";
+/** Waiting calls already announced, or already waiting when the page first loaded. */
+const announced = new Set();
+let primed = false;
+
+function renderNotifyButton() {
+  const b = document.getElementById("notify");
+  b.hidden = !canNotify || notifyOn;
+  const blocked = canNotify && Notification.permission === "denied";
+  b.disabled = blocked;
+  b.textContent = blocked ? "Notifications are blocked in the browser's site settings" : "Notify me when it waits for me";
+}
+
+document.getElementById("notify").addEventListener("click", async () => {
+  notifyOn = (await Notification.requestPermission()) === "granted";
+  renderNotifyButton();
+  if (notifyOn) connect();
+});
+
+/** Opens the agent a waiting call belongs to and puts the reader on its answer box. */
+function goToWaiting(agentName, callId) {
+  choose(agentName);
+  const input = document.querySelector('input[data-draft="' + CSS.escape(callId) + '"]');
+  const target = input || document.querySelector('li.row[data-key="' + CSS.escape(callId + ":waiting") + '"]');
+  if (target) target.scrollIntoView({ block: "center", behavior: reducedMotion.matches ? "auto" : "smooth" });
+  if (input) input.focus({ preventScroll: true });
+}
+
+function announce(update) {
+  const all = [{ name: "default", s: update.snapshot }, ...(update.snapshot.agents || []).map((a) => ({ name: a.name, s: a.snapshot }))];
+  const waiting = all.flatMap(({ name, s }) => s.permissions.waiting.filter((w) => !w.answered).map((w) => ({ name, w })));
+  const fresh = waiting.filter(({ w }) => !announced.has(w.callId));
+  for (const { w } of fresh) announced.add(w.callId);
+  // Calls that were waiting before the page opened are on the page already; only later ones are news.
+  if (!primed) return void (primed = true);
+  // Someone looking at the page sees the row arrive.
+  if (!notifyOn || (document.visibilityState === "visible" && document.hasFocus())) return;
+  for (const { name, w } of fresh) {
+    const who = all.length > 1 ? "aoa " + name : "aoa";
+    const title = w.kind === "question" ? who + " asks you" : w.kind === "admit" ? who + " holds input for you" : who + " needs your approval";
+    // The tag replaces a second tab's notification for the same call instead of adding one.
+    const n = new Notification(title, { body: clip(w.full || w.args, 180), tag: w.callId });
+    n.onclick = () => {
+      window.focus();
+      goToWaiting(name, w.callId);
+      n.close();
+    };
+  }
+}
+
+let source = null;
+function connect() {
+  if (source) source.close();
+  source = new EventSource(notifyOn ? "/events?notify=1" : "/events");
+  source.onopen = () => setConnected(true);
+  source.onerror = () => setConnected(false);
+  source.onmessage = (e) => {
+    setConnected(true);
+    const update = JSON.parse(e.data);
+    apply(update);
+    announce(update);
+  };
+}
+
 buildMap();
-const source = new EventSource("/events");
-source.onopen = () => setConnected(true);
-source.onerror = () => setConnected(false);
-source.onmessage = (e) => {
-  setConnected(true);
-  apply(JSON.parse(e.data));
-};
+renderNotifyButton();
+connect();
 // Only the relative times move between updates; nothing is fetched.
 setInterval(() => {
   if (current) {

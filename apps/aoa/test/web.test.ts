@@ -281,3 +281,51 @@ describe("answering from the page", () => {
     void w;
   });
 });
+
+describe("notifications while the page is open", () => {
+  /** Resolves once `ok()` holds; the server sees a connect or a disconnect a few event-loop turns later. */
+  async function until(ok: () => boolean): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (!ok()) {
+      if (Date.now() > deadline) throw new Error("timed out");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  test("a page with notifications on takes over the approval notification; closing it hands it back with the page's address", async () => {
+    const w = await world();
+    w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
+    const server = web(w.agent, () => () => {});
+    const url = `http://127.0.0.1:${server.port}`;
+    expect(w.agent.page.state()).toEqual({ url, notifying: false });
+
+    // A closed tab drops its connection; aborting the request is the same to the server.
+    const tab = new AbortController();
+    const watching = await fetch(`${url}/events?notify=1`, { signal: tab.signal });
+    void watching.body!.getReader().read().catch(() => {});
+    await until(() => w.agent.page.state()?.notifying === true);
+
+    w.script([call("bash", { command: "echo deployed >> deploy.log" }), say("Deployed.")]);
+    await w.cli("send", "Deploy it.");
+    await w.drain();
+    await w.dispatch();
+    expect(w.agent.store.tx((t) => t.listOutbox(w.agent.inboxId))).toMatchObject([{ kind: "approval_request", status: "sent" }]);
+    expect(w.notes.filter((n) => n.title.includes("needs your answer"))).toHaveLength(0);
+
+    tab.abort();
+    await until(() => w.agent.page.state()?.notifying === false);
+    await w.cli("answer", w.sessions()[0]!.pending!, "deny");
+    await w.drain();
+    w.script([call("bash", { command: "echo deployed again >> deploy.log" }), say("Deployed.")]);
+    await w.cli("send", "Deploy again.");
+    await w.drain();
+    w.advance(60 * 60_000);
+    await w.dispatch();
+    const asked = w.notes.filter((n) => n.title.includes("needs your answer"));
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.body).toContain(`Answer at ${url}`);
+
+    await server.stop();
+    expect(w.agent.page.state()).toBeNull();
+  });
+});

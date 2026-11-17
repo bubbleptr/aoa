@@ -117,7 +117,7 @@ claude mcp add aoa -- aoa mcp        # 可选：在 Claude Code 里直接用
 ## 一个任务怎么走（本地模式）
 
 - 每个任务在 `<dataDir>/worktrees/` 下有自己的 worktree，提交在本地分支 `aoa/<session8>` 上（会话 id 的前 8 位）。
-- agent 找你时，消息追加到 `<dataDir>/messages.md`，macOS 上同时弹通知。要你批准时，消息里写着对应的 `aoa answer` 命令；也可以在观察页（`serve` 打印的地址，默认 `http://127.0.0.1:7878`）的 Permissions 里看完整的调用，直接点批准或拒绝，提问就在框里写答案。
+- agent 找你时，消息追加到 `<dataDir>/messages.md`，macOS 上同时弹通知。要你批准时，消息里写着对应的 `aoa answer` 命令；也可以在观察页（`serve` 打印的地址，默认 `http://127.0.0.1:7878`）的 Permissions 里看完整的调用，直接点批准或拒绝，提问就在框里写答案。在页面上点「等我时通知我」并允许通知后，只要这个页面开着，等你的调用会弹浏览器通知，点开就到答复框；这时审批请求不再弹 macOS 通知。
 - 你自己看分支、合并，然后用 `aoa close` 告诉 aoa 结局。`close` 只做记录；`serve` 在下一次检查（5 秒内）关掉任务、删掉 worktree，分支保留。
 - `bash` 里出现 `git push` 时会先问你。这只是约定，不是隔离：agent 的 shell 就是你的 shell。
 

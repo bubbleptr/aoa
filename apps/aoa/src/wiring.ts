@@ -123,7 +123,21 @@ export type Agent = {
   refreshPulls(): Promise<void>;
   /** Closes the store all the agents share. */
   close(): void;
+  page: PageLink;
 };
+
+/**
+ * The observation page this process serves, shared by every agent: `startWeb` sets it, the local channel reads it to
+ * leave approval notifications to a page that shows them itself.
+ */
+export class PageLink {
+  url: string | null = null;
+  /** Open pages that have notifications on. */
+  notifying = 0;
+  state(): { url: string; notifying: boolean } | null {
+    return this.url === null ? null : { url: this.url, notifying: this.notifying > 0 };
+  }
+}
 
 const defaultLog = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 
@@ -142,6 +156,7 @@ type FrontDeps = {
   runGit: GitRunner;
   seams: Seams;
   log: (line: string) => void;
+  page: PageLink;
 };
 
 function githubFront(gh: NonNullable<AgentConfig["github"]>, d: FrontDeps): Front {
@@ -185,6 +200,7 @@ function localFront(d: FrontDeps): Front {
     file: join(d.paths.dataDir, "messages.md"),
     notify: d.seams.notify ?? defaultNotifier(),
     log: d.log,
+    page: () => d.page.state(),
     ...(d.label === undefined ? {} : { agent: d.label }),
   });
   return {
@@ -219,6 +235,7 @@ type Shared = {
   keyOf: (m: { apiKeyEnv: string }) => string | undefined;
   roster: Spec[];
   agents: Agent[];
+  page: PageLink;
   /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
   removals: Map<string, Promise<void>>;
 };
@@ -262,6 +279,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     keyOf: (m) => keys.get(m.apiKeyEnv),
     roster,
     agents: [],
+    page: new PageLink(),
     removals: new Map(),
   };
   for (const spec of roster) shared.agents.push(assembleOne(spec, shared));
@@ -277,7 +295,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   const review = spec.role === "review";
   const branchOf = review ? null : (id: string) => sessionBranch(named ? spec.name : null, id);
   const memory = dirMemory(paths.memory);
-  const frontDeps = { label: several ? spec.name : undefined, branchOf, paths, store, clock, runGit, seams, log };
+  const frontDeps = { label: several ? spec.name : undefined, branchOf, paths, store, clock, runGit, seams, log, page: s.page };
   const front = config.github ? githubFront(config.github, frontDeps) : localFront(frontDeps);
   const { channel } = front;
   const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit, fromOrigin: front.fromOrigin, branchOf });
@@ -459,6 +477,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     closeFinished: () => lookUp(true),
     refreshPulls: () => lookUp(false),
     close: () => store.close(),
+    page: s.page,
   };
 }
 
