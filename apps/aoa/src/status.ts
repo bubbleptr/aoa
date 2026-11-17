@@ -109,7 +109,7 @@ export const branchColumns = (branchOf: ((sessionId: string) => string) | null):
 };
 
 /** What runs an agent, and whether aoa or that runtime's harness decides its own tool calls (design §12). */
-export type AgentRuntimeRow = { name: string; runtime: "pi" | "codex"; permissionOwner: "kernel" | "harness" };
+export type AgentRuntimeRow = { name: string; runtime: "pi" | "codex"; permissionOwner: "kernel" | "harness"; readOnly: boolean };
 
 export type StatusReport = {
   agents: AgentRuntimeRow[];
@@ -216,7 +216,7 @@ export function renderStatus(r: StatusReport, o: { agents: boolean } = { agents:
       r.agents.map((a) => [
         a.name,
         a.runtime,
-        a.permissionOwner === "kernel" ? "aoa decides every tool call" : "Codex decides its own tools; aoa relays what it asks",
+        permissionText(a),
       ]),
     ).map((l) => `  ${l}`),
   );
@@ -241,3 +241,10 @@ export function resolveCallId(callIds: string[], prefix: string): string {
   if (matches.length === 0) throw new Error(`No pending call matches "${prefix}". Pending calls:\n${list(callIds)}`);
   throw new Error(`"${prefix}" is ambiguous; it matches:\n${list(matches)}`);
 }
+
+const permissionText = (a: AgentRuntimeRow): string =>
+  a.permissionOwner === "kernel"
+    ? "aoa decides every tool call"
+    : a.readOnly
+      ? "Codex, in its read-only sandbox; it asks nothing"
+      : "Codex decides its own tools; aoa relays what it asks";

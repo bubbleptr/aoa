@@ -758,7 +758,11 @@ function renderRuntime() {
   if (box.hidden) return;
   document.getElementById("agent-runtime-name").textContent = a.runtime;
   document.getElementById("agent-permissions").textContent =
-    a.permissionOwner === "harness" ? "Codex decides its own tools; aoa relays what it asks" : "aoa decides every tool call";
+    a.permissionOwner !== "harness"
+      ? "aoa decides every tool call"
+      : a.role === "review"
+        ? "Codex, in its read-only sandbox; it asks nothing"
+        : "Codex decides its own tools; aoa relays what it asks";
 }
 
 function renderSwitch() {

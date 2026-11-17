@@ -19,7 +19,9 @@ export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
   agent.log(`serving ${agent.agents.map((a) => a.inboxId).join(", ")}`);
   for (const a of agent.agents.filter((a) => a.permissions === "harness")) {
     log(
-      `agent ${a.name} runs on Codex: Codex's own approval and sandbox settings govern what it does without asking, and aoa's push and ~/.aoa rules do not apply to Codex's own tools`,
+      a.role === "review"
+        ? `agent ${a.name} runs on Codex in its read-only sandbox: it cannot change files or reach the network, and nothing it asks for reaches you`
+        : `agent ${a.name} runs on Codex: Codex's own approval and sandbox settings govern what it does without asking, and aoa's push and ~/.aoa rules do not apply to Codex's own tools`,
     );
   }
   const startedAt = String(clock.now());

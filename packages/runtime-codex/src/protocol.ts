@@ -14,16 +14,18 @@ export type InitializeParams = {
 
 export type DynamicToolSpec = { type: "function"; name: string; description: string; inputSchema: unknown };
 
-/** Approval policy and sandbox are left out on purpose: they stay whatever the user configured in Codex. */
+/** Set only for a read-only agent; otherwise the user's Codex configuration decides both. */
+type Confinement = { sandbox?: "read-only"; approvalPolicy?: "never" };
+
 export type ThreadStartParams = {
   cwd: string;
   developerInstructions: string;
   model?: string;
   dynamicTools: DynamicToolSpec[];
-};
+} & Confinement;
 
 /** Codex keeps a thread's dynamic tools with the thread, so resuming does not offer them again. */
-export type ThreadResumeParams = { threadId: string; cwd: string; developerInstructions: string; model?: string };
+export type ThreadResumeParams = { threadId: string; cwd: string; developerInstructions: string; model?: string } & Confinement;
 
 export type ThreadResponse = { thread: { id: string } };
 

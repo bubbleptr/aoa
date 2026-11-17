@@ -87,8 +87,8 @@ test("status and the web snapshot say which runtime each agent runs on and who o
 
   const status = JSON.parse((await w.cli("status", "--json")).out);
   expect(status.agents).toEqual([
-    { name: "default", runtime: "pi", permissionOwner: "kernel" },
-    { name: "coder", runtime: "codex", permissionOwner: "harness" },
+    { name: "default", runtime: "pi", permissionOwner: "kernel", readOnly: false },
+    { name: "coder", runtime: "codex", permissionOwner: "harness", readOnly: false },
   ]);
   const text = (await w.cli("status")).out;
   expect(text).toMatch(/default\s+pi\s+aoa decides/);
@@ -141,7 +141,7 @@ test("a codex agent's model reaches Codex, and the default agent can run on Code
   expect(first).not.toHaveProperty("model");
   expect(second.model).toBe("gpt-test");
   expect(w.agent.store.tx((t) => t.listOutbox(w.agent.inboxId))).toMatchObject([{ kind: "message", body: "Done." }]);
-  expect(JSON.parse((await w.cli("status", "--json")).out).agents[0]).toEqual({ name: "default", runtime: "codex", permissionOwner: "harness" });
+  expect(JSON.parse((await w.cli("status", "--json")).out).agents[0]).toEqual({ name: "default", runtime: "codex", permissionOwner: "harness", readOnly: false });
 });
 
 test("a codex reviewer runs in Codex's read-only sandbox, and status and serve say so", async () => {

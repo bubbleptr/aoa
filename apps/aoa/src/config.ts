@@ -212,8 +212,6 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
     if (a.role !== undefined && a.role !== "implement" && a.role !== "review") throw new ConfigError(`${field}.role`, "must be implement or review");
     const role = (a.role as Role | undefined) ?? "implement";
     const choice = runtimeChoice(a, field, top);
-    // The review role's read-only rules are aoa policy; they would not reach Codex's own tools.
-    if (role === "review" && choice.runtime === "codex") throw new ConfigError(`${field}.role`, "review cannot run on codex: aoa's read-only rules do not reach Codex's own tools");
     const agent: NamedAgent = { role, ...choice };
     if (a.instructions !== undefined) agent.instructions = str(a, "instructions", `${field}.`);
     const classifier = a.classifier === undefined ? top.classifier : modelRef(a.classifier, `${field}.classifier`);
