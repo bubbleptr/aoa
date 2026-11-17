@@ -23,8 +23,6 @@ An Always-on Agent framework that runs 24x7 on an Inbox + Worker model. You hand
 
 The design is in [docs/design.md](docs/design.md) and the spec in [docs/spec.md](docs/spec.md) (both in Chinese).
 
-Status: the kernel, the SQLite store, three runtimes (pi, Codex, dsh), the local and GitHub channels and the `aoa` command are implemented, and aoa has been used on its own repository (writing code, reviewing, merging). dsh has not had a smoke test on a real machine yet.
-
 ## Design and implementation
 
 ### A tool call

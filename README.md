@@ -23,8 +23,6 @@
 
 设计见 [docs/design.md](docs/design.md)，规范见 [docs/spec.md](docs/spec.md)。
 
-状态：内核、SQLite 存储、三个 runtime（pi、Codex、dsh）、本地和 GitHub 通道、`aoa` 命令都已实现，aoa 在自己的仓库上用过（写代码、审查、合并）。dsh 还没在真机上跑过冒烟测试。
-
 ## 设计和实现
 
 ### 一次工具调用
