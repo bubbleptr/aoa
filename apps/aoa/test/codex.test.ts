@@ -143,3 +143,27 @@ test("a codex agent's model reaches Codex, and the default agent can run on Code
   expect(w.agent.store.tx((t) => t.listOutbox(w.agent.inboxId))).toMatchObject([{ kind: "message", body: "Done." }]);
   expect(JSON.parse((await w.cli("status", "--json")).out).agents[0]).toEqual({ name: "default", runtime: "codex", permissionOwner: "harness" });
 });
+
+test("a codex reviewer runs in Codex's read-only sandbox, and status and serve say so", async () => {
+  const fake = new FakeAppServer();
+  const w = new World({ local: true, agents: { reviewer: { role: "review", runtime: "codex" } } });
+  w.spawnCodex = fake.spawn;
+  cleanup.push(() => w.dispose());
+  await w.start();
+
+  await w.cli("send", "--agent", "reviewer", "Review aoa/abc.");
+  await w.drain("reviewer");
+  expect(fake.sent("thread/start")[0]).toMatchObject({ sandbox: "read-only", approvalPolicy: "never" });
+
+  const status = JSON.parse((await w.cli("status", "--json")).out);
+  expect(status.agents[1]).toEqual({ name: "reviewer", runtime: "codex", permissionOwner: "harness", readOnly: true });
+  expect((await w.cli("status")).out).toMatch(/reviewer\s+codex\s+.*read-only/);
+
+  let stop = () => {};
+  const done = serve(w.agent, new Promise<void>((resolve) => (stop = resolve)));
+  stop();
+  await done;
+  const line = w.logs.find((l) => l.includes("reviewer") && l.includes("Codex"));
+  expect(line).toContain("read-only");
+  expect(line).not.toContain("~/.aoa");
+});

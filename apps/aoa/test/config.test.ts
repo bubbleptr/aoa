@@ -164,9 +164,13 @@ describe("the Codex runtime", () => {
     [{ ...codexTop, model: piModel }, "model"],
     [{ ...codexTop, github: valid.github }, "runtime"],
     [{ ...codexTop, agents: { helper: { runtime: "pi" } } }, "agents.helper.model"],
-    [{ ...rest, model: piModel, agents: { reviewer: { role: "review", runtime: "codex" } } }, "agents.reviewer.role"],
   ])("rejects: %#", (raw, field) => {
     expect(() => validateConfig(raw)).toThrow(new RegExp(`^Invalid config: ${field.replaceAll(".", "\\.")} `));
+  });
+
+  test("a review agent can run on Codex", () => {
+    const config = validateConfig({ ...rest, model: piModel, agents: { reviewer: { role: "review", runtime: "codex" } } });
+    expect(config.agents).toEqual({ reviewer: { role: "review", runtime: "codex" } });
   });
 
   test("serve wants a classifier only for the agents that run on pi", () => {
