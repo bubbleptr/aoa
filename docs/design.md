@@ -394,13 +394,15 @@ Codex 的请求怎么对应到 aoa：
 - call id 是 `<session>:<turn>:<item>`，命令审批带 `approvalId` 时再接上它；同一个 turn 里同一个键再出现时加 `#序号`。Codex 的 item id 在线程里唯一，turn id 每次 run 都是新的，所以内核不会拿到已经回答过的 id。
 - 为什么动态工具让 aoa 的工具留在第一档：记忆、`notify`、`wake_me_at`、`cancel_wake`、`ask_user`、`send_to` 在 `thread/start` 时作为动态工具交给 Codex，Codex 调用时请求回到 aoa，由内核的 `invoke` 按策略裁决、写日志、执行，延后时同样停下等你，和 pi 完全一样。Codex 只是替模型转发这一次调用，执行和记录都在 aoa 这边。codex agent 不拿 aoa 的 read、write、edit、bash 等编码工具，这些用 Codex 自己的。分类器仍然配置给它，管的是 aoa 自己的工具；这些工具都是 `low`，所以 `serve` 只要求跑 pi 的 agent 配分类器。
 - 许可和重问：Codex 问一条命令，内核建 `harness` 延后调用、发审批请求，aoa 回 `decline` 并中断 turn。你批准后，内核记下许可（工具名加参数）；下一次 run 恢复同一个线程，输入里的 `<answer>` 写明「用户批准了你之前请求的这个操作（附完整参数），它还没做，现在照原样再做一次，这次不用问」。Codex 再做时照自己的设置又问一次，参数和许可深度相等，内核直接答 `allow`，aoa 回 `accept`，不再发请求。拒绝也同样写进下一次的输入，告诉它不要再试。对 aoa 自己工具的答复仍按 pi 的写法（「已经执行，不要再调」）。
-- Codex 不问就运行的东西：Codex 的审批策略和沙箱允许的一切（比如沙箱内的命令、工作区内的改动、它配置的 MCP 工具），aoa 既看不到也不记录，aoa 的规则（`git push` 延后、`~/.aoa` 路径、worktree 边界）对它们不起作用。所以 codex agent 只能用在本地模式（GitHub 模式的推送要经过 aoa 自己的工具），也不能当审查 agent（审查的只读规则是 aoa 的策略，管不到 Codex 的工具）。
+- 隔离用户的 Codex 扩展：aoa 启动的 `codex app-server` 带上 `--disable plugins --disable apps --disable hooks`，并对 `codex mcp list` 列出的每个 MCP server 加 `-c mcp_servers.<名字>.enabled=false`。不这样做的话，每次 run 光启动这些扩展就要等一分钟左右；而且它们的 hooks（记忆、统计）会作用到 aoa 的工作上，实测会加载近 200 个 MCP 工具。单写 `-c mcp_servers={}` 没用，它和配置合并，原有的 server 照样启动。Codex 的 `-c` 路径按点切分、也不去引号，所以名字里有点或引号的 server 关不掉，这时 run 直接报错，不会留着它开着。审批策略、沙箱、模型和登录仍用你的 Codex 配置。以后要给某个 codex agent 单独开放扩展，需要另外加配置。
+- Codex 不问就运行的东西：Codex 的审批策略和沙箱允许的一切（比如沙箱内的命令、工作区内的改动），aoa 既看不到也不记录，aoa 的规则（`git push` 延后、`~/.aoa` 路径、worktree 边界）对它们不起作用。所以 codex agent 只能用在本地模式（GitHub 模式的推送要经过 aoa 自己的工具），也不能当审查 agent（审查的只读规则是 aoa 的策略，管不到 Codex 的工具）。
 
 和设计不完全一样、或者没做到的：
 
 - 失败重试的 run 是新的 turn，Codex 给的 id 也是新的；如果失败那次已经用掉了许可，重试时会再问你一次（安全，但和 pi 按 transcript 重放 id 不同）。
 - run 抛错时内核不记 `sessionRef`，所以重试会开一个新线程，前一次 turn 的上下文丢了；事件的 `attempts` 不为 0（之前有一次 run 失败过）时，输入里照 pi 的样子加上重试提示。
-- 动态工具只在 `thread/start` 时提供，`thread/resume` 的参数里没有这一项。Codex 把它们存在线程里（二进制里有 `thread_dynamic_tools` 表），恢复时沿用；这一点只有真机冒烟测试能验证。
+- 动态工具只在 `thread/start` 时提供，`thread/resume` 的参数里没有这一项。Codex 把它们存在线程里，恢复时沿用；冒烟测试已经对 Codex 0.154 验证过：另起一个进程恢复线程后，模型仍然能调用 aoa 的工具。
+- Codex 会把每个新的 cwd 写进 `~/.codex/config.toml`，成为一条 `[projects."…"]` 记录。aoa 的每个 worktree 都是新目录，所以你的配置会跟着变长，目前没有拦。
 - 如果配置里某个 `apiKeyEnv` 和 Codex 用的是同一个环境变量，aoa 启动时会把它从环境里删掉，Codex 子进程也就拿不到。
 
 ## 13. 没验证的
