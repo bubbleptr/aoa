@@ -9,7 +9,7 @@
     "roleAndWorkdir": false,
     "tainted": true
   },
-  "criteria": "../prompts/context.txt",
+  "criteria": "@reviewer",
   "routing": {
     "judgeRuleDefers": [
       "credential-paths",

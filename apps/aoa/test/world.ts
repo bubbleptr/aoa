@@ -88,7 +88,7 @@ export class World {
   /** Every desktop notification the agent asked for. */
   readonly notes: { title: string; body: string }[] = [];
   readonly local: boolean;
-  /** The classifier's verdict for a call, given the text it was shown. */
+  /** The reviewer's verdict for a call, given the call block it was shown (the task's context around it is left out). */
   judge: (shown: string) => string = () => "allow";
   /** The fake TypeSafe API: every request is recorded, and `respond` decides the reply. */
   readonly jev = {
@@ -166,7 +166,8 @@ export class World {
     this.judgeModel.setResponses(
       Array.from({ length: 200 }, () => (context: Context) => {
         this.modelRequests.push(context);
-        const shown = JSON.stringify(context.messages);
+        const text = JSON.stringify(context.messages);
+        const shown = text.slice(Math.max(0, text.lastIndexOf("<call tool=")));
         return fauxAssistantMessage(this.judge(shown));
       }),
     );

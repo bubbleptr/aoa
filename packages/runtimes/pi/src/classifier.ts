@@ -23,27 +23,34 @@ Answer "unsure" for everything else, so the user decides.
 
 Reply with exactly one word: allow, block or unsure.`;
 
-/** A `PolicyConfig.classify` backed by one pi-ai completion without tools. A failed request throws, which the kernel defers. */
-export function piClassifier(config: PiClassifierConfig): NonNullable<PolicyConfig["classify"]> {
+/** One pi-ai completion without tools: a system prompt and one user message in, the reply's text out. Throws on failure. */
+export function piCompletion(config: PiClassifierConfig): (systemPrompt: string, message: string) => Promise<string> {
   let models: Promise<ModelRuntime> | null = null;
-  return async (call, ctx) => {
+  return async (systemPrompt, message) => {
     try {
       const runtime = await (models ??= createModelRuntime(config));
       const model = runtime.getModel(config.provider, config.modelId);
       if (!model) throw new Error(`pi has no model ${config.provider}/${config.modelId}`);
-      const block = `<call tool=${encode(call.tool)} tainted=${ctx.tainted}>\n${encode(call.args)}\n</call>`;
       const reply = await runtime.completeSimple(model, {
-        systemPrompt: CLASSIFIER_PROMPT,
-        messages: [{ role: "user", content: block, timestamp: Date.now() }],
+        systemPrompt,
+        messages: [{ role: "user", content: message, timestamp: Date.now() }],
       });
       if (reply.stopReason === "error") throw new Error(`the classifier request failed: ${reply.errorMessage ?? "unknown error"}`);
-      const answer = reply.content
+      return reply.content
         .map((c) => (c.type === "text" ? c.text : ""))
         .join("")
         .trim();
-      return answer === "allow" || answer === "block" ? answer : "unsure";
     } catch (err) {
       throw redact(err, config.apiKey);
     }
+  };
+}
+
+/** A `PolicyConfig.classify` that shows the model the call alone. A failed request throws, which the kernel defers. */
+export function piClassifier(config: PiClassifierConfig): NonNullable<PolicyConfig["classify"]> {
+  const complete = piCompletion(config);
+  return async (call, ctx) => {
+    const answer = await complete(CLASSIFIER_PROMPT, `<call tool=${encode(call.tool)} tainted=${ctx.tainted}>\n${encode(call.args)}\n</call>`);
+    return answer === "allow" || answer === "block" ? answer : "unsure";
   };
 }

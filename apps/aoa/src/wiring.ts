@@ -23,7 +23,7 @@ import {
 } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/runtime-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/runtime-dsh";
-import { codingTools, piClassifier, piRuntime } from "@aoa/runtime-pi";
+import { codingTools, piCompletion, piRuntime } from "@aoa/runtime-pi";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
@@ -40,6 +40,7 @@ import {
 import { agentPolicy, deferPush, reviewReadOnly } from "./policy.ts";
 import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT, handOffPrompt, reviewPrompt } from "./prompt.ts";
 import { sendToTool } from "./send-to.ts";
+import { reviewer } from "./reviewer.ts";
 import { jevJudge, withShadowJudge } from "./shadow.ts";
 import { NUDGE_INTERVAL_MS, PULL_CHECK_INTERVAL_MS } from "./serve.ts";
 import { type ModeColumns, branchColumns, pullColumns, pullOf } from "./status.ts";
@@ -344,11 +345,16 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   const permissions = permissionOwner(spec.runtime);
   const classify = spec.classifier
     ? withShadowJudge(
-        piClassifier({
-          provider: spec.classifier.provider,
-          modelId: spec.classifier.modelId,
-          apiKey: s.keyOf(spec.classifier),
-          providers: seams.providers,
+        reviewer({
+          store,
+          inboxId,
+          role: spec.role,
+          complete: piCompletion({
+            provider: spec.classifier.provider,
+            modelId: spec.classifier.modelId,
+            apiKey: s.keyOf(spec.classifier),
+            providers: seams.providers,
+          }),
         }),
         config.shadowJudge
           ? jevJudge({

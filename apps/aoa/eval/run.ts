@@ -4,16 +4,16 @@
 //
 //   bun apps/aoa/eval/run.ts --config <file.json> [--config <file.json> ...] [--set dev|holdout] [--runs 3] [--estimate]
 //
-// A config's `criteria` path is relative to the config file.
+// A config's `criteria` path is relative to the config file; "@reviewer" is the prompt aoa runs (src/reviewer.ts).
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type PolicyConfig, type Rule, decide } from "@aoa/kernel";
-import { encode } from "@aoa/runtime-pi/prompt";
 import { createModelRuntime, redact } from "../../../packages/runtimes/pi/src/models.ts";
 import { agentPolicy, deferPush, reviewReadOnly } from "../src/policy.ts";
-import type { AgentInfo, CallRecord } from "./export.ts";
+import { REVIEWER_PROMPT, type ReviewToggles, reviewMessage } from "../src/reviewer.ts";
+import { type AgentInfo, type CallRecord, reviewInputOf } from "./export.ts";
 
 type Label = "allow" | "ask" | "block";
 type Verdict = Label;
@@ -21,7 +21,7 @@ type Verdict = Label;
 type EvalConfig = {
   name: string;
   model: "deepseek-flash" | "deepseek-v4-pro";
-  context: { task: boolean; agentMessages: boolean; priorCalls: number; agentsMd: boolean; roleAndWorkdir: boolean; tainted: boolean };
+  context: ReviewToggles;
   criteria: string;
   routing: { judgeRuleDefers: string[] };
 };
@@ -40,7 +40,6 @@ const EXPORT_DIR = join(EVAL_DIR, "export");
 const CACHE_DIR = join(EVAL_DIR, "cache");
 const RESULTS_DIR = join(EVAL_DIR, "results");
 /** Each prior call's arguments are cut to this many characters of their JSON. */
-const PRIOR_ARGS_CAP = 600;
 const HOLDOUT_PERCENT = 30;
 const CONCURRENCY = 6;
 const ATTEMPTS = 3;
@@ -114,28 +113,9 @@ async function route(c: Case, judgeRuleDefers: Set<string>): Promise<Route> {
 
 // ---- the judge's prompt ----
 
-function capped(args: unknown): string {
-  const text = encode(args);
-  return text.length <= PRIOR_ARGS_CAP ? text : `${text.slice(0, PRIOR_ARGS_CAP)}…[${text.length - PRIOR_ARGS_CAP} more characters cut]`;
-}
-
 /** The user message: one data block per ingredient the config turns on, the call last. */
 export function judgeMessage(c: CallRecord, cfg: EvalConfig["context"], agentsMd: string | null): string {
-  const blocks: string[] = [];
-  if (cfg.agentsMd && agentsMd !== null) blocks.push(`<agents_md>\n${encode(agentsMd)}\n</agents_md>`);
-  if (cfg.roleAndWorkdir) blocks.push(`<session>\n${encode({ role: c.agent.role, workdir: c.context.workdirAsOf })}\n</session>`);
-  if (cfg.task) blocks.push(`<user_request>\n${encode(c.context.userMessages.map((m) => m.text))}\n</user_request>`);
-  if (cfg.agentMessages) {
-    const messages = c.context.agentMessages.map((m) => ({ from_agent: m.from, text: m.text }));
-    blocks.push(`<agent_messages>\n${encode(messages)}\n</agent_messages>`);
-  }
-  if (cfg.priorCalls > 0) {
-    const prior = c.context.priorCalls.slice(-cfg.priorCalls);
-    const lines = prior.map((p) => `{"tool":${encode(p.tool)},"decision":${encode(p.decision)},"args":${capped(p.args)}}`);
-    blocks.push(`<prior_calls>\n${lines.join("\n")}\n</prior_calls>`);
-  }
-  blocks.push(`<call tool=${encode(c.tool)}${cfg.tainted ? ` tainted=${c.context.taintedAsOf}` : ""}>\n${encode(c.args)}\n</call>`);
-  return blocks.join("\n\n");
+  return reviewMessage(reviewInputOf(c), cfg, agentsMd);
 }
 
 // ---- the judge ----
@@ -329,7 +309,7 @@ async function main() {
   for (const path of configs) {
     const file = resolve(path);
     const cfg = JSON.parse(readFileSync(file, "utf8")) as EvalConfig;
-    const system = readFileSync(resolve(dirname(file), cfg.criteria), "utf8");
+    const system = cfg.criteria === "@reviewer" ? REVIEWER_PROMPT : readFileSync(resolve(dirname(file), cfg.criteria), "utf8");
     const judgeRuleDefers = new Set(cfg.routing?.judgeRuleDefers ?? []);
     const outcomes: Outcome[] = [];
     for (const c of cases) outcomes.push({ case: c, route: await route(c, judgeRuleDefers), outputs: [], raws: [], errors: [] });

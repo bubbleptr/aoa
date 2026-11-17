@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Risk } from "@aoa/kernel";
 import { DEFAULT_AGENT, type Role, derivePaths, loadConfig } from "../src/config.ts";
+import type { ReviewInput } from "../src/reviewer.ts";
 
 /** The tools whose decisions are replayed. Other tools still appear among a call's prior calls. */
 export const EXPORTED_TOOLS = new Set(["bash", "git_push", "read", "edit", "write", "grep", "find", "ls", "admit"]);
@@ -291,3 +292,17 @@ async function main() {
 }
 
 if (import.meta.main) await main();
+
+/** A recorded call as the reviewer would have been shown it then. */
+export function reviewInputOf(c: CallRecord): ReviewInput {
+  return {
+    role: c.agent.role,
+    workdir: c.context.workdirAsOf,
+    userMessages: c.context.userMessages.map((m) => m.text),
+    agentMessages: c.context.agentMessages.map((m) => ({ from: m.from, text: m.text })),
+    priorCalls: c.context.priorCalls.map((p) => ({ tool: p.tool, decision: p.decision, args: p.args })),
+    tool: c.tool,
+    args: c.args,
+    tainted: c.context.taintedAsOf,
+  };
+}
