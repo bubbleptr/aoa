@@ -1,5 +1,14 @@
 # aoa
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+![Bun](https://img.shields.io/badge/Bun-1.3-14151a?logo=bun&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
+![Runtimes](https://img.shields.io/badge/runtimes-pi%20%7C%20Codex%20%7C%20dsh-6f8fd6)
+![Conformance](https://img.shields.io/badge/conformance-C1%E2%80%93C20-3f9a72)
+![MCP](https://img.shields.io/badge/MCP-stdio-8a74cf)
+
+中文 · [English](README.en.md)
+
 一个常驻的 agent 内核：你交代任务，它在自己的分支上做完，只在需要你的时候找你。
 
 <picture>
