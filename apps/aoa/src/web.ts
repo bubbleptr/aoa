@@ -193,15 +193,11 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     async stop() {
       quiet();
       agent.page.url = null;
-      for (const [c, forget] of [...clients]) {
-        try {
-          c.close();
-        } catch {
-          // Already closed by its client.
-        }
-        forget();
-      }
-      await server.stop(true);
+      // Stopping the server cancels every open stream. Closing them here first would hang it: on Bun 1.3.12,
+      // `stop(true)` in the same tick as closing two or more response streams never resolves.
+      const stopped = server.stop(true);
+      for (const forget of [...clients.values()]) forget();
+      await stopped;
     },
   };
 

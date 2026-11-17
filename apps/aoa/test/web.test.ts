@@ -345,4 +345,24 @@ describe("notifications while the page is open", () => {
     }
     await server.stop();
   });
+
+  test("stops promptly after tabs came and went, or while they are open", async () => {
+    for (const closed of ["never", "just now", "a while ago"]) {
+      const w = await world();
+      const server = web(w.agent, () => () => {});
+      const tabs = [new AbortController(), new AbortController()];
+      for (const tab of tabs) {
+        const res = await fetch(`http://127.0.0.1:${server.port}/events?notify=1`, {
+          signal: tab.signal,
+          headers: { "sec-fetch-site": "same-origin" },
+        });
+        await res.body!.getReader().read();
+      }
+      if (closed !== "never") for (const tab of tabs) tab.abort();
+      if (closed === "a while ago") await new Promise((resolve) => setTimeout(resolve, 50));
+      const deadline = new Promise((resolve) => setTimeout(() => resolve("hung"), 1000));
+      expect(await Promise.race([server.stop().then(() => "stopped"), deadline])).toBe("stopped");
+      expect(w.agent.page.notifying).toBe(0);
+    }
+  });
 });
