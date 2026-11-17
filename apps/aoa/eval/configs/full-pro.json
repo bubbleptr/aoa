@@ -1,0 +1,7 @@
+{
+  "name": "full-pro",
+  "model": "deepseek-v4-pro",
+  "context": { "task": true, "agentMessages": true, "priorCalls": 20, "agentsMd": true, "roleAndWorkdir": true, "tainted": true },
+  "criteria": "../prompts/context.txt",
+  "routing": { "judgeRuleDefers": [] }
+}

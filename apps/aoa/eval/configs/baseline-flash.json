@@ -1,0 +1,7 @@
+{
+  "name": "baseline-flash",
+  "model": "deepseek-flash",
+  "context": { "task": false, "agentMessages": false, "priorCalls": 0, "agentsMd": false, "roleAndWorkdir": false, "tainted": true },
+  "criteria": "../prompts/baseline.txt",
+  "routing": { "judgeRuleDefers": [] }
+}
