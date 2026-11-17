@@ -39,11 +39,11 @@ interface Channel {
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/tool-call-dark.png">
-  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后，Jev 在旁边只打分不裁决；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/tool-call-light.png">
+  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后，Jev 现在只在旁边打分，之后接管裁决；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/tool-call-light.png">
 </picture>
 
 - **裁决在模型之外**，依次是规则表、分类器、延后。只读工具和只读命令放行；`sudo`、强推、改 git 配置或远端、`curl | sh` 直接拦；规则判不了的交给分类器（一个小模型）；高风险和分类器拿不准的延后，未知工具默认延后。每次裁决连同依据写进日志。
-- **Jev 影子判断（可选）。** 配上 `shadowJudge`，分类器每被问一次，TypeSafe 的决策模型 Jev 也在同一时刻判同一个调用，给出「不问你也能安全执行」的概率。现在它只记录、不裁决：结论仍是分类器的，Jev 失败或 5 秒超时也不拖慢它。送给 Jev 的只有工具名、参数和 session 是否被外部内容污染，不带对话和记忆。分数存进 `judgments` 表，和分类器的结论、你的答复放在一起，以后按这些数据给 Jev 定阈值；模型钉在 `jev-1.14.0`，定阈值时不换版本。
+- **目标是让专门的意图裁决模型来裁决。** 规则判不了的调用，最终交给 TypeSafe 的 Jev 这类专门判断意图的模型，不再靠通用小模型做分类器。现在处在第一步，影子阶段：配上 `shadowJudge`，分类器每被问一次，Jev 也在同一时刻判同一个调用，给出「不问你也能安全执行」的概率，但结论仍是分类器的，Jev 失败或 5 秒超时也不拖慢它。送给 Jev 的只有工具名、参数和 session 是否被外部内容污染，不带对话和记忆。分数存进 `judgments` 表，和分类器的结论、你的答复放在一起；下一步按这些数据给 Jev 定阈值，再让它接管裁决。模型钉在 `jev-1.14.0`，定阈值时不换版本。
 - **延后不占着 worker。** session 存盘，run 结束，审批请求进 outbox。你的答复作为事件回到 inbox；新 run 开始前，内核自己执行被批准的那次调用，把结果交给 runtime，模型不会再调一次。同一个调用的第二次答复被去重，24 小时没答复就写一个到期事件。
 - **只有你的话能批准。** 按作者判断，不按内容：issue 正文、别人的评论、另一个 agent 发来的消息都是外部内容，永远变不成审批答复。
 - **凭据不进 agent。** GitHub 模式下 `git_push`、`github_open_pr`、`github_comment` 在宿主进程里执行，宿主加上凭据再发请求，agent 的上下文和参数里没有凭据。模型的 API key 在 `serve` 读入后从环境变量里删掉。aoa 不做沙箱：agent 的 shell 和宿主是同一个系统用户，所以碰 `~/.aoa` 或凭据路径的命令不会被直接放行，要问你。
