@@ -67,6 +67,18 @@
         "@aoa/conformance": "workspace:*",
       },
     },
+    "packages/runtime-dsh": {
+      "name": "@aoa/runtime-dsh",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+        "@aoa/runtime-pi": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.32.2",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+      },
+    },
     "packages/runtime-pi": {
       "name": "@aoa/runtime-pi",
       "version": "0.0.0",
@@ -99,6 +111,8 @@
     "@aoa/kernel": ["@aoa/kernel@workspace:packages/kernel"],
 
     "@aoa/runtime-codex": ["@aoa/runtime-codex@workspace:packages/runtime-codex"],
+
+    "@aoa/runtime-dsh": ["@aoa/runtime-dsh@workspace:packages/runtime-dsh"],
 
     "@aoa/runtime-pi": ["@aoa/runtime-pi@workspace:packages/runtime-pi"],
 
