@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
-/* Layout: a fixed 1076×540 stage captured as one image. The kernel is a 2×3 grid of equal tiles, so no box is wider than its text; the run goes out of the top row and tool calls come back into the bottom row. */
+/* Layout: a fixed 942×704 stage captured as one image. The kernel is one column of the five primitives; the worker is a separate region on the right that wraps the runtimes, and every kernel↔worker arrow is horizontal. */
 :root {
   --bg: #f7f8fb;
   --ink: #17202e;
@@ -11,6 +11,8 @@
   --line: #8a95a8;
   --kernel: #e9effb;
   --kernel-edge: #6f8fd6;
+  --worker: #f1f2f5;
+  --worker-edge: #a9b2c3;
   --tile: #ffffff;
   --tile-edge: #c9d2e3;
   --prim: #2f5bd3;
@@ -29,14 +31,16 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0e131b; --ink: #e8edf5; --muted: #9aa5b8; --line: #6b7689;
-    --kernel: #142037; --kernel-edge: #5576c9; --tile: #101826; --tile-edge: #2c3a52; --prim: #8fb0ff; --icon-bg: #1b2a4a;
+    --kernel: #142037; --kernel-edge: #5576c9; --worker: #151b26; --worker-edge: #3a465c;
+    --tile: #101826; --tile-edge: #2c3a52; --prim: #8fb0ff; --icon-bg: #1b2a4a;
     --builtin: #0f2a20; --builtin-edge: #4fb488; --ext: #2b1f0e; --ext-edge: #d99a45;
     --store: #1d1834; --store-edge: #9a86e0; --chip: #101826; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e131b; --ink: #e8edf5; --muted: #9aa5b8; --line: #6b7689;
-  --kernel: #142037; --kernel-edge: #5576c9; --tile: #101826; --tile-edge: #2c3a52; --prim: #8fb0ff; --icon-bg: #1b2a4a;
+  --kernel: #142037; --kernel-edge: #5576c9; --worker: #151b26; --worker-edge: #3a465c;
+  --tile: #101826; --tile-edge: #2c3a52; --prim: #8fb0ff; --icon-bg: #1b2a4a;
   --builtin: #0f2a20; --builtin-edge: #4fb488; --ext: #2b1f0e; --ext-edge: #d99a45;
   --store: #1d1834; --store-edge: #9a86e0; --chip: #101826; color-scheme: dark;
 }
@@ -48,7 +52,7 @@ body {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .scroll { overflow-x: auto; }
-.stage { position: relative; width: 1076px; height: 540px; margin: 0 auto; }
+.stage { position: relative; width: 906px; height: 672px; margin: 0 auto; }
 .stage > svg { position: absolute; inset: 0; pointer-events: none; }
 .abs { position: absolute; box-sizing: border-box; }
 
@@ -59,37 +63,38 @@ body {
 .region { border-radius: 18px; border: 1.5px solid; }
 .region > .label { position: absolute; left: 22px; top: 14px; font: 600 15px var(--display); letter-spacing: 0.02em; }
 .region > .label small { font: 500 12.5px var(--body); color: var(--muted); margin-left: 8px; letter-spacing: 0; }
-.kernel { left: 224px; top: 80px; width: 492px; height: 348px; background: var(--kernel); border-color: var(--kernel-edge); }
-.runtime { left: 792px; top: 80px; width: 260px; height: 382px; border-color: var(--tile-edge); border-style: dashed; }
-.store { left: 224px; top: 464px; width: 492px; height: 52px; background: var(--store); border-color: var(--store-edge); display: flex; align-items: center; justify-content: center; gap: 12px; padding: 0 20px; }
+.kernel { left: 248px; top: 80px; width: 234px; height: 480px; background: var(--kernel); border-color: var(--kernel-edge); }
+.worker { left: 572px; top: 80px; width: 310px; height: 480px; background: var(--worker); border-color: var(--worker-edge); }
+.runtime { left: 592px; top: 128px; width: 270px; height: 408px; border-color: var(--worker-edge); border-style: dashed; border-radius: 14px; }
+.runtime > .label { font-size: 14px; }
+.store { left: 248px; top: 596px; width: 234px; height: 52px; background: var(--store); border-color: var(--store-edge); display: flex; align-items: center; justify-content: center; gap: 10px; }
 .store b { font: 600 16px var(--display); }
-.store span { font-size: 13.5px; color: var(--muted); }
+.store span { font-size: 13px; color: var(--muted); }
 .store svg { color: var(--store-edge); }
 
-.tile { background: var(--tile); border: 1.5px solid var(--tile-edge); border-radius: 12px; padding: 0 14px; display: flex; align-items: center; gap: 12px; height: 60px; }
+.tile { background: var(--tile); border: 1.5px solid var(--tile-edge); border-radius: 12px; padding: 0 14px; display: flex; align-items: center; gap: 12px; height: 56px; }
 .tile.prim { border-color: var(--prim); }
-.tile .ic { flex: none; width: 34px; height: 34px; border-radius: 9px; background: var(--icon-bg); color: var(--prim); display: grid; place-items: center; }
-.tile:not(.prim) .ic { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.tile .ic { flex: none; width: 32px; height: 32px; border-radius: 9px; background: var(--icon-bg); color: var(--prim); display: grid; place-items: center; }
+.you .ic { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .tile .tx { display: flex; flex-direction: column; gap: 2px; }
 .tile b { font: 600 15.5px var(--display); }
 .tile.prim b { color: var(--prim); }
 .tile span { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-.col1 { left: 248px; width: 186px; }
-.col2 { left: 506px; width: 186px; }
+.col { left: 272px; width: 186px; }
 .you { left: 24px; top: 128px; width: 168px; padding: 0 10px; gap: 10px; }
 .you .ic { width: 30px; height: 30px; }
 
-.card { left: 812px; width: 220px; border-radius: 14px; border: 1.5px solid; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.card { left: 612px; width: 230px; border-radius: 14px; border: 1.5px solid; padding: 14px 16px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
 .card .kind { font: 600 11px var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .card p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-.builtin { top: 128px; height: 96px; background: var(--builtin); border-color: var(--builtin-edge); }
+.builtin { top: 172px; height: 104px; background: var(--builtin); border-color: var(--builtin-edge); }
 .builtin .row { display: flex; align-items: center; gap: 12px; }
 .builtin .row div { display: flex; flex-direction: column; gap: 1px; }
 .builtin .row b { font: 700 19px/1.2 var(--display); }
 .pi { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--chip); border: 1px solid var(--builtin-edge); padding: 5px; box-sizing: border-box; }
-.ext { top: 248px; height: 190px; background: var(--ext); border-color: var(--ext-edge); }
-.ext .pair { display: grid; gap: 8px; }
-.ext .pair div { background: var(--chip); border: 1px solid var(--ext-edge); border-radius: 10px; padding: 7px 12px 7px 9px; display: flex; align-items: center; gap: 9px; }
+.ext { top: 300px; height: 210px; background: var(--ext); border-color: var(--ext-edge); }
+.ext .pair { display: grid; gap: 10px; }
+.ext .pair div { background: var(--chip); border: 1px solid var(--ext-edge); border-radius: 10px; padding: 9px 12px 9px 10px; display: flex; align-items: center; gap: 10px; }
 .ext .pair .logo { width: 24px; height: 24px; flex: none; color: var(--ink); }
 .ext .pair b { font: 600 15.5px var(--display); }
 .ext .pair code { margin-left: auto; font: 500 11px var(--mono); color: var(--muted); }
@@ -98,11 +103,11 @@ body {
 .dash { stroke-dasharray: 5 5; }
 .tip { fill: var(--line); }
 .lbl { font: 500 12px var(--body); fill: var(--muted); }
-.i { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 
 <div class="scroll">
-<div class="stage" role="img" aria-label="aoa 架构：你交代的任务进入内核的 inbox，worker 开一次 run 交给 runtime，工具调用经过权限，消息从 outbox 回到你；状态存在 SQLite。runtime 有内置的 pi 和外部 harness（Codex、dsh）。">
+<div class="stage" role="img" aria-label="aoa 架构：你交代的任务进入内核的 Inbox；Worker 认领事件，在它选的 runtime 里开一次 run，加载 Memory；runtime 的工具调用经过 Permissions，审批请求和消息从 Outbox 回到你；内核状态存在 SQLite。runtime 有内置的 pi 和外部 harness（Codex、dsh）。">
 
   <div class="abs title"><b>aoa</b><span>一个常驻 agent 的内核</span></div>
 
@@ -112,36 +117,33 @@ body {
   </div>
 
   <div class="abs region kernel"><div class="label">内核<small>五个原语</small></div></div>
-  <div class="abs tile prim col1" style="top:128px">
+  <div class="abs tile prim col" style="top:128px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
     <div class="tx"><b>Inbox</b><span>收事件</span></div>
   </div>
-  <div class="abs tile col2" style="top:128px">
-    <div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg></div>
-    <div class="tx"><b>Worker</b><span>认领事件，开 run</span></div>
-  </div>
-  <div class="abs tile prim col1" style="top:236px">
+  <div class="abs tile prim col" style="top:224px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg></div>
     <div class="tx"><b>Timers</b><span>定时唤醒</span></div>
   </div>
-  <div class="abs tile prim col2" style="top:236px">
+  <div class="abs tile prim col" style="top:304px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
     <div class="tx"><b>Memory</b><span>指令 · 笔记 · 进度</span></div>
   </div>
-  <div class="abs tile prim col1" style="top:344px">
-    <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div>
-    <div class="tx"><b>Outbox</b><span>消息和审批请求</span></div>
-  </div>
-  <div class="abs tile prim col2" style="top:344px">
+  <div class="abs tile prim col" style="top:384px">
     <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></div>
     <div class="tx"><b>Permissions</b><span>裁决工具调用</span></div>
+  </div>
+  <div class="abs tile prim col" style="top:480px">
+    <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div>
+    <div class="tx"><b>Outbox</b><span>消息和审批请求</span></div>
   </div>
 
   <div class="abs region store">
     <svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
-    <b>SQLite</b><span>全部状态在一个文件里</span>
+    <b>SQLite</b><span>一个文件</span>
   </div>
 
+  <div class="abs region worker"><div class="label">Worker<small>认领事件，开一次 run</small></div></div>
   <div class="abs region runtime"><div class="label">Runtime<small>每个 agent 选一个</small></div></div>
   <div class="abs card builtin">
     <span class="kind">Built-in</span>
@@ -156,28 +158,27 @@ body {
     <p>用自己的工具和沙箱，审批经内核转给你</p>
   </div>
 
-  <svg viewBox="0 0 1076 540" width="1076" height="540" aria-hidden="true">
+  <svg viewBox="0 0 906 672" width="906" height="672" aria-hidden="true">
     <defs>
       <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path class="tip" d="M0,0 L10,5 L0,10 z"/>
       </marker>
     </defs>
-    <path class="edge" marker-end="url(#tip)" d="M194,158 H245"/>
-    <text class="lbl" x="219" y="148" text-anchor="middle">任务</text>
-    <path class="edge" marker-end="url(#tip)" d="M246,374 H108 V191"/>
-    <text class="lbl" x="177" y="364" text-anchor="middle">消息</text>
-    <path class="edge" marker-end="url(#tip)" d="M341,234 V191"/>
-    <text class="lbl" x="353" y="216">到期</text>
-    <path class="edge" marker-end="url(#tip)" d="M436,158 H503"/>
-    <path class="edge dash" marker-end="url(#tip)" d="M599,190 V233"/>
-    <text class="lbl" x="611" y="216">加载</text>
-    <path class="edge" marker-end="url(#tip)" d="M504,374 H437"/>
-    <text class="lbl" x="470" y="364" text-anchor="middle">审批请求</text>
-    <path class="edge" marker-end="url(#tip)" d="M694,158 H809"/>
-    <text class="lbl" x="752" y="148" text-anchor="middle">run</text>
-    <path class="edge" marker-end="url(#tip)" d="M810,374 H695"/>
-    <text class="lbl" x="752" y="364" text-anchor="middle">工具调用</text>
-    <path class="edge" marker-start="url(#tip)" marker-end="url(#tip)" d="M470,430 V462"/>
+    <path class="edge" marker-end="url(#tip)" d="M194,156 H269"/>
+    <text class="lbl" x="231" y="146" text-anchor="middle">任务</text>
+    <path class="edge" marker-end="url(#tip)" d="M270,508 H108 V187"/>
+    <text class="lbl" x="189" y="498" text-anchor="middle">消息</text>
+    <path class="edge" marker-end="url(#tip)" d="M365,222 V187"/>
+    <text class="lbl" x="377" y="209">到期</text>
+    <path class="edge" marker-end="url(#tip)" d="M460,156 H569"/>
+    <text class="lbl" x="515" y="146" text-anchor="middle">认领</text>
+    <path class="edge dash" marker-end="url(#tip)" d="M570,332 H461"/>
+    <text class="lbl" x="515" y="322" text-anchor="middle">加载</text>
+    <path class="edge" marker-end="url(#tip)" d="M590,412 H461"/>
+    <text class="lbl" x="515" y="402" text-anchor="middle">工具调用</text>
+    <path class="edge" marker-end="url(#tip)" d="M365,442 V477"/>
+    <text class="lbl" x="377" y="464">审批请求</text>
+    <path class="edge" marker-start="url(#tip)" marker-end="url(#tip)" d="M365,562 V594"/>
   </svg>
 </div>
 </div>

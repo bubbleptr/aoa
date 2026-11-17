@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
-  <img alt="aoa 架构：事件进入内核的 inbox，worker 开一次 run 交给 runtime，工具调用经过权限，消息从 outbox 送回；状态存在 SQLite；runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/architecture-light.png">
+  <img alt="aoa 架构：任务进入内核的 Inbox；Worker 认领事件，在 runtime 里开一次 run 并加载 Memory；工具调用经过 Permissions，消息和审批请求从 Outbox 回到你；内核状态存在 SQLite。runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/architecture-light.png">
 </picture>
 
 - **五个原语**都在内核里：Inbox 收事件，Timers 到点唤醒，Memory 跨 run 保留指令、笔记、进度和已发消息，Permissions 决定每次工具调用能不能做，Outbox 发消息并重试送达。所有状态都在一个 SQLite 文件里，进程崩溃后能接着做。
