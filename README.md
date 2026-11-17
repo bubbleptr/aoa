@@ -9,7 +9,7 @@
 
 中文 · [English](README.en.md)
 
-一个常驻的 agent 内核：你交代任务，它在自己的分支上做完，只在需要你的时候找你。
+一个 Always-on Agent 的框架，采用 Inbox + Worker 模式 24x7 运行。你交代任务，它在自己的分支上做完，只在需要你的时候找你。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.png">

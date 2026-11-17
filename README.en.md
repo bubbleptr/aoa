@@ -9,7 +9,7 @@
 
 [中文](README.md) · English
 
-An always-on agent kernel: you hand it a task, it finishes the work on its own branch, and it only comes to you when it needs you.
+An Always-on Agent framework that runs 24x7 on an Inbox + Worker model. You hand it a task, it finishes the work on its own branch, and it only comes to you when it needs you.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-en-dark.png">
