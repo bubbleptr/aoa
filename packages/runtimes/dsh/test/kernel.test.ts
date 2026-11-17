@@ -21,6 +21,7 @@ afterEach(() => {
 const pingCount = { executions: 0 };
 const ping: ToolDef = {
   name: "ping",
+  risk: "low",
   description: "Counts how often it really ran.",
   schema: { type: "object", properties: {} },
   async execute() {

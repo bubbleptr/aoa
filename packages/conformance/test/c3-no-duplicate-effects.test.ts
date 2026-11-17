@@ -8,6 +8,8 @@ function externalWrite(idempotent = false): ToolDef & { effects: unknown[] } {
   return {
     name: "open_issue",
     description: "Opens an issue in an external tracker",
+    // Allowed without asking, so the test is about the journal, not the policy.
+    risk: "low",
     schema: { type: "object" },
     idempotent,
     effects,

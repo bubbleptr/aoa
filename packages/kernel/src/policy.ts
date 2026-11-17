@@ -20,7 +20,8 @@ export type Rule = { name: string; match(call: ToolCall, ctx: PolicyContext): De
 
 export type PolicyConfig = {
   /** Per tool name; a tool not listed is `high`. */
-  risk: Record<string, Risk>;
+  /** Overrides the tiers the tools carry. */
+  risk?: Record<string, Risk>;
   /** Checked in order, before the risk tier. */
   rules?: Rule[];
   /** Judges `medium` calls. Missing, throwing or `unsure` means the user decides. */
@@ -31,12 +32,13 @@ export type Verdict = { decision: Decision; basis: string };
 
 /** Decision order: first rule with an opinion, then the risk tier, `medium` through the classifier (spec §6.3). */
 export async function decide(policy: PolicyConfig | undefined, call: ToolCall, ctx: PolicyContext, toolRisk?: Risk): Promise<Verdict> {
-  if (!policy) return { decision: "allow", basis: "no policy" };
+  // No policy is no rules, no overrides and no classifier, never "allow everything" (spec §6.2: unknown calls defer).
+  policy ??= {};
   for (const rule of policy.rules ?? []) {
     const decision = rule.match(call, ctx);
     if (decision) return { decision, basis: `rule:${rule.name}` };
   }
-  const risk = policy.risk[call.tool] ?? toolRisk ?? "high";
+  const risk = policy.risk?.[call.tool] ?? toolRisk ?? "high";
   if (risk === "low") return { decision: "allow", basis: "risk:low" };
   if (risk === "high") return { decision: "defer", basis: "risk:high" };
   if (!policy.classify) return { decision: "defer", basis: "reviewer:missing" };

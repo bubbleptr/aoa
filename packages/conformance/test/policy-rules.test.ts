@@ -199,8 +199,10 @@ describe("default rules", () => {
 describe("decision order", () => {
   const call = { tool: "deploy", args: {} };
 
-  test("no policy at all allows everything", async () => {
-    expect((await decide(undefined, call, clean)).decision).toBe("allow");
+  test("without a policy a call still goes by its tool's tier: unknown waits, low runs, medium waits for the missing reviewer", async () => {
+    expect(await decide(undefined, call, clean)).toEqual({ decision: "defer", basis: "risk:high" });
+    expect(await decide(undefined, call, clean, "low")).toEqual({ decision: "allow", basis: "risk:low" });
+    expect(await decide(undefined, call, clean, "medium")).toEqual({ decision: "defer", basis: "reviewer:missing" });
   });
 
   test("an unlisted tool is high risk and waits", async () => {

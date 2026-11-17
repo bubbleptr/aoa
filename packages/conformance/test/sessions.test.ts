@@ -12,6 +12,7 @@ import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFact
 
 const whereAmI: ToolDef = {
   name: "where_am_i",
+  risk: "low",
   description: "Returns the session's working directory",
   schema: { type: "object" },
   async execute(_args, ctx) {

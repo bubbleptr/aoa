@@ -41,7 +41,7 @@ export type WorkerOptions = {
    * so it must be idempotent: return the same workdir when it already exists.
    */
   prepareSession?: (session: Session) => Promise<{ workdir: string }>;
-  /** Decides every tool call (spec §6). Without one, every call is allowed. */
+  /** Decides every tool call (spec §6). Without one, each call goes by its tool's own tier and an untiered tool waits. */
   policy?: PolicyConfig;
   /**
    * Who decides the agent's own tool calls (design §12). `kernel` (the default): every call goes through
