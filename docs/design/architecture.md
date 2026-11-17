@@ -48,7 +48,7 @@ interface Channel {
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
 | `apps/aoa` | CLI、`serve`、worktree 管理；经 `packages/sdk` 组装 agent |
 
-写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`runtime-pi` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
+写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`@aoa/sdk/tools/coding` 的 `codingTools` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
 
 runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消息时，内核把结局记成 `sent`。
 

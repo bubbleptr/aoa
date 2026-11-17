@@ -1,6 +1,5 @@
 import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
-import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/sdk/prompt";
-import { resultText } from "@aoa/sdk/prompt";
+import { type Answer, encode, renderAnswer, renderUserMessage, resultText } from "@aoa/sdk/prompt";
 import { Connection, RpcError, type SpawnCodex, spawnAppServer } from "./connection.ts";
 import type {
   ApprovalDecision,
@@ -147,6 +146,8 @@ class CodexRun {
     // `attempts` counts failed runs, so a non-zero one means an earlier attempt at these events stopped part way.
     const retry = this.input.events.some((e) => e.attempts > 0);
     const text = renderUserMessage(this.input, retry, renderCodexAnswer);
+    // Stopped while the thread was being set up: no turn starts.
+    if (this.stop && "failure" in this.stop) throw this.stop.failure;
     const started = await conn.request<TurnStartResponse>("turn/start", {
       threadId: thread.id,
       input: [{ type: "text", text, text_elements: [] }],

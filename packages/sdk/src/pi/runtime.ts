@@ -84,6 +84,8 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
   if (input.signal.aborted) onAbort();
 
   try {
+    // Stopped while the session was being set up: no model request starts.
+    input.signal.throwIfAborted();
     await session.prompt(renderUserMessage(input, retry), { expandPromptTemplates: false });
     await stop.stopping;
     if (stop.failure) throw stop.failure.error;
