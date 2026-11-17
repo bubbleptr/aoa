@@ -112,8 +112,10 @@ describe("dshRuntime: sessions", () => {
     expect(prompt.sessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(prompt.contentBlocks[0]).toEqual({ type: "text", text: expect.stringContaining("fix the widget") });
     expect(result).toEqual({ end: { kind: "silent" }, sessionRef: prompt.sessionId });
-    // The run waits for dsh to report idle, and shuts it down rather than leaving it running.
+    // The run waits for dsh to report idle, and shuts it down rather than leaving it running. dsh went by
+    // itself, so no signal was needed, and the run did not kill a process that had already exited.
     expect(fake.sent("shutdown")).toHaveLength(1);
+    expect(fake.kills).toEqual([]);
     expect(fake.live).toBe(0);
   });
 
@@ -243,6 +245,20 @@ describe("dshRuntime: approval requests from dsh's own tools", () => {
     expect(fake.kills).toEqual(["SIGTERM"]);
     expect(fake.live).toBe(0);
     expect(result.end).toEqual({ kind: "deferred", callId: "session-1:call-1" });
+  });
+
+  test("a dsh that answers shutdown and then takes a moment to exit is waited for, not killed", async () => {
+    const fake = new FakeDshServer();
+    fake.exitAfterMs = 30;
+    const { runtime } = setup(fake);
+
+    const result = await runtime.run(runInput());
+
+    expect(result.end).toEqual({ kind: "silent" });
+    // The answer to `shutdown` came first, but the run waited for the process itself and never signaled it.
+    expect(fake.sent("shutdown")).toHaveLength(1);
+    expect(fake.kills).toEqual([]);
+    expect(fake.live).toBe(0);
   });
 
   test("a wedged dsh that ignores shutdown and SIGTERM is killed with SIGKILL, and the run still ends", async () => {
@@ -408,7 +424,7 @@ describe("dshRuntime: aoa's tools over the MCP bridge", () => {
     expect(second.sessionRef).toBe(first.sessionRef);
   });
 
-  test("a run waits for a tool call that is still running before it stops dsh", async () => {
+  test("a run waits for a tool call that is still running, and refuses new calls once it is stopping", async () => {
     let release = () => {};
     let running = false;
     const slow: Tool = {
@@ -421,26 +437,34 @@ describe("dshRuntime: aoa's tools over the MCP bridge", () => {
         return { status: "ok", output: "done" };
       },
     };
+    const notify = recordingTool("notify", () => ({ status: "ok", output: "sent" }));
     const askUser = recordingTool("ask_user", () => ({ status: "deferred" }));
     let shutdownWhileRunning = -1;
+    let late: { text: string; isError: boolean } | null = null;
     const fake = new FakeDshServer([
       async (t) => {
         await t.toolCall("call-1", "mcp__aoa__slow", {});
         await t.toolCall("call-2", "mcp__aoa__ask_user", { question: "Which colour?" });
+        await t.toolCall("call-3", "mcp__aoa__notify", { body: "late" });
         const slowCall = t.mcp("slow", {});
         while (!running) await Bun.sleep(1);
         // A second call defers while the first is still inside the kernel: the run must not end yet.
         await t.mcp("ask_user", { question: "Which colour?" });
         shutdownWhileRunning = fake.sent("shutdown").length;
+        // A call that arrives once the run is stopping never reaches the kernel.
+        late = await t.mcp("notify", { body: "late" });
         release();
         await slowCall;
       },
     ]);
     const { runtime } = setup(fake);
 
-    const result = await runtime.run(runInput({ tools: [slow, askUser.tool] }));
+    const result = await runtime.run(runInput({ tools: [slow, notify.tool, askUser.tool] }));
 
     expect(shutdownWhileRunning).toBe(0);
+    expect(late).toMatchObject({ isError: true });
+    expect(late!.text).toContain("stopping");
+    expect(notify.calls).toEqual([]);
     expect(result.end).toEqual({ kind: "deferred", callId: "session-1:call-2" });
     expect(fake.sent("shutdown")).toHaveLength(1);
     expect(fake.live).toBe(0);

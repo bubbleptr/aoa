@@ -94,6 +94,8 @@ export class FakeDshServer {
   answerShutdown = true;
   /** Whether the process stays alive after answering `shutdown`, so a test can watch what comes next. */
   stayAfterShutdown = false;
+  /** How long after answering `shutdown` the process takes to exit, as dsh's flush and teardown do. */
+  exitAfterMs = 0;
   /** Whether SIGTERM and SIGKILL are ignored, as a wedged process would ignore them. */
   ignoreSignals = false;
   /** What `session/wait` answers: an error, when the server holds a live failure its log does not show. */
@@ -242,10 +244,14 @@ export class FakeDshServer {
               reply({});
             }
             if (this.stayAfterShutdown) return;
-            killed = true;
-            this.live--;
-            out.end();
-            exit("shutdown");
+            const gone = () => {
+              killed = true;
+              this.live--;
+              out.end();
+              exit("shutdown");
+            };
+            if (this.exitAfterMs > 0) setTimeout(gone, this.exitAfterMs);
+            else gone();
             return;
           default:
             send({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: `unknown method ${m.method}` } });

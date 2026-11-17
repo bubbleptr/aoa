@@ -128,6 +128,8 @@ class DshRun {
   private endError: Error | null = null;
   /** What `shutdown` answered with an error, if it did; the run is over by then, so it is only reported. */
   private shutdownError: Error | null = null;
+  /** Whether the child has exited, so the run does not signal a process that is already gone or going. */
+  private exited = false;
   /** Whether `session/prompt` was sent: an idle before that says nothing about this run's work. */
   private prompting = false;
   private prompted = false;
@@ -228,7 +230,8 @@ class DshRun {
       this.finished = true;
       this.bridge?.close();
       if (this.patch !== null) rmSync(this.patch, { force: true });
-      proc?.kill("SIGKILL");
+      // A process that exited on its own (after `shutdown`, or by crashing) is left alone.
+      if (!this.exited) proc?.kill("SIGKILL");
     }
   }
 
@@ -388,8 +391,8 @@ class DshRun {
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => resolve(false), ms);
       proc.exited.then(
-        () => (clearTimeout(timer), resolve(true)),
-        () => (clearTimeout(timer), resolve(true)),
+        () => (clearTimeout(timer), (this.exited = true), resolve(true)),
+        () => (clearTimeout(timer), (this.exited = true), resolve(true)),
       );
     });
   }
