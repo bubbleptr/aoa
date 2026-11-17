@@ -26,8 +26,8 @@ aoa 是按规范从头写的 always-on agent 内核，第一件事是写代码�
 export default {
   dataDir: "~/.aoa",
   repo: { path: "~/code/some-repo", base: "main" },
-  model: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
-  classifier: { provider: "anthropic", modelId: "...", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  model: { provider: "deepseek", modelId: "deepseek-v4-pro", apiKeyEnv: "DEEPSEEK_API_KEY" },
+  classifier: { provider: "deepseek", modelId: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
   // shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" },  // 可选
   // github: { owner, repo, userLogin, botLogin, appId, installationId, privateKeyPath },  // 可选
 };
