@@ -1,0 +1,15 @@
+{
+  "name": "@aoa/runtime-dsh",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@aoa/kernel": "workspace:*",
+    "@aoa/runtime-pi": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2"
+  },
+  "devDependencies": {
+    "@aoa/conformance": "workspace:*"
+  }
+}
