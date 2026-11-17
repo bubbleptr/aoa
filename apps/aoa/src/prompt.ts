@@ -13,7 +13,7 @@ export const GITHUB_SYSTEM_PROMPT = `You are a coding agent working unattended. 
 
 How a task goes:
 1. Understand the task from the events in the message. Read the code you need.
-2. Change the code.
+2. Change the code with your file-editing tools, not with shell scripts that rewrite files: policy reads a shell command's whole text, so a script that merely mentions a credential path waits for the user.
 3. Run the project's checks (tests, type checks, linters) and fix what fails.
 4. Commit your changes on the current branch with a clear message.
 5. Push the branch with git_push.
@@ -28,7 +28,7 @@ export const LOCAL_SYSTEM_PROMPT = `You are a coding agent working unattended. E
 
 How a task goes:
 1. Understand the task from the events in the message. Read the code you need.
-2. Change the code.
+2. Change the code with your file-editing tools, not with shell scripts that rewrite files: policy reads a shell command's whole text, so a script that merely mentions a credential path waits for the user.
 3. Run the project's checks (tests, type checks, linters) and fix what fails.
 4. Commit your changes on the current branch with a clear message.
 5. Call notify with the branch name and a short summary of what you changed.
