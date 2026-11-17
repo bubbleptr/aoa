@@ -4,6 +4,7 @@ import {
   Scheduler,
   Worker,
   askUserTools,
+  closeSession,
   memoryTools,
   outboxTools,
   systemClock,
@@ -20,6 +21,7 @@ import {
   type RatePolicy,
   type RunOutcome,
   type Session,
+  type SessionId,
   type Store,
   type ToolDef,
 } from "@aoa/kernel";
@@ -58,12 +60,24 @@ export type AgentSpec = {
      * session after a crash, so it must return the same directory when it already exists.
      */
     prepare?(session: Session): Promise<{ workdir: string }>;
+    /**
+     * Removes a closed session's working directory. The session's next `prepare`, if an event reopens it, waits
+     * for this to end. An error is logged, not thrown.
+     */
+    cleanup?(session: Session, workdir: string): Promise<void>;
   };
 };
 
 export interface Agent {
   readonly name: string;
   readonly inbox: InboxId;
+  /**
+   * Closes a session: cancels its timers, drops a call it waits on, clears its working directory, then calls
+   * `afterClose` with nothing awaited in between and runs `session.cleanup`. A session a run is using right now is
+   * left alone ("busy"): closing it would pull the directory out from under the run, and waiting for the run would
+   * deadlock a caller inside it. Try again later.
+   */
+  closeSession(id: SessionId, o?: { afterClose?: () => void }): Promise<"closed" | "busy">;
   /** Tells the worker and the dispatcher to look again now. Interim: appends through the agent wake them from step 4. */
   wake(): void;
   /** One pass of each loop, for tests and for hosts that do not run the loops. */
@@ -105,6 +119,8 @@ export function createHost(o: HostOptions): Host {
   const clock = o.clock ?? systemClock;
   const log = o.log ?? ((line: string) => console.error(`${new Date().toISOString()} ${line}`));
   const all: Loops[] = [];
+  /** Cleanups in progress, by session; preparing that session waits for its cleanup. */
+  const cleanups = new Map<SessionId, Promise<void>>();
 
   let settle = () => {};
   const stopped = new Promise<void>((resolve) => (settle = resolve));
@@ -140,7 +156,14 @@ export function createHost(o: HostOptions): Host {
       ...(spec.policy ? { policy: spec.policy } : {}),
       ...(spec.permissions ? { permissions: spec.permissions } : {}),
       debounceMs: spec.debounceMs ?? DEFAULT_DEBOUNCE_MS,
-      ...(spec.session?.prepare ? { prepareSession: (s: Session) => spec.session!.prepare!(s) } : {}),
+      ...(spec.session?.prepare
+        ? {
+            prepareSession: async (s: Session) => {
+              await cleanups.get(s.id);
+              return spec.session!.prepare!(s);
+            },
+          }
+        : {}),
       onRunStart: (r) => runLine(`run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
       onRunEnd: (r) => {
         runLine(runEndLine(r));
@@ -150,9 +173,34 @@ export function createHost(o: HostOptions): Host {
     const scheduler = new Scheduler({ ...deps, onFire: () => worker.wake() });
     const poller = channel ? new ChannelPoller({ ...deps, channel, onEvents: () => worker.wake() }) : null;
 
+    const inRun = (id: SessionId) => store.tx((t) => t.listEvents(spec.inbox)).some((e) => e.status === "in_run" && e.resume === id);
+
+    async function close(id: SessionId, o: { afterClose?: () => void } = {}): Promise<"closed" | "busy"> {
+      if (inRun(id)) return "busy";
+      // Nothing awaited until the cleanup is registered: an event that reopens the session finds no working
+      // directory, so the worker prepares one, and preparing waits for the cleanup.
+      const session = store.tx((t) => {
+        const current = t.getSession(id)!;
+        t.setSessionWorkdir(id, null);
+        return current;
+      });
+      closeSession(store, id);
+      o.afterClose?.();
+      const cleanup = spec.session?.cleanup;
+      if (session.workdir !== null && cleanup) {
+        const running = cleanup(session, session.workdir)
+          .catch((err) => log(`cleaning up session ${id} failed: ${errorText(err)}`))
+          .finally(() => cleanups.delete(id));
+        cleanups.set(id, running);
+        await running;
+      }
+      return "closed";
+    }
+
     const handle: Agent = {
       name: spec.name,
       inbox: spec.inbox,
+      closeSession: close,
       wake: () => {
         worker.wake();
         dispatcher?.wake();

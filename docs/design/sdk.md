@@ -16,11 +16,11 @@ function createHost(o: { store: Store; clock?: Clock; log?: (line: string) => vo
 interface Host {
   agent(spec: AgentSpec): Agent;          // start() 之前登记
   readonly agents: Agent[];
-  start(): Promise<void>;                 // 拿 store.lock()；每个 agent 的 worker、scheduler、dispatcher、poller
+  start(): void;                          // 拿 store.lock()；每个 agent 的 worker、scheduler、dispatcher、poller
   stop(): Promise<void>;                  // 发 abort，等在途的 run 结束
+  readonly stopped: Promise<void>;        // stop() 之后，或某个循环死了、宿主停下其余的之后
   serving(): { pid: number; since: number } | null;   // 别的宿主是否在跑循环
   watch(fn: () => void): () => void;      // 库里有提交（包括别的进程），调用方自己再读
-  drain(): Promise<void>;                 // 不起常驻循环，把能做的做完：测试用
   messages(o?: { since?: MsgId; limit?: number }): QueuedOutMsg[];   // 所有 agent 按入队顺序合并
   close(): void;
 }
@@ -30,12 +30,12 @@ type AgentSpec = {
   description?: string;                   // 写进 send_to 的说明
   inbox: InboxId;
   runtime: KernelRuntime | HarnessRuntime;
-  tools?: ToolDef[];                      // 内核再加上 timers、notify、memory、ask_user、follow
+  tools?: ToolDef[] | ((builtins: ToolDef[]) => ToolDef[]);   // 列表接在内置工具（timers、notify、memory、ask_user）后面；函数自己排
   memory?: Memory;
   policy?: { rules?: Rule[]; classify?: Classify; risk?: Record<string, Risk> };
   channel?: Channel;
   session?: {
-    prepare?(s: Session): Promise<string | null>;    // 工作目录，默认没有
+    prepare?(s: Session): Promise<{ workdir: string }>;   // 工作目录，默认没有
     cleanup?(s: Session, workdir: string): Promise<void>;   // 关 session 后，没有 run 在用时调
   };
   debounceMs?: number;                    // 默认 2000（D-EVT-3）
@@ -48,7 +48,8 @@ interface Agent {
   readonly inbox: InboxId;
   append(e: NewEvent, o?: { refuseWhileAwaitingApproval?: boolean }): AppendResult;
   answer(callId: CallId, a: { verdict: "approve" | "deny"; text?: string; via?: string }): AppendResult;
-  closeSession(id: SessionId): Promise<void>;
+  closeSession(id: SessionId, o?: { afterClose?(): void }): Promise<"closed" | "busy">;
+  step: { worker(); scheduler(); dispatcher(); poller() };   // 每个循环走一遍：测试用，也给不跑循环的宿主
   followUp(t: FollowUpInput): TimerId;
   schedule(t: ScheduleInput & { id: string }): TimerId;   // 同一个 id 再调是更新，不是新增
   cancelTimer(id: TimerId): boolean;
@@ -73,7 +74,9 @@ type QueuedOutMsg = OutMsg & { agent: string; seq: number; sentAt: number | null
 - 锁是 store 的能力：`Store` 多一个 `lock(): Lock | null`。SQLite 文件库用文件锁，`:memory:` 返回 null（同一个进程里本来就只有一个宿主）。拿到锁的宿主每 5 秒记一次心跳，`serving()` 读的就是它，取代 `apps/aoa` 里的 `serve:started`/`serve:seen`。不跑循环的宿主照样能追加、答复、读和 `watch`，就是现在 `aoa send`、`aoa answer`、`aoa web` 的用法。
 - `append` 的 `refuseWhileAwaitingApproval`：目标 session 停在审批（不是 `ask_user` 的提问）上时，在同一个事务里拒绝并抛错。`aoa mcp` 的 `send(to)` 靠它，免得聊天里的文字被改写成审批的结论（§12「主会话接入」）。
 - `answer` 返回 `AppendResult`：同一个调用的第二次答复是 `dropped`，观察页据此回 409。
-- `closeSession` 先关 session、取消它的定时器；有 run 正在用这个 session 时，等那次 run 结束才调 `cleanup`。同一个 session 被新事件重开时，`prepare` 等上一次 `cleanup` 做完。这就是 `wiring.ts` 现在 `inRun` 加 `removals` 队列做的事。
+- `closeSession` 关 session、取消它的定时器、丢掉它在等的调用、清掉工作目录，然后不经任何等待调 `afterClose`，再调 `cleanup`。有 run 正在用这个 session 时什么都不做，返回 `"busy"`，由调用方以后再试：关掉会把目录从 run 脚下抽走，而等 run 结束会让 run 里的调用方（比如某个工具）死锁。同一个 session 被新事件重开时，`prepare` 等上一次 `cleanup` 做完。`afterClose` 给的是「和关闭同步发生」的位置：`apps/aoa` 在这里把 `aoa close` 的声明标为已生效，这样就算之后清理时崩了，被新事件重开的 session 也不会被同一条声明再关一次。
+- `follow` 不是内置工具：本地模式刻意没有它（§8），GitHub 模式由应用加上。
+- `step` 取代原来设想的 `drain()`：一致性测试和应用的测试要的是单个循环走一遍并看它的返回值（比如这次送出了几条），一个整体的 `drain()` 给不了。
 - `schedule` 必须带调用方给的 `id`：启动脚本每次都调 `schedule`，没有 id 的话每重启一次库里就多一条周期定时器。同 id 再调时更新间隔、锚点和 payload，下次触发时间按新的间隔重算。`cancelTimer` 能撤任何定时器；agent 自己的 `cancel_wake` 仍然只能撤自己 session 的。
 - 「谁的话算数」由追加事件的一方标 `trusted`，SDK 不判断调用者是谁。审批只经 `answer` 或可信的 `user_message` 生效（§6、I-PRM-2）。
 - 密钥不经 SDK：runtime 和分类器拿到的是已经读出来的 key，从环境变量里删掉是应用的事（现在 `assemble` 做的那一步留在 `apps/aoa`）。
@@ -90,7 +93,7 @@ store 只有 SQLite 一个实现，但 SDK 的公开类型里不出现 `SqliteSt
 ## 策略
 
 - 默认安全：不传 `policy` 时不再全部放行，而是按每个工具的风险等级走，未知工具延后。现在内核 `!policy` 就放行，使用者容易以为有默认保护。
-- 风险等级跟着工具走：`ToolDef` 多一个 `risk?: Risk`。内核自带的工具（timers、notify、memory、follow、`send_to`）自己标 `low`，`ask_user` 不经风险；编码工具包里的工具自己标等级。`policy.risk` 只用来覆盖。现在 `low` 的名单写死在 `apps/aoa/src/policy.ts`，SDK 用户一开 `policy`，连 `notify` 都会停下来等审批。
+- 风险等级跟着工具走：`ToolDef` 多一个 `risk?: Risk`。内核自带的工具（timers、notify、memory、`send_to`、`follow`）自己标 `low`，`ask_user` 不经风险；编码工具包里的工具自己标等级。`policy.risk` 只用来覆盖。现在 `low` 的名单写死在 `apps/aoa/src/policy.ts`，SDK 用户一开 `policy`，连 `notify` 都会停下来等审批。
 - 规则只有一张有序的表，SDK 不往里拼任何东西。`apps/aoa` 现在分 `ahead` 和 `rules` 两段，是因为审查的只读拦截要排在凭据路径的延后之前，本地 `git push` 的延后要排在禁止强推之后；这种顺序由调用方自己拼表决定。
 - 编码相关的规则跟着编码工具走：内核的 `defaultRules`（sudo、强推、git 配置、`curl | sh`、凭据路径、tainted 时联网、只读命令）和 `apps/aoa` 的 `outsideWorktree` 都搬进 `@aoa/sdk/tools/coding`，导出成数组，由调用方放进自己的规则表。内核本身不带规则。
 - 分类器能读 session：`Classify` 的上下文多一个只读的 `read`（同 `Agent.read`），审核模型（§12「审核模型」）不用再绕过 agent 直接扫 store。它仍然只拿得到库里的东西，拿不到调用结果，§6.2 的要害不变。
@@ -166,7 +169,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 ## 步骤
 
-每步单独提交，前一步是后一步的前提。
+每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段到对应的步骤再去掉：`AgentSpec.permissions`（第 3 步换成 runtime 的类型）、`AgentSpec.pollMs` 只在给了时才轮询（第 4 步 `poll` 变可选后改成默认 60 秒）、`agent.wake()`（第 4 步追加和答复自己唤醒）。`serve` 的心跳和每 5 秒的唤醒还在 `apps/aoa`，第 4 步随 `serving()` 和 `watch` 搬走。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
@@ -175,7 +178,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 | 3 | 两档 runtime 的类型取代 `permissions`，`signal` 进 `RunInput`；`runtimes/codex`、`runtimes/dsh` 搬到 `examples/` | 示例测试照跑；一致性测试用脚本 harness 覆盖六条约定；`stop()` 能停下卡住的 run |
 | 4 | `Store` 收口和 `lock()`；`agent.read`、`host.messages`、`host.watch`、`serving()`；定时器 id 和 `cancelTimer`；无 channel 的投递；`send_to` 进 SDK | 另一个进程写入后 1 秒内 `watch` 到；第二个 `start()` 抛错；重启后同 id 的 `schedule` 只有一条 |
 | 5 | 活动流：`RunInput.emit`，内核发工具事件，pi 发文字 | 脚本模型下按序收到 text、tool_start、tool_end；延后的调用和重放不发 `tool_start` |
-| 6 | 一个不写代码的示例 agent（每天汇总 issue，有事才找你），不传 channel，用 `drain()` 写测试 | 不依赖 git 就能跑通，证明 SDK 不绑在编码上 |
+| 6 | 一个不写代码的示例 agent（每天汇总 issue，有事才找你），不传 channel，用 `step` 写测试 | 不依赖 git 就能跑通，证明 SDK 不绑在编码上 |
 
 ## 暂缓
 

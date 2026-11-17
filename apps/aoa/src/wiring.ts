@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local";
-import { POLL_INTERVAL_MS, closeSession, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
+import { POLL_INTERVAL_MS, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/runtime-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/runtime-dsh";
 import { codingTools, piCompletion, piRuntime } from "@aoa/runtime-pi";
@@ -222,8 +222,6 @@ type Shared = {
   roster: Spec[];
   agents: Agent[];
   page: PageLink;
-  /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
-  removals: Map<string, Promise<void>>;
   host: Host;
 };
 
@@ -267,7 +265,6 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     roster,
     agents: [],
     page: new PageLink(),
-    removals: new Map(),
     host: createHost({ store, clock, log: seams.log ?? defaultLog }),
   };
   for (const spec of roster) shared.agents.push(assembleOne(spec, shared));
@@ -275,7 +272,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
 }
 
 function assembleOne(spec: Spec, s: Shared): Agent {
-  const { config, seams, store, clock, log, runGit, removals } = s;
+  const { config, seams, store, clock, log, runGit } = s;
   const named = spec.name !== DEFAULT_AGENT;
   const several = s.roster.length > 1;
   const paths = derivePaths(config, undefined, named ? spec.name : undefined);
@@ -387,15 +384,12 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     ...(front.polls ? { pollMs: POLL_INTERVAL_MS } : {}),
     ...(config.rate ? { rate: config.rate } : {}),
     session: {
-      prepare: async (session) => {
-        await removals.get(session.id);
-        return review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session);
-      },
+      prepare: (session) => (review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session)),
+      // The branch stays: it is the work.
+      cleanup: (session, workdir) =>
+        trees.remove(workdir).catch((err) => log(`removing the worktree of session ${session.id} failed: ${errorText(err)}`)),
     },
   });
-
-  const inRun = (sessionId: string) =>
-    store.tx((t) => t.listEvents(inboxId)).some((e) => e.status === "in_run" && e.resume === sessionId);
 
   async function lookUp(closeFinished: boolean): Promise<void> {
     const sessions = store.tx((t) => t.listSessions(inboxId));
@@ -403,25 +397,9 @@ function assembleOne(spec: Spec, s: Shared): Agent {
       if (closeFinished && s.status === "closed") continue;
       const reason = await front.finished(s.id);
       if (!closeFinished || reason === null) continue;
-      // Closing would pull the worktree out from under a run in flight; a later check gets it.
-      if (inRun(s.id)) continue;
-      // No await from here until the removal is registered: an event that reopens the session finds no
-      // workdir, so the worker prepares one, and preparing waits for the removal to finish.
-      const workdir = store.tx((t) => {
-        const current = t.getSession(s.id)!.workdir;
-        t.setSessionWorkdir(s.id, null);
-        return current;
-      });
-      closeSession(store, s.id);
-      front.closed(s.id);
-      if (workdir !== null) {
-        const removal = trees
-          .remove(workdir)
-          .catch((err) => log(`removing the worktree of session ${s.id} failed: ${errorText(err)}`))
-          .finally(() => removals.delete(s.id));
-        removals.set(s.id, removal);
-        await removal;
-      }
+      // A session a run is using is left for a later check. The declaration is marked applied in step with the close,
+      // so a session that a later event reopens is not closed again by it.
+      if ((await hosted.closeSession(s.id, { afterClose: () => front.closed(s.id) })) === "busy") continue;
       log(`session ${s.id} closed: ${reason}`);
     }
   }
