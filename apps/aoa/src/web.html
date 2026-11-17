@@ -125,6 +125,14 @@ details.file .note:empty { display: none; }
 .mem-group { border-top: 1px solid var(--line-soft); }
 .mem-group h3 { margin: 0; padding: 10px 16px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .mem-group .missing { padding: 4px 16px 10px; color: var(--muted); font-size: 12px; }
+details.told-group > summary { display: flex; justify-content: space-between; align-items: baseline; padding-right: 16px; cursor: pointer; list-style: none; }
+details.told-group > summary::-webkit-details-marker { display: none; }
+details.told-group > summary h3::before { content: "▸ "; }
+details.told-group[open] > summary h3::before { content: "▾ "; }
+details.told-group > summary .meta { color: var(--muted); font-size: 12px; }
+ol.told { list-style: none; margin: 0; padding: 0 16px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+ol.told .when { color: var(--muted); font-family: var(--mono); }
+ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
 .mem-group .missing .path { font-family: var(--mono); color: var(--text); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -209,9 +217,10 @@ details.file .note:empty { display: none; }
     <div class="panel-head"><h2 id="h-memory">Memory</h2><span class="muted" id="memory-summary"></span></div>
     <div class="extra mono" id="memory-root"></div>
     <div class="extra" id="memory-writes"></div>
-    <div class="mem-group"><h3>Loaded into every run</h3><div id="mem-resident"></div></div>
-    <div class="mem-group"><h3>Progress · loaded into its own task's runs</h3><div id="mem-progress"></div></div>
-    <div class="mem-group"><h3>Notes · read when the agent needs them</h3><div id="mem-notes"></div></div>
+    <div class="mem-group"><h3>User instructions · loaded into every run</h3><div id="mem-instructions"></div></div>
+    <div class="mem-group"><h3>User notes · read when the agent needs them</h3><div id="mem-notes"></div></div>
+    <div class="mem-group"><h3>Task progress · loaded into its own task's runs</h3><div id="mem-progress"></div></div>
+    <details class="mem-group told-group"><summary><h3>Past messages · loaded into every run</h3><span class="meta" id="told-count"></span></summary><ol class="told" id="mem-told"></ol></details>
     <div class="mem-group" id="mem-other-group"><h3>Other files · not part of any run</h3><div id="mem-other"></div></div>
   </section>
 </aside>
@@ -590,7 +599,7 @@ function memoryFile(f) {
   if (!m) {
     const details = el("details", "file");
     // Only on creation: after that, open or closed is the reader's choice.
-    details.open = f.kind === "instructions" || f.kind === "index";
+    details.open = f.kind === "instructions";
     const summary = el("summary");
     const meta = el("span", "meta");
     const name = el("span", "path", displayName(f));
@@ -632,22 +641,20 @@ function renderMemory(s) {
   const paths = new Set(m.files.map((f) => f.path));
   for (const path of [...memoryEls.keys()]) if (!paths.has(path)) memoryEls.delete(path);
   const of = (kind) => m.files.filter((f) => f.kind === kind);
-  const resident = ["instructions", "index"].map((kind) => {
-    const [f] = of(kind);
-    return f ? memoryFile(f) : missingFile(kind);
-  });
-  placeFiles("mem-resident", resident);
-  placeFiles("mem-progress", of("progress").map(memoryFile), "No progress files yet.");
+  // index.md is the agent's own table of contents for notes and progress; the groups below already show both.
+  const [instructions] = of("instructions");
+  placeFiles("mem-instructions", [instructions ? memoryFile(instructions) : missingFile("instructions")]);
   placeFiles("mem-notes", of("notes").map(memoryFile), "No notes yet.");
+  placeFiles("mem-progress", of("progress").map(memoryFile), "No progress files yet.");
   const other = of("other").map(memoryFile);
   document.getElementById("mem-other-group").hidden = other.length === 0;
   placeFiles("mem-other", other);
+  renderTold(m.told);
   return newKeys("memory", m.files.map((f) => f.path + ":" + f.mtime));
 }
 
 const MISSING = {
   instructions: ["instructions.md", "not written yet. Your standing instructions to the agent; every run follows them, and only you edit this file."],
-  index: ["index.md", "not written yet. The agent keeps it as the list of its notes and progress files."],
 };
 const missingEls = new Map();
 
@@ -671,6 +678,15 @@ function placeFiles(id, items, emptyText) {
   }
   items.forEach((item, i) => { if (list.children[i] !== item) list.insertBefore(item, list.children[i] || null); });
   while (list.children.length > items.length) list.lastElementChild.remove();
+}
+
+function renderTold(told) {
+  document.getElementById("told-count").textContent = told.length ? plural(told.length, "message") : "none yet";
+  document.getElementById("mem-told").replaceChildren(...told.map((msg) => {
+    const li = el("li");
+    li.append(el("div", "when", clockTime(msg.createdAt) + (msg.thread ? " · " + msg.thread : "")), el("div", "body", msg.body));
+    return li;
+  }));
 }
 
 /** Looks the rows up when it runs: a later update may have replaced the panel's list since. */
