@@ -279,6 +279,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - `serve` 必须配分类器。`bash` 是中风险，没有分类器时，只读白名单之外的每条命令都会停下来等你，写代码的循环转不起来。
 - 文件工具的路径落在任务的 worktree 之外时延后。
 - worktree 建在数据目录 `~/.aoa` 下，而凭据规则会拦提到 `~/.aoa` 的命令。所以规则先把指向本 session 自己 worktree 的绝对路径改写成相对路径再判断；用 `..` 爬出去的、别的 session 的 worktree、数据目录里其余的东西照旧交给你。写成 `~/.aoa/worktrees/…` 的形式不会被改写，仍然会问你。
+- 凭据规则不看没有 shell 读的 heredoc 正文：`python3 - <<'EOF'`、`cat > notes.md <<EOF` 这类正文是数据或另一种语言的代码，里面提到 `~/.aoa` 不等于 shell 去打开它。自用数据里（2026-11-16/17）这条规则问过的 6 次里有 3 次就是脚本改文档时正文写着「`~/.aoa` 规则」，都被批准了。开头那一行里有 `sh`、`bash`、`zsh`、`dash`、`ksh`、`eval`、`source` 时正文照旧检查；`<<<`、开头那行本身、终止符之后的命令都照旧检查；找不到终止符时整条命令照旧检查。代价：python、node 的 heredoc 里真去读凭据的代码也过了这条规则，落到风险等级和分类器，和一个脚本文件去读凭据是同一种漏洞（规则是文本匹配，本来就绕得过去，见 §6）。
 - GitHub 模式：PR 的状态存在 `pull_states` 表里，由存储层直接提供，内核不知道 PR。`serve` 每 5 分钟查一次；PR 合并或关闭后关掉 session、删掉 worktree。之后再来事件会重开 session，在原分支上重建 worktree。
 - `aoa status --refresh` 只更新 PR 状态，不关 session；本地模式下它什么都不做。
 - 本地模式声明的结局存在 `declared_results` 表里，一次声明只生效一次：`serve` 关掉 session 后，之后用 `send --to` 重开的 session 不会被同一条声明再关掉。
@@ -301,7 +302,7 @@ C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve
 - 只读是约定，不是隔离：审查 agent 的 shell 还是你的 shell，重定向、`sed -i` 照样能写文件，文本匹配也能被绕开（§6）。它防的是审查 agent 顺手提交或改分支，不是防一个有意破坏的模型。复查「新测试去掉修复后会失败」用 `git restore --source=<base> -- <文件>` 再 `git restore -- .`，这两条不在拦截之列。
 - 审查用的 worktree 停在被审分支的提交上（`git worktree add --detach <目录> <sha>`），因为分支本身已经在实现 agent 的 worktree 里检出，git 不允许同一分支检出两次。分支在准备 worktree 时才解析成提交；事件里没有分支时停在 `base`。分支名来自模型，只按 `refs/heads/<名字>` 解析，交给 git 的只有 sha。`send_to` 和 `aoa send --branch` 在追加之前就检查分支存在，不存在直接报错，而不是让审查 agent 的事件重试三次后进死信。`branch` 只能发给审查 agent。
 - 新工具 `send_to({ agent, text, branch? })`，只在配置了不止一个 agent 时出现，目标必须是另一个已配置的 agent。它往目标 inbox 追加一个事件，来源是 `agent_message`。规范 §3.2 的 `EventSource` 里没有这一项，这里加上，规范不改。追加之后唤醒目标的 worker（所有 agent 在同一个进程里）。去重键由这次调用派生，崩溃后重放不会追加第二条。
-- agent 之间的消息不可信（`trusted = false`）：另一个 agent 的话是模型写的，里面可能带着它从仓库里读到的、被注入的文本。收到它的 session 照现有规则被标为 tainted，之后联网和安装都要问你（§6），而且它永远不能变成审批的答复，因为只有可信的 `user_message` 才会被改写成 `approval_answer`。
+- agent 之间的消息和发送方 session 一样可信：发送方没有 tainted（只拿到过你的话和你的仓库）时 `trusted = true`，tainted 了就是 `false`，收到它的 session 照现有规则被标为 tainted，之后联网和安装都要问你（§6）。原先一律不可信，理由是消息里可能带着仓库里的注入文本；但 agent 读仓库本来就不算 taint，所以这条理由对单个 agent 并不成立。代价落在 harness 模式上：自用数据里 3 次 `admit` 全是实现 agent 和审查 agent 之间的交接。无论可不可信，它都不能变成审批的答复，因为只有可信的 `user_message` 才会被改写成 `approval_answer`。局限：harness 发送方（Codex 审查 agent）的 tainted 只反映内核交给它的事件，它自己的工具在沙箱允许时读到的外部内容内核看不到。
 - 线程：payload 是 `{ from, text, branch?, hop, replyThread? }`，`replyThread` 是发送方 session 的主线程。如果当前 session 是由同一个 agent 发来的 `agent_message` 开出的，新消息写回那条消息的 `replyThread`，于是恢复的是对方原来的 session；否则在目标那里开一条新线程。判断只读库里的事件，跨 run、跨重启都成立。所以实现 agent 第一次交审在审查 agent 那边开新任务，审查结论回到实现 agent 原来的任务；实现 agent 改完再交审，又是一个新的审查任务，停在新的提交上。
 - 跳数上限：`hop` 是这个 session 收到过的 `agent_message` 里最大的 `hop` 加 1，用户交代的任务里第一次 `send_to` 是 1。超过 4 时工具返回错误，让 agent 改为通知你，什么都不追加。这样「交审、结论、修改、再交审」能走完一轮，但两个 agent 不会无休止地来回。取 session 里的最大值而不是只看这次 run 的事件，是因为结论之后可能先有一次审批或用户插话，那一次 run 里没有 `agent_message`，计数不能因此归零。
 - 结论只是建议：审查 agent 通知你，并把同样的结论发给实现 agent。它不能合并（`git merge` 被拦）、不能关任务（没有对应的工具）、也不能回答审批。审批只由你用 `aoa answer` 回答；call id 在所有 agent 的 inbox 里找，答复写进持有那个调用的 inbox。

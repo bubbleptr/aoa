@@ -6,7 +6,7 @@ export type CallId = string;
 export type MsgId = string;
 export type TimerId = string;
 
-/** `agent_message`: another agent of the same process wrote it (design §12); it is never trusted. */
+/** `agent_message`: another agent of the same process wrote it (design §12); trusted only while its sender is untainted. */
 export type EventSource = "user_message" | "webhook" | "timer" | "background_job" | "approval_answer" | "agent_message";
 
 export type EventStatus = "pending" | "in_run" | "done" | "dropped" | "dead";

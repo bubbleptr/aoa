@@ -20,8 +20,9 @@ export type AgentMessage = {
 const asMessage = (payload: unknown) => payload as AgentMessage;
 
 /**
- * `send_to`: appends a message to another agent's inbox and wakes it. The message is never trusted: it is model
- * written and may carry text from the repository. A reply goes back to the thread the sender's session came from.
+ * `send_to`: appends a message to another agent's inbox and wakes it. The message is as trusted as the sending
+ * session: one that has only taken the user's word and the user's repository passes nothing from anyone else, while a
+ * tainted one passes its taint on (design §12). A reply goes back to the thread the sender's session came from.
  */
 export function sendToTool(o: {
   store: Store;
@@ -61,7 +62,7 @@ export function sendToTool(o: {
       const target = others().find((a) => a.name === agent);
       if (!target) throw new Error(`No other agent is named ${String(agent)}; the others are ${others().map((a) => a.name).join(", ")}.`);
 
-      const { hop, replyThread, ownThread } = o.store.tx((t) => {
+      const { hop, replyThread, ownThread, trusted } = o.store.tx((t) => {
         const mine = t.listEvents(o.inboxId).filter((e) => e.resume === ctx.sessionId && e.status !== "dropped");
         const incoming = mine.filter((e) => e.source === "agent_message").map((e) => asMessage(e.payload));
         const first = mine[0];
@@ -71,6 +72,7 @@ export function sendToTool(o: {
           // Only a session another agent opened answers into that agent's thread; any other send starts a new one.
           replyThread: opener?.from === target.name ? (opener.replyThread ?? null) : null,
           ownThread: t.primaryThread(ctx.sessionId),
+          trusted: !t.getSession(ctx.sessionId)!.tainted,
         };
       });
       if (hop > MAX_HOPS) {
@@ -95,7 +97,7 @@ export function sendToTool(o: {
       };
       appendEvent(
         { store: o.store, clock: o.clock, inboxId: target.inboxId },
-        { source: "agent_message", dedupeKey: `send_to:${ctx.sessionId}:${ctx.callId}`, payload, thread, trusted: false },
+        { source: "agent_message", dedupeKey: `send_to:${ctx.sessionId}:${ctx.callId}`, payload, thread, trusted },
       );
       target.worker.wake();
       return { sent: true, to: target.name, thread };

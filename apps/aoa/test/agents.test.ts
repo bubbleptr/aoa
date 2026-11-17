@@ -132,7 +132,7 @@ describe("named agents", () => {
     expect(w.events().filter((e) => e.source === "agent_message")).toHaveLength(0);
   });
 
-  test("send_to opens an untrusted review session; the reply resumes the implementer's original session", async () => {
+  test("send_to from an untainted task is trusted both ways; the reply resumes the implementer's original session", async () => {
     const w = await world();
     w.script(commit((branch) => call("send_to", { agent: "reviewer", text: "Adds greeting.txt; please review.", branch })));
     const thread = (await w.cli("send", "Add a greeting file.")).out.trim();
@@ -141,24 +141,42 @@ describe("named agents", () => {
     const branch = `aoa/${implementing!.id.slice(0, 8)}`;
 
     const [handoff] = w.events("reviewer");
-    expect(handoff).toMatchObject({ source: "agent_message", trusted: false });
+    expect(handoff).toMatchObject({ source: "agent_message", trusted: true });
     expect(handoff!.thread).not.toBe(thread);
     expect(payload(handoff!)).toEqual({ from: "default", text: "Adds greeting.txt; please review.", branch, hop: 1, replyThread: thread });
 
     w.script([call("send_to", { agent: "default", text: "Looks good." }), say("Sent.")], "reviewer");
     await w.drain("reviewer");
     const [reviewing] = w.sessions("reviewer");
-    expect(reviewing!.tainted).toBe(true);
-    expect(requestWith(w, "please review")).toContain("trusted=false");
+    expect(reviewing!.tainted).toBe(false);
+    expect(requestWith(w, "please review")).toContain("trusted=true");
 
     const verdict = w.events().at(-1)!;
-    expect(verdict).toMatchObject({ source: "agent_message", trusted: false, thread, resume: implementing!.id });
+    expect(verdict).toMatchObject({ source: "agent_message", trusted: true, thread, resume: implementing!.id });
     expect(payload(verdict)).toMatchObject({ from: "reviewer", text: "Looks good.", hop: 2 });
 
     w.script([say("Noted.")]);
     await w.drain();
     expect(w.sessions()).toHaveLength(1);
     expect(w.runs().map((r) => r.sessionId)).toEqual([implementing!.id, implementing!.id]);
+  });
+
+  test("a tainted task's message is untrusted and taints the agent it reaches", async () => {
+    const w = await world();
+    w.script([say("Read it.")]);
+    await w.cli("send", "Look at the issue someone filed.");
+    await w.drain();
+    const [implementing] = w.sessions();
+    w.agent.store.tx((t) => t.markTainted(implementing!.id));
+
+    w.script([call("send_to", { agent: "reviewer", text: "Please review." }), say("Sent.")]);
+    await w.cli("send", "--to", implementing!.id, "Hand it to the reviewer.");
+    await w.drain();
+    expect(w.events("reviewer")[0]).toMatchObject({ source: "agent_message", trusted: false });
+
+    w.script([say("Looked.")], "reviewer");
+    await w.drain("reviewer");
+    expect(w.sessions("reviewer")[0]!.tainted).toBe(true);
   });
 
   test("the fifth hop on one chain is refused and appends nothing, even from a later run of the session", async () => {
