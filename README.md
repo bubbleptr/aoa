@@ -1,6 +1,6 @@
 # aoa
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Bun](https://img.shields.io/badge/Bun-1.3-14151a?logo=bun&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
 ![Runtimes](https://img.shields.io/badge/runtimes-pi%20%7C%20Codex%20%7C%20dsh-6f8fd6)
