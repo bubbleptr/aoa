@@ -12,8 +12,8 @@
 An always-on agent kernel: you hand it a task, it finishes the work on its own branch, and it only comes to you when it needs you.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
-  <img alt="aoa architecture: the entry point is Claude over MCP, with webhooks planned; tasks enter the kernel's Inbox, the Worker loads Memory and starts a run on a runtime, tool calls come back to Permissions for a decision, messages and approval requests leave through the Outbox, and Timers wake things up when due; all state lives in SQLite; the runtimes are the built-in pi and the external harnesses Codex and dsh" src="docs/architecture-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-en-dark.png">
+  <img alt="aoa architecture: the entry point is Claude over MCP, with webhooks planned; tasks enter the kernel's Inbox, the Worker loads Memory and starts a run on a runtime, tool calls come back to Permissions for a decision, messages and approval requests leave through the Outbox, and Timers wake things up when due; all state lives in SQLite; the runtimes are the built-in pi and the external harnesses Codex and dsh" src="docs/architecture-en-light.png">
 </picture>
 
 - **Five primitives** live in the kernel: Inbox receives events, Timers wake things up when due, Memory keeps instructions, notes, progress and sent messages across runs, Permissions decides whether each tool call may run, and Outbox sends messages and retries delivery. All state is in one SQLite file, so the process picks up where it left off after a crash.
@@ -47,8 +47,8 @@ interface Channel {
 ### A tool call
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/tool-call-dark.png">
-  <img alt="A tool call: Permissions decides allow, block or defer, while Jev scores alongside for now and takes over the decision later; on defer the session is saved and the run ends, the Outbox sends an approval request, your answer comes back to the Inbox as an event, and a new run resumes the session and executes the call exactly once; in GitHub mode the host process adds credentials for the agent; a Codex review agent's approvals go to Codex's own auto review" src="docs/tool-call-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/tool-call-en-dark.png">
+  <img alt="A tool call: Permissions decides allow, block or defer, while Jev scores alongside for now and takes over the decision later; on defer the session is saved and the run ends, the Outbox sends an approval request, your answer comes back to the Inbox as an event, and a new run resumes the session and executes the call exactly once; in GitHub mode the host process adds credentials for the agent; a Codex review agent's approvals go to Codex's own auto review" src="docs/tool-call-en-light.png">
 </picture>
 
 - **Decisions are made outside the model**, in order: a rule table, a classifier, then defer. Read-only tools and read-only commands are allowed; `sudo`, force pushes, changing git config or remotes, and `curl | sh` are blocked outright; whatever the rules cannot decide goes to the classifier (a small model); high-risk calls and calls the classifier is unsure about are deferred, and unknown tools are deferred by default. Every decision is logged with its basis.
@@ -109,8 +109,8 @@ Without a `github` section you are in local mode: no GitHub, no pushes, no PRs.
 Add `agents` to the config to run several named agents in the same `serve`. The top-level fields are the default agent; each named agent has its own inbox, worker, role, permissions and memory, and fields it leaves out (`model`, `classifier`, `risk`) come from the top level.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/multi-agent-dark.png">
-  <img alt="Multiple agents: the implementation agent and the review agent each have their own Inbox, Worker and pi; the implementation agent hands its branch over with send_to and the review agent sends its findings back; both share one SQLite database whose tables are split by inbox" src="docs/multi-agent-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/multi-agent-en-dark.png">
+  <img alt="Multiple agents: the implementation agent and the review agent each have their own Inbox, Worker and pi; the implementation agent hands its branch over with send_to and the review agent sends its findings back; both share one SQLite database whose tables are split by inbox" src="docs/multi-agent-en-light.png">
 </picture>
 
 One inbox and one worker per agent: an inbox has at most one run at a time, while runs of different agents can proceed in parallel. Agents only cooperate by writing events into each other's inboxes, and all of them share one database and one clock.
