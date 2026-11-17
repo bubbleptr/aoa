@@ -944,7 +944,10 @@ function renderNotifyButton() {
 document.getElementById("notify").addEventListener("click", async () => {
   notifyOn = (await Notification.requestPermission()) === "granted";
   renderNotifyButton();
-  if (notifyOn) connect();
+  if (!notifyOn) return;
+  connect();
+  // The browser may say granted while the system keeps its notifications out of sight; this one shows which.
+  new Notification("aoa will notify you here", { body: "When a call starts waiting for you and this tab is not in front." });
 });
 
 /** Opens the agent a waiting call belongs to and puts the reader on its answer box. */

@@ -193,15 +193,14 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     async stop() {
       quiet();
       agent.page.url = null;
-      agent.page.notifying = 0;
-      for (const c of clients.keys()) {
+      for (const [c, forget] of [...clients]) {
         try {
           c.close();
         } catch {
           // Already closed by its client.
         }
+        forget();
       }
-      clients.clear();
       await server.stop(true);
     },
   };
@@ -249,7 +248,10 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
         // An event stream is idle between changes; the server's idle timeout would cut it.
         srv.timeout(req, 0);
         // A page that shows notifications itself says so; while one is open, approvals skip the desktop notification.
-        const notifies = new URL(req.url).searchParams.get("notify") === "1";
+        // Only the page's own script counts: the browser marks it same-origin, and any other site that holds this URL
+        // open (an image tag, a no-cors fetch) would otherwise mute every approval.
+        const notifies =
+          new URL(req.url).searchParams.get("notify") === "1" && req.headers.get("sec-fetch-site") === "same-origin";
         let self: ReadableStreamDefaultController<Uint8Array>;
         let open = true;
         const forget = () => {
@@ -258,8 +260,15 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
           clients.delete(self);
           if (notifies) agent.page.notifying--;
         };
-        // A closed tab aborts the request at once; the stream itself only notices on its next write.
-        req.signal.addEventListener("abort", forget);
+        // A closed tab aborts the request at once; the stream itself only notices on its next write, so end it here.
+        req.signal.addEventListener("abort", () => {
+          forget();
+          try {
+            self.close();
+          } catch {
+            // Already closed or cancelled.
+          }
+        });
         return new Response(
           new ReadableStream<Uint8Array>({
             start(c) {

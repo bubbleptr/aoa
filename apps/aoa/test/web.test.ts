@@ -301,7 +301,7 @@ describe("notifications while the page is open", () => {
 
     // A closed tab drops its connection; aborting the request is the same to the server.
     const tab = new AbortController();
-    const watching = await fetch(`${url}/events?notify=1`, { signal: tab.signal });
+    const watching = await fetch(`${url}/events?notify=1`, { signal: tab.signal, headers: { "sec-fetch-site": "same-origin" } });
     void watching.body!.getReader().read().catch(() => {});
     await until(() => w.agent.page.state()?.notifying === true);
 
@@ -327,5 +327,22 @@ describe("notifications while the page is open", () => {
 
     await server.stop();
     expect(w.agent.page.state()).toBeNull();
+    expect(w.agent.page.notifying).toBe(0);
+  });
+
+  test("only the page itself can say it notifies: another site, or a request without fetch metadata, mutes nothing", async () => {
+    const w = await world();
+    const server = web(w.agent, () => () => {});
+    const url = `http://127.0.0.1:${server.port}`;
+    for (const headers of [{ "sec-fetch-site": "cross-site" }, {}] as Record<string, string>[]) {
+      const tab = new AbortController();
+      const res = await fetch(`${url}/events?notify=1`, { signal: tab.signal, headers });
+      void res.body!.getReader().read().catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(w.agent.page.state()).toEqual({ url, notifying: false });
+      tab.abort();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await server.stop();
   });
 });
