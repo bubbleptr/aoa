@@ -62,4 +62,4 @@ aoa web                                 # 只读的实时观察页，http://127.
 | [observe.md](observe.md) | §12 观察页 `aoa web`、主会话接入 `aoa mcp` |
 | [harness.md](harness.md) | §12 权限归 harness 的 agent、Codex runtime、dsh runtime |
 | [status.md](status.md) | §13 没验证的、§14 暂缓 |
-| [sdk.md](sdk.md) | §15 内核层 SDK（已定，未实现） |
+| [sdk.md](sdk.md) | §15 内核层 SDK（进行中） |

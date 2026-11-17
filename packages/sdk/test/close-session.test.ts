@@ -30,10 +30,11 @@ function setup(scripts: ConstructorParameters<typeof ScriptedRuntime>[0] = []) {
   };
   const runtime = new ScriptedRuntime(scripts);
   const agent = host.agent({ name: "a", inbox: "in", runtime, session, debounceMs: 0 });
+  const other = host.agent({ name: "b", inbox: "other", runtime: new ScriptedRuntime(), session, debounceMs: 0 });
   const send = (text: string, n: number) =>
     appendEvent({ store, clock, inboxId: "in" }, { source: "user_message", dedupeKey: `m${n}`, payload: { text }, thread: "t", trusted: true });
   const sessionNow = () => store.tx((t) => t.listSessions("in"))[0]!;
-  return { store, runtime, agent, calls, send, sessionNow, hold: (p: Promise<void>) => (holdCleanup = p) };
+  return { store, runtime, agent, other, calls, send, sessionNow, hold: (p: Promise<void>) => (holdCleanup = p) };
 }
 
 test("closing an idle session closes it, clears its directory and cleans it up", async () => {
@@ -56,7 +57,7 @@ test("closing a session while its run is in flight changes nothing and says so",
   const w = setup([{ gate: held.promise }]);
   w.send("start", 1);
   const draining = w.agent.step.worker();
-  while (w.runtime.active === 0) await Bun.sleep(1);
+  await w.runtime.started(1);
   const { id } = w.sessionNow();
 
   let after = false;
@@ -80,11 +81,19 @@ test("a session reopened while its cleanup runs is prepared only after the clean
   const closing = w.agent.closeSession(id);
   w.send("one more", 2);
   const draining = w.agent.step.worker();
-  await Bun.sleep(5);
-  expect(w.calls).toEqual([`prepare ${id}`, `cleanup ${id} /work/${id}`]);
-
   held.open();
   await Promise.all([closing, draining]);
   expect(w.calls).toEqual([`prepare ${id}`, `cleanup ${id} /work/${id}`, `cleaned ${id}`, `prepare ${id}`]);
+  expect(w.sessionNow()).toMatchObject({ status: "open", workdir: `/work/${id}` });
+});
+
+test("an agent closes only its own sessions", async () => {
+  const w = setup();
+  w.send("start", 1);
+  await w.agent.step.worker();
+  const { id } = w.sessionNow();
+
+  await expect(w.other.closeSession(id)).rejects.toThrow(/no session/i);
+  await expect(w.agent.closeSession("missing")).rejects.toThrow(/no session/i);
   expect(w.sessionNow()).toMatchObject({ status: "open", workdir: `/work/${id}` });
 });

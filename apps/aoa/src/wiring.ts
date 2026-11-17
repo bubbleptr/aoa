@@ -91,7 +91,7 @@ export type Agent = {
   channel: Channel;
   openThread: Front["openThread"];
   /** What serve runs besides the loops. */
-  schedule: { polls: boolean; finishCheckMs: number };
+  schedule: { finishCheckMs: number };
   statusColumns: ModeColumns;
   /** Wakes the agent's worker and dispatcher, for writes this process made outside a run. */
   wake: HostAgent["wake"];
@@ -419,7 +419,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     mode: front.mode,
     channel,
     openThread: front.openThread,
-    schedule: { polls: front.polls, finishCheckMs: front.finishCheckMs },
+    schedule: { finishCheckMs: front.finishCheckMs },
     statusColumns: front.statusColumns,
     wake: hosted.wake,
     step: hosted.step,

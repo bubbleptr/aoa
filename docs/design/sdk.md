@@ -1,4 +1,4 @@
-# 内核层 SDK（§15，已定，未实现）
+# 内核层 SDK（§15，进行中）
 
 2026-11-18 定下：把 aoa 做成内核层的 Bun SDK。使用者拿到的是 inbox、thread、session、事件、延后调用、定时器、outbox、记忆这些原语，以及把它们组装起来的接口。「任务 = session + worktree + 分支」不在 SDK 里，现在的编码 agent（`apps/aoa`）是建在 SDK 上的一个应用。
 
@@ -16,7 +16,7 @@ function createHost(o: { store: Store; clock?: Clock; log?: (line: string) => vo
 interface Host {
   agent(spec: AgentSpec): Agent;          // start() 之前登记
   readonly agents: Agent[];
-  start(): void;                          // 拿 store.lock()；每个 agent 的 worker、scheduler、dispatcher、poller
+  start(): void;                          // 拿 store.lock()；每个 agent 的 worker、scheduler、dispatcher、poller；只能调一次
   stop(): Promise<void>;                  // 发 abort，等在途的 run 结束
   readonly stopped: Promise<void>;        // stop() 之后，或某个循环死了、宿主停下其余的之后
   serving(): { pid: number; since: number } | null;   // 别的宿主是否在跑循环
@@ -173,7 +173,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
-| 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，`cleanup` 等它结束 |
+| 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |
 | 2 | 策略：`ToolDef.risk`、默认安全、内核不带规则；`defaultRules` 和编码工具拆成 `tools/coding` | 不传 `policy` 的 agent 调未知工具会延后；`notify` 不用等审批 |
 | 3 | 两档 runtime 的类型取代 `permissions`，`signal` 进 `RunInput`；`runtimes/codex`、`runtimes/dsh` 搬到 `examples/` | 示例测试照跑；一致性测试用脚本 harness 覆盖六条约定；`stop()` 能停下卡住的 run |
 | 4 | `Store` 收口和 `lock()`；`agent.read`、`host.messages`、`host.watch`、`serving()`；定时器 id 和 `cancelTimer`；无 channel 的投递；`send_to` 进 SDK | 另一个进程写入后 1 秒内 `watch` 到；第二个 `start()` 抛错；重启后同 id 的 `schedule` 只有一条 |

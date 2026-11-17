@@ -39,6 +39,7 @@ interface Channel {
 | 包 | 内容 |
 | --- | --- |
 | `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
+| `packages/sdk` | `createHost`：把每个 agent 的循环、内置工具、session 的关闭和清理组装起来（§15） |
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
 | `packages/runtimes/pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
 | `packages/runtimes/codex` | Codex app-server 适配器：Codex 用自己的工具，aoa 转达它的询问（§12） |
@@ -46,7 +47,7 @@ interface Channel {
 | `packages/channels/local` | 本地通道：消息写文件，发桌面通知 |
 | `packages/channels/github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
-| `apps/aoa` | CLI、`serve`、worktree 管理 |
+| `apps/aoa` | CLI、`serve`、worktree 管理；经 `packages/sdk` 组装 agent |
 
 写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`runtime-pi` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
 
@@ -54,7 +55,7 @@ runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消�
 
 「任务」不是内核概念。内核只有 session；`apps/aoa` 在新 session 开始时建一个 worktree，于是一项任务就是一个 session 加一个 worktree。
 
-上面是现在的包结构。§15 定了往 SDK 走的目标结构，还没实现。
+上面是现在的包结构。§15 定了往 SDK 走的目标结构，正在一步步做。
 
 ## 4. 数据
 

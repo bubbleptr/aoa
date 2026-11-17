@@ -93,7 +93,10 @@ export interface Host {
   /** Adds an agent; agents added after `start()` are not served. */
   agent(spec: AgentSpec): Agent;
   readonly agents: readonly Agent[];
-  /** Runs every agent's worker, scheduler and dispatcher, and polls the channels that have `pollMs` (once right away). */
+  /**
+   * Runs every agent's worker, scheduler and dispatcher, and polls the channels that have `pollMs` (once right away).
+   * A host runs once: `start()` again, also after `stop()`, throws.
+   */
   start(): void;
   /** Stops the loops and waits for what is in flight. */
   stop(): Promise<void>;
@@ -176,6 +179,8 @@ export function createHost(o: HostOptions): Host {
     const inRun = (id: SessionId) => store.tx((t) => t.listEvents(spec.inbox)).some((e) => e.status === "in_run" && e.resume === id);
 
     async function close(id: SessionId, o: { afterClose?: () => void } = {}): Promise<"closed" | "busy"> {
+      const owned = store.tx((t) => t.getSession(id));
+      if (owned === null || owned.inboxId !== spec.inbox) throw new Error(`Agent ${spec.name} has no session ${id}.`);
       if (inRun(id)) return "busy";
       // Nothing awaited until the cleanup is registered: an event that reopens the session finds no working
       // directory, so the worker prepares one, and preparing waits for the cleanup.
@@ -216,8 +221,10 @@ export function createHost(o: HostOptions): Host {
     return handle;
   }
 
+  let started = false;
   function start(): void {
-    if (running) return;
+    if (started) throw new Error("A host runs once: create another to start again.");
+    started = true;
     const several = all.length > 1;
     const loops = all.flatMap((a) => {
       const of = (name: string) => (several ? `${name} of ${a.agent.name}` : name);

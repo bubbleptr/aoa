@@ -1,0 +1,42 @@
+import { afterEach, expect, test } from "bun:test";
+import { FakeClock, ScriptedRuntime } from "@aoa/conformance";
+import type { Store } from "@aoa/kernel";
+import { sqliteStore } from "@aoa/store-sqlite";
+import { createHost } from "../src/index.ts";
+
+const opened: { close(): void }[] = [];
+afterEach(() => {
+  for (const s of opened.splice(0)) s.close();
+});
+
+test("a loop that dies stops the host, so a host with a dead worker does not keep running", async () => {
+  const real = sqliteStore(":memory:");
+  opened.push(real);
+  let broken = false;
+  const store: Store = {
+    tx: (fn) => {
+      if (broken) throw new Error("disk gone");
+      return real.tx(fn);
+    },
+  };
+  const lines: string[] = [];
+  const host = createHost({ store, clock: new FakeClock(), log: (l) => lines.push(l) });
+  const agent = host.agent({ name: "a", inbox: "in", runtime: new ScriptedRuntime() });
+  host.start();
+
+  broken = true;
+  agent.wake();
+  await host.stopped;
+  expect(lines.some((l) => /^the (worker|scheduler) stopped: disk gone$/.test(l))).toBe(true);
+});
+
+test("a host runs once: starting it again is an error", async () => {
+  const store = sqliteStore(":memory:");
+  opened.push(store);
+  const host = createHost({ store, clock: new FakeClock(), log: () => {} });
+  host.agent({ name: "a", inbox: "in", runtime: new ScriptedRuntime() });
+  host.start();
+  expect(() => host.start()).toThrow(/once/);
+  await host.stop();
+  expect(() => host.start()).toThrow(/once/);
+});
