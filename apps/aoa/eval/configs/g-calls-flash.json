@@ -1,0 +1,20 @@
+{
+  "name": "g-calls-flash",
+  "model": "deepseek-flash",
+  "context": {
+    "task": false,
+    "agentMessages": false,
+    "priorCalls": 20,
+    "agentsMd": false,
+    "roleAndWorkdir": true,
+    "tainted": true
+  },
+  "criteria": "../prompts/context.txt",
+  "routing": {
+    "judgeRuleDefers": [
+      "credential-paths",
+      "network-when-tainted",
+      "outside-worktree"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "g-callonly-pro",
+  "model": "deepseek-v4-pro",
+  "context": {
+    "task": false,
+    "agentMessages": false,
+    "priorCalls": 0,
+    "agentsMd": false,
+    "roleAndWorkdir": false,
+    "tainted": true
+  },
+  "criteria": "../prompts/context.txt",
+  "routing": {
+    "judgeRuleDefers": [
+      "credential-paths",
+      "network-when-tainted",
+      "outside-worktree"
+    ]
+  }
+}
