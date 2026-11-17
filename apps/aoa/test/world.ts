@@ -12,6 +12,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import type { SpawnCodex } from "@aoa/runtime-codex";
+import type { DshSpawn } from "@aoa/runtime-dsh";
 import { type Agent, assemble } from "../src/wiring.ts";
 import { type AgentConfigInput, type AgentInput, validateConfig } from "../src/config.ts";
 import { main } from "../src/main.ts";
@@ -108,6 +109,8 @@ export class World {
   agent!: Agent;
   /** Where a codex agent's app server comes from; set before `start`. */
   spawnCodex?: SpawnCodex;
+  /** Where a dsh agent's harness comes from; set before `start`. */
+  spawnDsh?: DshSpawn;
 
   /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
   readonly env: Record<string, string | undefined>;
@@ -151,8 +154,8 @@ export class World {
         ? {
             agents: Object.fromEntries(
               Object.entries(o.agents).map(([name, a]) => {
-                // A codex agent talks to `spawnCodex`, not to a pi model.
-                if (a.runtime === "codex") return [name, a];
+                // A codex agent talks to `spawnCodex` and a dsh agent to `spawnDsh`, not to a pi model.
+                if (a.runtime === "codex" || a.runtime === "dsh") return [name, a];
                 this.namedModels.set(name, fauxProvider({ provider: `scripted-${name}`, models: [{ id: "agent" }] }));
                 return [name, { model: { provider: `scripted-${name}`, modelId: "agent", apiKeyEnv: KEY_ENV }, ...a }];
               }),
@@ -213,6 +216,7 @@ export class World {
       // Always injected, so no test ever shows a real notification.
       notify: async (title: string, body: string) => void this.notes.push({ title, body }),
       ...(this.spawnCodex ? { spawnCodex: this.spawnCodex } : {}),
+      ...(this.spawnDsh ? { spawnDsh: this.spawnDsh } : {}),
     };
   }
 

@@ -181,6 +181,45 @@ describe("the Codex runtime", () => {
   });
 });
 
+describe("the dsh runtime", () => {
+  const { github: _, model: piModel, ...rest } = valid;
+  const small = { provider: "anthropic", modelId: "claude-small", apiKeyEnv: "OTHER_KEY" };
+  const dshTop = { ...rest, runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" };
+
+  test("a dsh agent names a dsh model and the variable its key comes from; command and preset are optional", () => {
+    expect(validateConfig(dshTop)).toMatchObject({ runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" });
+    expect(validateConfig(dshTop).dsh).toBeUndefined();
+    expect(validateConfig({ ...dshTop, dsh: { command: "/opt/dsh/bin/dsh", preset: "sdk-app" } }).dsh).toEqual({
+      command: "/opt/dsh/bin/dsh",
+      preset: "sdk-app",
+    });
+  });
+
+  test("a named dsh agent inherits the route and the key, and names its own model when it wants one", () => {
+    const c = validateConfig({ ...dshTop, agents: { coder: {}, other: { model: "deepseek-pro" } } });
+    expect(c.agents).toEqual({
+      coder: { role: "implement", runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
+      other: { role: "implement", runtime: "dsh", model: "deepseek-pro", apiKeyEnv: "DEEPSEEK_API_KEY" },
+    });
+  });
+
+  test.each([
+    [{ ...rest, runtime: "dsh", apiKeyEnv: "DEEPSEEK_API_KEY" }, "model"],
+    [{ ...rest, runtime: "dsh", model: "deepseek-flash" }, "apiKeyEnv"],
+    [{ ...dshTop, model: piModel }, "model"],
+    [{ ...dshTop, dsh: { sandbox: "workspace-write" } }, "dsh.sandbox"],
+    [{ ...dshTop, github: valid.github }, "runtime"],
+    [{ ...dshTop, agents: { reviewer: { role: "review" } } }, "agents.reviewer.role"],
+    [{ ...dshTop, agents: { helper: { runtime: "pi" } } }, "agents.helper.model"],
+  ])("rejects: %#", (raw, field) => {
+    expect(() => validateConfig(raw)).toThrow(new RegExp(`^Invalid config: ${field.replaceAll(".", "\\.")} `));
+  });
+
+  test("serve wants no classifier for an agent that runs on dsh", () => {
+    expect(() => validateForServe(validateConfig(dshTop))).not.toThrow();
+  });
+});
+
 describe("shadow judge", () => {
   const judge = { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" };
 
