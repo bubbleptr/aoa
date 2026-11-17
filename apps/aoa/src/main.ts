@@ -31,8 +31,9 @@ Usage:
                                               only what came after that cursor; --wait waits that long for something new.
   aoa status [--json] [--refresh]             Sessions, outcomes, pending approvals, dead events, failed messages.
                                               --refresh looks up pull request states on GitHub first.
-  aoa web [--port <n>]                        Only the page: a live, read-only view of the inbox, timers, memory,
-                                              permissions and outbox, for when serve is not running.
+  aoa web [--port <n>]                        Only the page: a live view of the inbox, timers, memory, permissions
+                                              and outbox, where you can answer what waits for you; for when
+                                              serve is not running.
   aoa mcp                                     send, messages, status, close and answer as tools of an MCP server on
                                               stdio, for a chat agent: claude mcp add aoa -- aoa mcp
 
@@ -210,7 +211,7 @@ export async function main(argv: string[], io: Io): Promise<number> {
       }
       case "web": {
         const web = startWeb(agent, { port: p.port ?? DEFAULT_WEB_PORT });
-        io.out(`aoa web on http://127.0.0.1:${web.port} (read-only; Ctrl-C to stop)`);
+        io.out(`aoa web on http://127.0.0.1:${web.port} (Ctrl-C to stop)`);
         await (io.stopSignal ?? signals)();
         await web.stop();
         return 0;

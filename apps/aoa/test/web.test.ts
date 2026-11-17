@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { connect } from "node:net";
 import { systemClock } from "@aoa/kernel";
 import { sqliteStore } from "@aoa/store-sqlite";
@@ -200,4 +200,84 @@ test("with the real file watch, another connection's write reaches a client", as
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error("no update within 3 s")), 3_000)),
   ]);
   expect(update.flows).toEqual({ in: 1 });
+});
+
+describe("answering from the page", () => {
+  /** A world whose default task waits on a deferred `echo deployed` call, with the page serving it. */
+  async function waiting(steps = [call("bash", { command: "echo deployed >> deploy.log" }), say("Deployed.")]) {
+    const w = await world();
+    w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
+    w.script(steps);
+    await w.cli("send", "Deploy it.");
+    await w.drain();
+    const callId = w.sessions()[0]!.pending!;
+    const server = web(w.agent, () => () => {});
+    const origin = `http://127.0.0.1:${server.port}`;
+    const post = (body: unknown, headers: Record<string, string> = { origin, "content-type": "application/json" }) =>
+      fetch(`${origin}/answer`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
+    return { w, callId, server, origin, post };
+  }
+
+  const answers = (w: World) => w.events().filter((e) => e.source === "approval_answer");
+
+  test("approve and deny write the same answer the CLI does, marked as from the page", async () => {
+    const { w, callId, post } = await waiting();
+    const res = await post({ callId, verdict: "deny", text: "Not today." });
+    expect(res.status).toBe(200);
+    expect(answers(w)).toMatchObject([{ status: "pending", payload: { callId, verdict: "deny", text: "Not today.", via: "web" } }]);
+    await w.drain();
+    expect(w.sessions()[0]).toMatchObject({ status: "open", pending: null });
+  });
+
+  test("a second answer to the same call is refused, not reported as accepted", async () => {
+    const { w, callId, post } = await waiting();
+    expect((await post({ callId, verdict: "approve" })).status).toBe(200);
+    const again = await post({ callId, verdict: "deny" });
+    expect(again.status).toBe(409);
+    expect(answers(w).filter((e) => e.status === "pending")).toHaveLength(1);
+  });
+
+  test("a question takes the text as its answer", async () => {
+    const { w, callId, post } = await waiting([call("ask_user", { question: "Which file name?" }), say("Thanks.")]);
+    expect((await post({ callId, verdict: "approve", text: "hello.txt" })).status).toBe(200);
+    expect(answers(w)).toMatchObject([{ payload: { callId, verdict: "approve", text: "hello.txt", via: "web" } }]);
+  });
+
+  test("anything but a JSON post from the page itself, naming a waiting call in full, is refused and appends nothing", async () => {
+    const { w, callId, server, origin, post } = await waiting();
+    const json = { "content-type": "application/json" };
+    const refused = [
+      await post({ callId, verdict: "approve" }, json),
+      await post({ callId, verdict: "approve" }, { ...json, origin: `http://127.0.0.1:${server.port + 1}` }),
+      await post({ callId, verdict: "approve" }, { ...json, origin: "https://attacker.example" }),
+      await post(JSON.stringify({ callId, verdict: "approve" }), { origin, "content-type": "text/plain" }),
+      await post({ callId: callId.slice(0, 8), verdict: "approve" }),
+      await post({ callId: "", verdict: "approve" }),
+      await post({ callId: "nope", verdict: "approve" }),
+      await post({ callId, verdict: "maybe" }),
+      await post("{not json"),
+    ];
+    for (const res of refused) expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(answers(w)).toHaveLength(0);
+
+    const preflight = await fetch(`${origin}/answer`, { method: "OPTIONS", headers: { origin: "https://attacker.example" } });
+    expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+    expect((await fetch(`${origin}/snapshot`, { method: "POST" })).status).toBe(405);
+    expect(statusLine(await rawRequest(server.port, ["POST /answer HTTP/1.1", `Host: attacker.example:${server.port}`, `Origin: ${origin}`]))).toContain("403");
+  });
+
+  test("the page cannot be framed, and a waiting call shows in full with whether it is already answered", async () => {
+    const long = `echo deployed ${"x".repeat(300)} >> deploy.log`;
+    const { w, callId, origin, post } = await waiting([call("bash", { command: long }), say("Deployed.")]);
+    expect((await fetch(`${origin}/`)).headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+
+    const before = ((await (await fetch(`${origin}/snapshot`)).json()) as Snapshot).permissions.waiting[0]!;
+    expect(before).toMatchObject({ callId, kind: "approval", answered: null });
+    expect(before.full).toContain(long);
+
+    await post({ callId, verdict: "approve" });
+    const after = ((await (await fetch(`${origin}/snapshot`)).json()) as Snapshot).permissions.waiting[0]!;
+    expect(after).toMatchObject({ callId, answered: "approve" });
+    void w;
+  });
 });

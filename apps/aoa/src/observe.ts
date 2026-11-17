@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type JournalRecord, type OutMsg, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
+import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type JournalRecord, type OutMsg, type PendingCall, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
@@ -99,6 +99,11 @@ export type WaitingCall = {
   askedAt: number;
   expiresAt: number;
   answer: string;
+  kind: PendingCall["kind"];
+  /** What the call asks, unclipped: the page shows this before it offers to answer. */
+  full: string;
+  /** An answer already queued for the session to pick up; the call stays waiting until a run takes it. */
+  answered: "approve" | "deny" | null;
 };
 
 export type DecisionRow = {
@@ -264,6 +269,17 @@ function recentlyDecided(decisions: DecisionRecord[], isClassifier: (basis: stri
  * One agent's view, read in one transaction, so the counts and totals agree with each other. `serve` is one process
  * for every agent, so its heartbeat is read from the default agent's inbox.
  */
+/** What a waiting call asks, unclipped. A bash call reads as its command; the rest of its args follow as JSON. */
+function fullAsk(d: PendingCall): string {
+  if (d.kind === "question") return String((d.args as { question?: unknown }).question);
+  const args = typeof d.args === "object" && d.args !== null ? (d.args as Record<string, unknown>) : null;
+  if (d.tool === "bash" && args && typeof args.command === "string") {
+    const { command, ...rest } = args;
+    return `$ ${command}${Object.keys(rest).length > 0 ? `\n${JSON.stringify(rest)}` : ""}`;
+  }
+  return `${d.tool} ${JSON.stringify(d.args, null, 2)}`;
+}
+
 export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
   const { inboxId } = agent;
   const serveInbox = agent.agents[0]!.inboxId;
@@ -369,6 +385,10 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const journal: JournalRecord[] = sessions.flatMap((x) => t.listJournal(x.id)).sort((a, b) => a.intentAt - b.intentAt);
     const decisions = sessions.flatMap((x) => t.listDecisions(x.id)).sort((a, b) => a.at - b.at);
     const deferred = t.listDeferred(inboxId);
+    const queuedAnswer = (callId: string): "approve" | "deny" | null => {
+      const e = events.find((x) => x.source === "approval_answer" && x.status === "pending" && (x.payload as { callId?: unknown }).callId === callId);
+      return e ? (e.payload as { verdict: "approve" | "deny" }).verdict : null;
+    };
     const judgments = t.listJudgments(inboxId, now - WEEK_MS);
     const judgmentOf = new Map(judgments.map((j) => [j.callId, j]));
     const jevOf = (callId: string): JevScore | null => {
@@ -496,6 +516,9 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
           askedAt: d.requestedAt,
           expiresAt: d.expiresAt,
           answer: `aoa answer ${d.callId} approve|deny`,
+          kind: d.kind,
+          full: fullAsk(d),
+          answered: queuedAnswer(d.callId),
         })),
         last24h,
         recent: recentlyDecided(dayDecisions, (basis) => basis.startsWith("classifier:"))

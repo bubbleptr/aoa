@@ -97,6 +97,17 @@ li.row.open .main, li.row.open .sub { white-space: pre-wrap; overflow-wrap: anyw
 li.row.open .cmd, li.row.hl .cmd { display: block; }
 .tag { justify-self: end; align-self: start; font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
 .tag:empty { display: none; }
+/* A waiting call: what it asks in full, then the answer. Clicks here never toggle the row. */
+.answer-box { grid-column: 1 / -1; cursor: default; display: flex; flex-direction: column; gap: 6px; }
+.answer-box .full { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; background: var(--surface); border: 1px solid var(--amber-line); border-radius: 6px; padding: 6px 8px; }
+.answer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.answer input { font: inherit; flex: 1 1 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--node-line); border-radius: 6px; background: var(--surface); color: var(--text); }
+.answer button { font: inherit; font-weight: 500; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--node-line); background: var(--surface); color: var(--text); cursor: pointer; }
+.answer button.yes { background: var(--green); border-color: var(--green); color: #fff; }
+.answer button.no { color: var(--red); }
+.answer button:disabled { opacity: .5; cursor: default; }
+.answer .err { flex-basis: 100%; color: var(--red); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.answer .done { color: var(--muted); }
 .flash { animation: flash 1.2s ease-out; }
 @keyframes flash { from { background: #DBEAFE; } }
 .ok { background: #ECFDF3; color: #166534; }
@@ -414,6 +425,76 @@ function playDots(moved, onArrive) {
   }
 }
 
+// ---- answering ----
+/** What was typed into a waiting call's box, by call id: rows are rebuilt on every push. */
+const drafts = new Map();
+/** Why the last answer to a call did not go through, by call id. */
+const answerErrors = new Map();
+/** Calls whose answer is on its way to the server. */
+const sending = new Set();
+const ANSWERED = { approval: ["Approved", "Denied"], harness: ["Approved", "Denied"], admit: ["Let in", "Dropped"], question: ["Answered", "Declined"] };
+const ANSWER_LABELS = { approval: ["Approve", "Deny"], harness: ["Approve", "Deny"], admit: ["Let it in", "Drop it"], question: ["Send answer", "Decline"] };
+
+function answerBox(w) {
+  const box = el("div", "answer-box");
+  box.addEventListener("click", (e) => e.stopPropagation());
+  box.appendChild(el("div", "full", w.full));
+  const bar = el("div", "answer");
+  box.appendChild(bar);
+  if (w.answered) {
+    const [yes, no] = ANSWERED[w.kind] || ANSWERED.approval;
+    bar.appendChild(el("span", "done", (w.answered === "approve" ? yes : no) + ". The agent picks it up on its next run."));
+    return box;
+  }
+  const [yes, no] = ANSWER_LABELS[w.kind] || ANSWER_LABELS.approval;
+  const input = el("input");
+  input.type = "text";
+  input.maxLength = 4000;
+  input.dataset.draft = w.callId;
+  input.placeholder = w.kind === "question" ? "Your answer" : "Reason for the agent (optional)";
+  input.setAttribute("aria-label", input.placeholder);
+  input.value = drafts.get(w.callId) || "";
+  input.addEventListener("input", () => drafts.set(w.callId, input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && w.kind === "question") answerCall(w, "approve", input.value);
+  });
+  const button = (label, cls, verdict) => {
+    const b = el("button", cls, label);
+    b.type = "button";
+    b.disabled = sending.has(w.callId);
+    b.addEventListener("click", () => answerCall(w, verdict, input.value));
+    return b;
+  };
+  bar.append(input, button(yes, "yes", "approve"), button(no, "no", "deny"));
+  if (answerErrors.has(w.callId)) bar.appendChild(el("div", "err", answerErrors.get(w.callId)));
+  return box;
+}
+
+async function answerCall(w, verdict, text) {
+  if (sending.has(w.callId)) return;
+  answerErrors.delete(w.callId);
+  if (w.kind === "question" && verdict === "approve" && !text.trim()) {
+    answerErrors.set(w.callId, "Type an answer first.");
+    return renderLists(current);
+  }
+  sending.add(w.callId);
+  renderLists(current);
+  try {
+    const res = await fetch("/answer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ callId: w.callId, verdict, ...(text.trim() ? { text } : {}) }),
+    });
+    if (res.ok) drafts.delete(w.callId);
+    // A serve started before this page could answer serves the new page but only takes GET.
+    else answerErrors.set(w.callId, res.status === 405 ? "This aoa serve is older than the page and cannot take answers; restart it, or run: " + w.answer : (await res.text()).trim());
+  } catch {
+    answerErrors.set(w.callId, "Could not reach aoa. Run: " + w.answer);
+  }
+  sending.delete(w.callId);
+  if (current) renderLists(current);
+}
+
 // ---- lists ----
 /** Row keys each panel showed last time, to tell which rows are new. */
 const seen = {};
@@ -450,6 +531,7 @@ function row(key, o, openKey) {
   if (o.cmd) body.appendChild(el("div", "cmd", o.cmd));
   li.appendChild(body);
   li.appendChild(el("span", "tag " + (o.tone || "quiet"), o.tag || ""));
+  if (o.extra) li.appendChild(o.extra);
   return li;
 }
 
@@ -497,10 +579,12 @@ function renderLists(s) {
   // `bash {"command":"…"}` reads better as the command itself; the args may be clipped, so this is text, not JSON.
   const callText = (args) => args.replace(/^bash \{"command":"([\s\S]*?)(?:"\})?$/, (_, c) => "$ " + c.replace(/\\"/g, '"').replace(/\\n/g, "\n"));
   const unique = (parts) => [...new Set(parts.filter(Boolean))].join(" · ");
+  // A snapshot from a serve older than this page has no `kind`: it gets the CLI command instead of buttons.
   const permRows = p.waiting.map((w) => [w.callId + ":waiting", {
     at: clockTime(w.askedAt), main: callText(w.args), mono: true,
     sub: unique([w.basis || "deferred", jevText(w.jev), "session " + short(w.sessionId), "expires " + clockTime(w.expiresAt)]),
-    cmd: w.answer, tag: "waiting", tone: "warn", hl: true,
+    cmd: w.kind ? null : w.answer, extra: w.kind ? answerBox(w) : null,
+    tag: w.answered ? "answered" : "waiting", tone: w.answered ? "ok" : "warn", hl: !w.answered,
   }]).concat(p.recent.filter((d) => !p.waiting.some((w) => w.callId === d.callId)).map((d) => [d.callId + ":" + d.decision, {
     at: clockTime(d.at), main: d.args ? callText(d.args) : d.tool, mono: true,
     sub: unique([d.basis, jevText(d.jev), userText[d.userAnswer]]),
@@ -520,10 +604,21 @@ function renderLists(s) {
       " · allow: " + buckets(j.matrix.allow) + " · block: " + buckets(j.matrix.block) + " · unsure: " + buckets(j.matrix.unsure)
     // Without a shadow judge, or before it has judged anything, the panel says nothing about Jev.
     : "";
+  // The box being typed in is rebuilt with the panel; give it back its focus and caret.
+  const active = document.activeElement;
+  const draftKey = active && active.dataset ? active.dataset.draft : undefined;
+  const caret = draftKey ? [active.selectionStart, active.selectionEnd] : null;
   fresh.permissions = fillPanel("permissions", [
     countChip(p.waiting.length, "waiting for you", p.waiting.length ? "warn" : "quiet"), countChip(p.last24h.allow, "allowed", "ok"),
     countChip(p.last24h.defer, "deferred", p.last24h.defer ? "warn" : "quiet"), countChip(p.last24h.block, "blocked", p.last24h.block ? "bad" : "quiet"),
   ], shadowLine, permRows, "No decisions in the last 24 hours.");
+  if (draftKey) {
+    const again = document.querySelector('input[data-draft="' + CSS.escape(draftKey) + '"]');
+    if (again) {
+      again.focus();
+      again.setSelectionRange(caret[0], caret[1]);
+    }
+  }
 
   const o = s.outbox.counts;
   const approvalText = { pending: "still waiting for an answer", answered: "answered", cancelled: "withdrawn before delivery" };
@@ -735,7 +830,7 @@ function setConnected(up) {
   document.body.classList.toggle("disconnected", !up);
   const conn = document.getElementById("conn");
   conn.className = up ? "muted" : "down";
-  conn.textContent = up ? location.host + " · read-only · live" : "disconnected · reconnecting…";
+  conn.textContent = up ? location.host + " · live" : "disconnected · reconnecting…";
 }
 
 // ---- agents ----

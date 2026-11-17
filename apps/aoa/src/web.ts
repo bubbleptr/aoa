@@ -1,5 +1,6 @@
 import { watch as watchFile } from "node:fs";
 import { join } from "node:path";
+import { answerDeferred } from "@aoa/kernel";
 import type { Role } from "./config.ts";
 import { type Edge, type Snapshot, changed, flows, snapshot } from "./observe.ts";
 import type { Agent } from "./wiring.ts";
@@ -50,9 +51,45 @@ const walWatch = (db: string) => (onChange: () => void) => {
 
 const encoder = new TextEncoder();
 
+/** The longest reason or answer the page may send; a question's answer is a line or a paragraph, not a file. */
+const ANSWER_TEXT_LIMIT = 4_000;
+
+const plain = (status: number, text: string) =>
+  new Response(`${text}\n`, { status, headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
+
 /**
- * `aoa web`: a read-only page on 127.0.0.1 that shows the store live. Every client gets the current snapshot on
- * connect, then an update whenever a rebuild finds something different, with what flowed along each edge.
+ * Answers a waiting call from the page: the same `approval_answer` the CLI writes, marked `via: "web"`. Only a full id
+ * of a call that waits now is taken (no prefixes: the page always has the whole id), and an answer the store drops as
+ * a second one for that call is reported as a conflict rather than accepted.
+ */
+function answerFromPage(agent: Agent, body: unknown): Response {
+  if (typeof body !== "object" || body === null) return plain(400, "The body must be a JSON object.");
+  const { callId, verdict, text } = body as Record<string, unknown>;
+  if (typeof callId !== "string" || callId === "") return plain(400, "callId must be a call id.");
+  if (verdict !== "approve" && verdict !== "deny") return plain(400, "verdict must be approve or deny.");
+  if (text !== undefined && (typeof text !== "string" || text.length > ANSWER_TEXT_LIMIT)) {
+    return plain(400, `text must be a string of at most ${ANSWER_TEXT_LIMIT} characters.`);
+  }
+  const reason = typeof text === "string" && text.trim() !== "" ? text : undefined;
+  const pending = agent.store.tx((t) => agent.agents.flatMap((a) => t.listDeferred(a.inboxId))).find((d) => d.callId === callId);
+  if (!pending) return plain(404, `No call ${callId} is waiting for an answer.`);
+  if (pending.kind === "question" && verdict === "approve" && reason === undefined) return plain(400, "A question needs its answer as text.");
+  let result;
+  try {
+    result = answerDeferred(agent.store, agent.clock, pending.inboxId, callId, verdict, reason, "web");
+  } catch (err) {
+    // The call was answered and taken between the read above and this write.
+    return plain(409, err instanceof Error ? err.message : String(err));
+  }
+  if (result.status === "dropped") return plain(409, `Call ${callId} already has an answer waiting for the agent.`);
+  for (const a of agent.agents) if (a.inboxId === pending.inboxId) a.worker.wake();
+  return Response.json({ callId, verdict });
+}
+
+/**
+ * `aoa web`: a page on 127.0.0.1 that shows the store live, and answers waiting calls. Every client gets the current
+ * snapshot on connect, then an update whenever a rebuild finds something different, with what flowed along each edge.
+ * The one write is `POST /answer`, taken only from the page itself (see `listen`).
  */
 export function startWeb(agent: Agent, o: WebOptions): Web {
   const { clock } = agent;
@@ -171,14 +208,31 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
       const host = req.headers.get("host");
       // A page on another site that resolves its own name to 127.0.0.1 sends its own Host; it must not read this.
       if (host !== `127.0.0.1:${srv.port}` && host !== `localhost:${srv.port}`) return new Response("Forbidden\n", { status: 403 });
-      if (req.method !== "GET") return new Response("Method Not Allowed\n", { status: 405, headers: { allow: "GET" } });
       const { pathname } = new URL(req.url);
+      if (pathname === "/answer" && req.method === "POST") {
+        // A browser always sends Origin on a POST from script. Only the page's own origin may write: another site,
+        // or another server on this machine, gets nothing. JSON forces a preflight, which gets no CORS headers.
+        const origin = req.headers.get("origin");
+        if (origin !== `http://127.0.0.1:${srv.port}` && origin !== `http://localhost:${srv.port}`) return plain(403, "Forbidden");
+        if (!(req.headers.get("content-type") ?? "").startsWith("application/json")) return plain(415, "Send JSON.");
+        return req.json().then(
+          (body) => {
+            const res = answerFromPage(agent, body);
+            // Its own write: every open page sees the answer queued now, not when the watch fires.
+            if (res.ok) rebuild();
+            return res;
+          },
+          () => plain(400, "The body is not JSON."),
+        );
+      }
+      if (req.method !== "GET") return new Response("Method Not Allowed\n", { status: 405, headers: { allow: "GET" } });
       if (pathname === "/") {
         return new Response(Bun.file(PAGE), {
           headers: {
             "content-type": "text/html; charset=utf-8",
             "content-security-policy":
-              "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+              "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+            "x-frame-options": "DENY",
             "x-content-type-options": "nosniff",
             "referrer-policy": "no-referrer",
           },
