@@ -52,7 +52,7 @@ aoa send --agent reviewer --branch aoa/1a2b3c4d "看看这个分支"   # 直接�
 
 ## 用 Codex 跑一个 agent
 
-agent 可以写 `runtime: "codex"`（顶层或某个具名 agent），这时每次运行交给本机的 `codex app-server`，在任务的 worktree 里开一个 Codex 线程，同一个任务接着用同一个线程。读文件、改代码、跑命令用的是 Codex 自己的工具，它不问就能做什么由你在 Codex 里的审批和沙箱设置决定，aoa 不改这些设置。但你在 Codex 里装的插件、MCP server 和 hooks 不会带进 aoa 的运行，aoa 启动 Codex 时会把它们全部关掉。Codex 要问的时候，问题照常变成 aoa 的审批请求，你批准以后 Codex 会再做一次同样的操作并直接放行。记忆、`notify`、`ask_user`、`send_to` 这些 aoa 自己的工具仍由 aoa 裁决和记录。Codex 用自己的登录或环境变量认证，aoa 不读也不传它的密钥；`model` 可以不写（用 Codex 的默认模型），写的话是 Codex 的模型名。只能用在本地模式，审查角色不能用 Codex。
+agent 可以写 `runtime: "codex"`（顶层或某个具名 agent），这时每次运行交给本机的 `codex app-server`，在任务的 worktree 里开一个 Codex 线程，同一个任务接着用同一个线程。读文件、改代码、跑命令用的是 Codex 自己的工具，它不问就能做什么由你在 Codex 里的审批和沙箱设置决定，aoa 不改这些设置。但你在 Codex 里装的插件、MCP server 和 hooks 不会带进 aoa 的运行，aoa 启动 Codex 时会把它们全部关掉。Codex 要问的时候，问题照常变成 aoa 的审批请求，你批准以后 Codex 会再做一次同样的操作并直接放行。记忆、`notify`、`ask_user`、`send_to` 这些 aoa 自己的工具仍由 aoa 裁决和记录。Codex 用自己的登录或环境变量认证，aoa 不读也不传它的密钥；`model` 可以不写（用 Codex 的默认模型），写的话是 Codex 的模型名。只能用在本地模式。审查角色也可以用 Codex：这时 aoa 让它跑在 Codex 的 auto review 模式里，也就是 workspace-write 沙箱，要审批的操作交给 Codex 自己的自动审查，不会来问你；它能不能提交之类的边界由 Codex 负责，aoa 的只读规则管不到它。
 
 ```ts
 agents: {

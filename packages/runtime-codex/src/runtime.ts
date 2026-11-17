@@ -36,8 +36,9 @@ export type CodexRuntimeConfig = {
   /** Working directory for sessions that have no workdir of their own. */
   cwd: string;
   /**
-   * Routes Codex's approval requests to its own auto-review subagent instead of the user, for an agent whose work
-   * should not stop on the user (a reviewer). The sandbox and approval policy stay the user's Codex settings.
+   * Runs every thread in Codex's auto review mode (workspace-write sandbox, approvals on request, answered by Codex's
+   * auto-review subagent instead of the user), for an agent whose work should not stop on the user (a reviewer).
+   * It overrides the user's sandbox and approval policy so the mode holds even when their Codex runs with full access.
    */
   autoReview?: boolean;
   /** Starts the app server; tests hand in a scripted one. */
@@ -122,7 +123,9 @@ class CodexRun {
 
     const { ref } = this.input.session;
     const model = this.config.model === undefined ? {} : { model: this.config.model };
-    const reviewer = this.config.autoReview ? ({ approvalsReviewer: "auto_review" } as const) : {};
+    const reviewer = this.config.autoReview
+      ? ({ sandbox: "workspace-write", approvalPolicy: "on-request", approvalsReviewer: "auto_review" } as const)
+      : {};
     const common = { cwd: this.cwd, developerInstructions: this.config.developerInstructions, ...model, ...reviewer };
     const { thread } =
       ref === null

@@ -14,11 +14,8 @@ export type InitializeParams = {
 
 export type DynamicToolSpec = { type: "function"; name: string; description: string; inputSchema: unknown };
 
-/**
- * Sandbox and approval policy are left out on purpose: they stay whatever the user configured in Codex. Only who
- * reviews Codex's approval requests can be set, for an agent that leaves them to Codex's auto review.
- */
-type ApprovalRouting = { approvalsReviewer?: "auto_review" };
+/** Set only for an agent in Codex's auto review mode; otherwise the user's Codex configuration decides all three. */
+type ApprovalRouting = { sandbox?: "workspace-write"; approvalPolicy?: "on-request"; approvalsReviewer?: "auto_review" };
 
 export type ThreadStartParams = {
   cwd: string;
