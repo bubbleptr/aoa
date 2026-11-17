@@ -88,6 +88,7 @@ interface Channel {
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
 | `packages/runtime-pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
 | `packages/runtime-codex` | Codex app-server 适配器：Codex 用自己的工具，aoa 转达它的询问（§12） |
+| `packages/runtime-dsh` | DeepSeek Harness（dsh）SDK 适配器：dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
 | `packages/channel-local` | 本地通道：消息写文件，发桌面通知 |
 | `packages/channel-github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
@@ -405,6 +406,30 @@ Codex 的请求怎么对应到 aoa：
 - 动态工具只在 `thread/start` 时提供，`thread/resume` 的参数里没有这一项。Codex 把它们存在线程里，恢复时沿用；冒烟测试已经对 Codex 0.154 验证过：另起一个进程恢复线程后，模型仍然能调用 aoa 的工具。
 - Codex 会把每个新的 cwd 写进 `~/.codex/config.toml`，成为一条 `[projects."…"]` 记录。aoa 的每个 worktree 都是新目录，所以你的配置会跟着变长，目前没有拦。
 - 如果配置里某个 `apiKeyEnv` 和 Codex 用的是同一个环境变量，aoa 启动时会把它从环境里删掉，Codex 子进程也就拿不到。
+
+### DeepSeek Harness runtime（`packages/runtime-dsh`）
+
+第二档的第二个 runtime，接的是 dsh 的 SDK 档：`dsh --profile sdk`，stdio 上换行分隔的 JSON-RPC 2.0（[方案](proposals/deepseek-harness.md)，依据 dsh `0.2.2-rc.3`）。
+
+- 配置：`runtime: "dsh"`（顶层或具名 agent），要写 `model`（dsh 的模型名）和 `apiKeyEnv`（密钥所在的环境变量），可选 `dsh: { command, preset }`，默认命令 `dsh`、profile `sdk`。这个 agent 的 worker 是 `permissions: "harness"`。只能用在本地模式；审查角色不支持（dsh 的工具不经过 aoa 的只读规则，拦不住）。provider 固定是 `deepseek-official`，aoa 不提供别的路由。`serve` 不要求 dsh agent 配分类器：它自己的工具不经过 aoa，aoa 给它的工具都是 `low`。
+- 进程和会话：每次 run 起一个 dsh 子进程，工作目录是 session 的 worktree，run 结束就杀掉。`initialize` 带 `cwd`、`provider`、`model`、`approvalRequests: true` 和 `capabilities: { userQuestions: true }`。新会话的 `sessionId` 由 aoa 生成，直接 `session/prompt`，它就是这个 session 的 `sessionRef`；已有的会话先 `session/resume` 再 prompt。`session.status` 进入 `idle` 就是 run 结束。本次 run 的事件按 pi 的格式写成一个 text block。
+- 版本：dsh 握手里的 `version` 固定写死是 `0.0.1`，分不出发布版本，所以启动前先跑 `<command> --version`，要求等于代码里的常量 `0.2.2-rc.3`，不一致就让这次 run 失败并说明原因。dsh 还在开发者预览阶段，换版本时 patch 里的行 id 也要重新核对一遍。
+- 独立的 home 和 patch：`$DSH_HOME` 是 `<dataDir>/dsh-home`，不带用户的 dsh 插件、MCP 和设置。每次 run 在 `<dataDir>/dsh-home/patches/` 下写一个 patch：关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理器，以及它自己的提问和调度工具（这样提问只有 aoa 的 `ask_user`、定时只有 `wake_me_at`）；插入一行 `dsh-mcp-client`，server 名 `aoa`，指向这次 run 的桥；再用 `system-prompt` 行的 `personaSuffix` 把 aoa 的系统提示交给 dsh，因为 SDK 协议没有 instructions 字段。行 id 逐项对照过 dsh 的 base 和 sdk-app profile。
+- 子进程环境只有 `DSH_HOME`、`DEEPSEEK_API_KEY`（从 `apiKeyEnv` 读出，放进 dsh 默认读的那个变量）、`AOA_DSH_SYSTEM_PROMPT`，以及 `PATH`、`HOME`、`TMPDIR`。aoa 启动时从自己环境里删掉的 key 不会出现在里面，别的 agent 的 key 也不会。
+- 调用表和审批：dsh 的审批请求只有 `toolName`、`callId?`、`reason?`，参数在更早的会话事件里——普通调用是 `tool/call`（键 `callId`），`run_code` 里的子调用是 `tool/ptc-dispatch-start`（键 `subCallId`）。事件一到就同步记进调用表，键是 `(dsh 会话, callId)`。查得到时 `ask` 的工具名是 `dsh:<toolName>`、参数取表里的；`allow` 回 `allowed-once`，`defer` 回 `rejected` 再停下。查不到（没带 callId，或表里没有）直接 `rejected`，不问用户，也不按工具名放行——内核只按工具名加参数深度相等消费许可，放宽就可能把许可用到另一条命令上。内核 call id 用 `<aoa session>:<dsh callId>`。`user-question/ask` 回 `{cancelled: true}`，其他请求回 JSON-RPC 错误。
+- 许可和重问：和 Codex 一样。批准后的下一次 run，输入里写明「用户批准了、还没做、照原样再做一次」；dsh 再做时照自己的设置又问一遍，`tool` 和 `args` 深度相等，内核直接放行，不再发请求。拒绝也写进下一次的输入。
+- aoa 的工具走 MCP 桥：每次 run 在本进程起一个 streamable-http MCP server，只监听 `127.0.0.1`、端口随机，路径里带这次 run 才有的 token（每次询问都是新的），dsh 看到的工具名是 `mcp__aoa__<名字>`。dsh 发给 MCP 的只有名字和参数，不带它自己的 callId，所以桥按「同一会话、工具名对应、参数深度相等、还没被认领、最早的一条」从调用表里认领，内核 call id 用 `<session>:<dsh callId>`；认领不到就回 MCP 错误、不执行。延后的 aoa 工具回一句「等用户决定」然后停下；重试时同一个 dsh callId 得到同一个内核 call id，日志里已有结果的直接重放，不会再执行一次。
+- 停下和恢复：dsh 没有取消方法。要停时先回复手上的请求（审批回 `rejected`，aoa 工具回「等用户决定」），之后来的审批请求和 MCP 调用一律拒绝、不再问内核；然后发 `shutdown`，最多等 10 秒，超时依次 SIGTERM、SIGKILL。正常 `idle` 也走 `shutdown`，这样会话是写完再退出的。会话用 JSONL 持久化、锁是 flock，进程一死就释放，所以下一次 run 能 resume；在途调用的结果 dsh 自己会标成未知，模型从修好的历史里看到。
+- 和 Codex 一样：dsh 不问就执行的、它的沙箱允许的操作，aoa 既看不到也拦不住，aoa 的推送规则、`~/.aoa` 规则和 worktree 边界对 dsh 自己的工具不起作用。`serve` 启动时为每个 dsh agent 提醒一次，`aoa status` 和观察页标出 runtime 和权限归谁。
+- 冒烟测试只在 `AOA_DSH_SMOKE=1` 时跑（真的要 dsh 和真的 key，`bun test packages/runtime-dsh/test/smoke.test.ts`）：冷启动时间、MCP 工具没有被 gate 拦、patch 关掉的工具确实不在模型能看到的工具列表里（从会话的 `request/header` 事件里读）、杀掉进程后能恢复。
+
+和方案不完全一样、或者没做到的：
+
+- 系统提示走 patch 的 `personaSuffix` 而不是握手字段：SDK 协议没有这个字段，而覆盖 `system-prompt` 这一行会连带丢掉 sdk-app 自带的 `personaPrefix`（「You are a coding agent powered by …」）。现在 dsh 的系统提示是它自己的身份和指引，后面接 aoa 的提示。
+- 版本检查是跑 `--version` 读输出，而不是像 dsh 官方 client 那样读包清单；`dsh.command` 指向的如果不是那个包的 bin（比如包了一层脚本），检查的依据就是脚本打印的版本。
+- `session/query`（斜杠命令）、`session/wait`、`subagent.*` 通知都没用；dsh 的 PTC 子调用照样进调用表，没有别的特殊处理。
+- 认领 MCP 调用靠参数深度相等。dsh 如果在事件和实际调用之间改写了参数（比如把相对路径换成绝对路径），桥就认领不到，这次调用会被拒、不会执行；这是有意的失败方向。
+
 
 ## 13. 没验证的
 

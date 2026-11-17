@@ -18,6 +18,10 @@ export default {
   //   // Runs on the local `codex app-server` with Codex's own tools, login and approval settings; aoa relays what
   //   // Codex asks you and still decides its own tools (memory, notify, ask_user). model is optional: a Codex model id.
   //   coder: { runtime: "codex", model: "your-codex-model-id" },
+  //   // or on the local DeepSeek Harness (`dsh --profile sdk`): dsh's own tools, sandbox and approvals, with
+  //   // aoa's tools bridged over MCP. model is a dsh model name; apiKeyEnv names the variable its key is in.
+  //   // dsh: { command: "dsh", preset: "sdk" } is optional. Local mode only; not for a review agent.
+  //   deepseek: { runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
   // },
   // Without a github block aoa runs in local mode. Add one to take tasks from issues and open pull requests:
   // github: {

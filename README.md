@@ -62,6 +62,22 @@ agents: {
 
 注意：aoa 的推送规则和 `~/.aoa` 规则管不到 Codex 自己的工具，`serve` 启动时会为每个这样的 agent 提醒一次；`aoa status` 和观察页会标出每个 agent 用的是哪个 runtime、权限归谁。
 
+## 用 DeepSeek Harness（dsh）跑一个 agent
+
+`runtime: "dsh"`（顶层或某个具名 agent）把每次运行交给本机的 dsh，用的是它的 SDK 档：`dsh --profile sdk`，stdio 上换行分隔的 JSON-RPC。要写 `model`（dsh 的模型名）和 `apiKeyEnv`（密钥所在的环境变量）；可选 `dsh.command`（默认 `dsh`）和 `dsh.preset`（默认 `sdk`）。密钥只进 dsh 子进程的环境，不进 aoa 自己的环境，也不进 agent 的 shell。
+
+```ts
+model: { provider: "anthropic", modelId: "your-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
+classifier: { provider: "anthropic", modelId: "your-small-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
+agents: {
+  coder: { runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
+},
+```
+
+读文件、改代码、跑命令用的是 dsh 自己的工具，它不问就能做什么由 dsh 的沙箱和审批设置决定；aoa 会为每次运行准备一个独立的 dsh home（`<dataDir>/dsh-home`）和一个 patch，关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理器，以及它自己的提问和调度工具。dsh 要问审批时，问题变成 aoa 的审批请求，你批准后 dsh 再做一次同样的操作并直接放行。记忆、`notify`、`ask_user`、`send_to` 这些 aoa 自己的工具通过一个只监听 `127.0.0.1`、每次运行一个 token 的 MCP 桥交给 dsh，仍由 aoa 裁决和记录。启动前 aoa 会查 `dsh --version`，不是它测试过的 `0.2.2-rc.3` 就不跑。只能用在本地模式，审查角色不支持。
+
+注意：和 Codex 一样，aoa 的推送规则和 `~/.aoa` 规则管不到 dsh 自己的工具，`serve` 启动时会提醒一次；dsh 还在开发者预览阶段，换版本可能要跟着改 patch 和版本常量。
+
 ## 看它在做什么
 
 ```bash
