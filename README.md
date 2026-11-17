@@ -78,11 +78,11 @@ git clone https://github.com/bubbleptr/aoa.git && cd aoa
 bun install
 (cd apps/aoa && bun link)
 
-# 配置：改 repo.path、model 和 classifier
+# 配置：改 repo.path；默认用 DeepSeek
 mkdir -p ~/.aoa
 cp aoa.config.example.ts ~/.aoa/aoa.config.ts
 $EDITOR ~/.aoa/aoa.config.ts
-export ANTHROPIC_API_KEY=<你的 key>
+export DEEPSEEK_API_KEY=<你的 key>
 
 # 启动
 aoa serve

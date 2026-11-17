@@ -5,9 +5,9 @@
 export default {
   dataDir: "~/.aoa",
   repo: { path: "~/code/your-repo", base: "main" },
-  model: { provider: "anthropic", modelId: "your-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  model: { provider: "deepseek", modelId: "deepseek-v4-pro", apiKeyEnv: "DEEPSEEK_API_KEY" },
   // Required by `aoa serve`: it judges bash calls, which otherwise all wait for your approval.
-  classifier: { provider: "anthropic", modelId: "your-small-model-id", apiKeyEnv: "ANTHROPIC_API_KEY" },
+  classifier: { provider: "deepseek", modelId: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
   // Optional: score every classifier call with TypeSafe Jev without changing or delaying its decision (design §12).
   // shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: "TYPESAFE_API_KEY" },
   // Optional, local mode only: more agents in the same serve. Each has its own inbox, worktrees and memory, and takes
