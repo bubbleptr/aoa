@@ -109,50 +109,20 @@ describe("codexRuntime", () => {
     expect(result.sessionRef).toBe("thread-77");
   });
 
-  describe("read-only (a review agent)", () => {
-    const readOnly = (fake: FakeAppServer) =>
-      codexRuntime({ developerInstructions: INSTRUCTIONS, cwd: "/repo", readOnly: true, spawn: fake.spawn });
+  test("auto review: a new and a resumed thread route Codex's approvals to its own reviewer; the sandbox stays the user's", async () => {
+    const fresh = new FakeAppServer();
+    const resumed = new FakeAppServer();
+    const autoReview = (fake: FakeAppServer) =>
+      codexRuntime({ developerInstructions: INSTRUCTIONS, cwd: "/repo", autoReview: true, spawn: fake.spawn });
 
-    test("a new and a resumed thread both run in Codex's read-only sandbox, with no approvals to ask for", async () => {
-      const fresh = new FakeAppServer();
-      const resumed = new FakeAppServer();
+    await autoReview(fresh).run(runInput());
+    await autoReview(resumed).run(runInput({ session: { id: "session-1", resumed: true, ref: "thread-77", workdir: null } }));
 
-      await readOnly(fresh).run(runInput());
-      await readOnly(resumed).run(runInput({ session: { id: "session-1", resumed: true, ref: "thread-77", workdir: null } }));
-
-      expect(fresh.sent("thread/start")[0]).toMatchObject({ sandbox: "read-only", approvalPolicy: "never" });
-      expect(resumed.sent("thread/resume")[0]).toMatchObject({ sandbox: "read-only", approvalPolicy: "never" });
-    });
-
-    test("whatever Codex still asks for is refused without asking the user", async () => {
-      const fake = new FakeAppServer([
-        async (t) => {
-          await commandApproval(t, "item-1", "git commit -am wip");
-          await t.request("item/fileChange/requestApproval", { threadId: t.threadId, turnId: t.turnId, itemId: "item-2", startedAtMs: 0 });
-          await t.request("item/permissions/requestApproval", {
-            threadId: t.threadId,
-            turnId: t.turnId,
-            itemId: "item-3",
-            environmentId: null,
-            startedAtMs: 0,
-            cwd: "/work/tree",
-            reason: null,
-            permissions: { network: { enabled: true }, fileSystem: null },
-          });
-        },
-      ]);
-      const gate = recordingAsk(() => "allow");
-
-      const result = await readOnly(fake).run(runInput({ ask: gate.ask }));
-
-      expect(gate.asks).toEqual([]);
-      expect(fake.serverRequests.map((r) => r.reply)).toEqual([
-        { decision: "decline" },
-        { decision: "decline" },
-        { permissions: {}, scope: "turn" },
-      ]);
-      expect(result.end).toEqual({ kind: "silent" });
-    });
+    for (const params of [fresh.sent("thread/start")[0], resumed.sent("thread/resume")[0]]) {
+      expect(params).toMatchObject({ approvalsReviewer: "auto_review" });
+      expect(params).not.toHaveProperty("sandbox");
+      expect(params).not.toHaveProperty("approvalPolicy");
+    }
   });
 
   describe("approval requests go through the kernel gate", () => {

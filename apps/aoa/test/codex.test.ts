@@ -87,8 +87,8 @@ test("status and the web snapshot say which runtime each agent runs on and who o
 
   const status = JSON.parse((await w.cli("status", "--json")).out);
   expect(status.agents).toEqual([
-    { name: "default", runtime: "pi", permissionOwner: "kernel", readOnly: false },
-    { name: "coder", runtime: "codex", permissionOwner: "harness", readOnly: false },
+    { name: "default", runtime: "pi", permissionOwner: "kernel", autoReview: false },
+    { name: "coder", runtime: "codex", permissionOwner: "harness", autoReview: false },
   ]);
   const text = (await w.cli("status")).out;
   expect(text).toMatch(/default\s+pi\s+aoa decides/);
@@ -141,10 +141,10 @@ test("a codex agent's model reaches Codex, and the default agent can run on Code
   expect(first).not.toHaveProperty("model");
   expect(second.model).toBe("gpt-test");
   expect(w.agent.store.tx((t) => t.listOutbox(w.agent.inboxId))).toMatchObject([{ kind: "message", body: "Done." }]);
-  expect(JSON.parse((await w.cli("status", "--json")).out).agents[0]).toEqual({ name: "default", runtime: "codex", permissionOwner: "harness", readOnly: false });
+  expect(JSON.parse((await w.cli("status", "--json")).out).agents[0]).toEqual({ name: "default", runtime: "codex", permissionOwner: "harness", autoReview: false });
 });
 
-test("a codex reviewer runs in Codex's read-only sandbox, and status and serve say so", async () => {
+test("a codex reviewer leaves its approvals to Codex's auto review, and status and serve say so", async () => {
   const fake = new FakeAppServer();
   const w = new World({ local: true, agents: { reviewer: { role: "review", runtime: "codex" } } });
   w.spawnCodex = fake.spawn;
@@ -153,17 +153,17 @@ test("a codex reviewer runs in Codex's read-only sandbox, and status and serve s
 
   await w.cli("send", "--agent", "reviewer", "Review aoa/abc.");
   await w.drain("reviewer");
-  expect(fake.sent("thread/start")[0]).toMatchObject({ sandbox: "read-only", approvalPolicy: "never" });
+  expect(fake.sent("thread/start")[0]).toMatchObject({ approvalsReviewer: "auto_review" });
 
   const status = JSON.parse((await w.cli("status", "--json")).out);
-  expect(status.agents[1]).toEqual({ name: "reviewer", runtime: "codex", permissionOwner: "harness", readOnly: true });
-  expect((await w.cli("status")).out).toMatch(/reviewer\s+codex\s+.*read-only/);
+  expect(status.agents[1]).toEqual({ name: "reviewer", runtime: "codex", permissionOwner: "harness", autoReview: true });
+  expect((await w.cli("status")).out).toMatch(/reviewer\s+codex\s+.*auto review/);
 
   let stop = () => {};
   const done = serve(w.agent, new Promise<void>((resolve) => (stop = resolve)));
   stop();
   await done;
   const line = w.logs.find((l) => l.includes("reviewer") && l.includes("Codex"));
-  expect(line).toContain("read-only");
-  expect(line).not.toContain("~/.aoa");
+  expect(line).toContain("auto review");
+  expect(line).toContain("~/.aoa");
 });
