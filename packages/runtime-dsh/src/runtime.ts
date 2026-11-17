@@ -119,7 +119,13 @@ class DshRun {
   private readonly table = new CallTable();
   /** Set once the run must end: its first deferred call, or a failed `ask`. */
   private stop: Stop | null = null;
+  /** Whether `session/prompt` was sent: an idle before that says nothing about this run's work. */
+  private prompting = false;
   private prompted = false;
+  /** An idle that arrived while the prompt was still being acknowledged. */
+  private idleSeen = false;
+  /** Server requests whose reply has not been written yet; dsh is stopped only after the last of them. */
+  private replying = 0;
   private settling: Promise<void> | null = null;
   private finished = false;
   private ended!: () => void;
@@ -189,11 +195,13 @@ class DshRun {
       // `attempts` counts failed runs, so a non-zero one means an earlier attempt at these events stopped part way.
       const retry = this.input.events.some((e) => e.attempts > 0);
       const text = renderUserMessage(this.input, retry, renderDshAnswer);
+      this.prompting = true;
       await this.conn.request<SessionPromptResult>("session/prompt", {
         sessionId: this.sessionId,
         contentBlocks: [{ type: "text", text }],
       } satisfies SessionPromptParams);
       this.prompted = true;
+      if (this.idleSeen) this.settle();
       // A process that goes away while the run is already stopping (idle, or a deferred call) is the stop
       // working, not a failure; anything else is an error the kernel should retry.
       const closed = this.conn.closed.catch((err: unknown) => {
@@ -220,7 +228,9 @@ class DshRun {
         return this.event((params as SessionEventNotification).event);
       case "session.status": {
         const n = params as SessionStatusNotification;
-        if (this.prompted && n.sessionId === this.sessionId && n.status === "idle") this.settle();
+        if (!this.prompting || n.sessionId !== this.sessionId || n.status !== "idle") return;
+        this.idleSeen = true;
+        if (this.prompted) this.settle();
         return;
       }
     }
@@ -238,6 +248,7 @@ class DshRun {
   }
 
   private async request(method: string, params: unknown): Promise<unknown> {
+    this.replying++;
     switch (method) {
       case "approval/request":
         return this.approval(params as ApprovalRequestParams);
@@ -274,8 +285,20 @@ class DshRun {
     this.stop ??= stop;
   }
 
+  /** After a reply to one of dsh's own requests was written. */
   replied(): void {
-    if (this.stop !== null) this.settle();
+    if (this.replying > 0) this.replying--;
+    this.stopped();
+  }
+
+  /** After the answer to one of aoa's MCP tool calls was written. */
+  bridgeReplied(): void {
+    this.stopped();
+  }
+
+  /** dsh is shut down only once nothing of this run's is still waiting on a reply from aoa. */
+  private stopped(): void {
+    if (this.stop !== null && this.replying === 0) this.settle();
   }
 
   private settle(): void {

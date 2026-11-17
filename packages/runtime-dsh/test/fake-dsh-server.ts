@@ -84,6 +84,8 @@ export class FakeDshServer {
   readonly serverRequests: ServerRequest[] = [];
   /** Prompt texts, in order. */
   readonly inputs: string[] = [];
+  /** Requests and replies in the order they crossed, as `method` and `reply:<method>`. */
+  readonly order: string[] = [];
   /** The signals each process was killed with, in order. */
   readonly kills: ("SIGTERM" | "SIGKILL")[] = [];
   /** What `<command> --version` prints. */
@@ -125,6 +127,7 @@ export class FakeDshServer {
       let exit!: (why: string) => void;
       const exited = new Promise<string>((resolve) => (exit = resolve));
       const waiting = new Map<string, (reply: any) => void>();
+      const asked = new Map<string, string>();
       let seq = 0;
       let killed = false;
       let client: Promise<Client> | null = null;
@@ -152,10 +155,12 @@ export class FakeDshServer {
             const id = `srv-${++seq}`;
             const entry: ServerRequest = { method, params, reply: undefined };
             this.serverRequests.push(entry);
+            asked.set(id, method);
             send({ jsonrpc: "2.0", id, method, params });
             return new Promise((resolve) =>
               waiting.set(id, (reply) => {
                 entry.reply = reply;
+                this.order.push(`reply:${method}`);
                 resolve(reply);
               }),
             );
@@ -202,9 +207,11 @@ export class FakeDshServer {
         if (m.method === undefined) {
           waiting.get(m.id)?.(m.error ? { error: m.error } : m.result);
           waiting.delete(m.id);
+          asked.delete(m.id);
           return;
         }
         this.received.push({ method: m.method, params: m.params });
+        this.order.push(m.method);
         const reply = (result: object) => send({ jsonrpc: "2.0", id: m.id, result });
         switch (m.method) {
           case "initialize":

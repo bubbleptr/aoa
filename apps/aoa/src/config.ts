@@ -179,7 +179,7 @@ function runtimeChoice(o: Obj, field: string, inherited: RuntimeChoice | null): 
     return dsh === undefined ? { runtime, model, apiKeyEnv } : { runtime, model, apiKeyEnv, dsh };
   }
   if (o.model === undefined && same) return { runtime, model: same.model as ModelRef };
-  if (o.model === undefined && inherited) throw new ConfigError(`${p}model`, "is required for a pi agent when the top level runs codex");
+  if (o.model === undefined && inherited) throw new ConfigError(`${p}model`, "is required for a pi agent when the top level runs another runtime");
   return { runtime, model: modelRef(o.model, `${p}model`) };
 }
 

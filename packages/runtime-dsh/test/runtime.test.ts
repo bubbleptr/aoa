@@ -220,6 +220,8 @@ describe("dshRuntime: approval requests from dsh's own tools", () => {
     expect(fake.serverRequests.map((r) => r.reply)).toEqual([{ outcome: "rejected" }, { outcome: "rejected" }]);
     expect(gate.asks).toHaveLength(1);
     expect(fake.sent("shutdown")).toHaveLength(1);
+    // The order the proposal fixes: every reply at hand goes out before dsh is told to shut down.
+    expect(fake.order.lastIndexOf("reply:approval/request")).toBeLessThan(fake.order.indexOf("shutdown"));
     expect(result).toEqual({ end: { kind: "deferred", callId: "session-1:call-1" }, sessionRef: expect.any(String) });
     expect(fake.live).toBe(0);
   });
