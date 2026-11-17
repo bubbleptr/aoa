@@ -82,7 +82,7 @@ bun install
 mkdir -p ~/.aoa
 cp aoa.config.example.ts ~/.aoa/aoa.config.ts
 $EDITOR ~/.aoa/aoa.config.ts
-export DEEPSEEK_API_KEY=<你的 key>
+export DEEPSEEK_API_KEY=<your-key>
 
 # 启动
 aoa serve
@@ -91,9 +91,9 @@ aoa serve
 另开一个终端：
 
 ```bash
-aoa send "修掉 README 的错字"        # 派活，输出线程，如 local:1a2b3c4d
+aoa send "Fix the typo in README"    # 派活，输出线程，如 local:1a2b3c4d
 aoa messages                         # 看 agent 说了什么
-aoa answer <调用 id> approve         # 它要你批准时
+aoa answer <call-id> approve         # 它要你批准时
 aoa status                           # 任务和待审批
 aoa close local:1a2b3c4d merged      # 你看过分支、合并之后
 
@@ -105,18 +105,18 @@ claude mcp add aoa -- aoa mcp        # 可选：在 Claude Code 里直接用
 | 命令 | 作用 |
 |---|---|
 | `aoa serve` | 常驻运行 |
-| `aoa send "<文字>"` | 开一个任务 |
-| `aoa send --agent <名字> [--branch <分支>] "<文字>"` | 给具名 agent 派活；`--branch` 指定审查 agent 要审的分支 |
-| `aoa send --to <线程或前缀> "<文字>"` | 接着某个任务说；任务在等回答时，`/approve` 是批准，其他内容算拒绝和理由 |
-| `aoa answer <调用 id 或前缀> approve\|deny [理由]` | 回答等你决定的调用 |
-| `aoa close <线程或会话前缀> merged\|discarded` | 本地模式：告诉 aoa 分支的结局 |
-| `aoa messages [--since <游标>] [--wait <秒>] [--json]` | agent 说过的话，末尾是新游标 |
+| `aoa send "<text>"` | 开一个任务 |
+| `aoa send --agent <name> [--branch <branch>] "<text>"` | 给具名 agent 派活；`--branch` 指定审查 agent 要审的分支 |
+| `aoa send --to <thread> "<text>"` | 接着某个任务说，线程可以只写前缀；任务在等回答时，`/approve` 是批准，其他内容算拒绝和理由 |
+| `aoa answer <call-id> approve\|deny [reason]` | 回答等你决定的调用；id 可以只写前缀 |
+| `aoa close <thread> merged\|discarded` | 本地模式：告诉 aoa 分支的结局 |
+| `aoa messages [--since <cursor>] [--wait <seconds>] [--json]` | agent 说过的话，末尾是新游标 |
 | `aoa status [--json] [--refresh]` | 任务、结局、待审批、死信、失败的消息、每个 agent 的 runtime |
 | `aoa mcp` | 把 send、messages、status、close、answer 作为 stdio 上的 MCP 工具 |
 
 ## 一个任务怎么走（本地模式）
 
-- 每个任务在 `<dataDir>/worktrees/` 下有自己的 worktree，提交在本地分支 `aoa/<会话 id 前 8 位>` 上。
+- 每个任务在 `<dataDir>/worktrees/` 下有自己的 worktree，提交在本地分支 `aoa/<session8>` 上（会话 id 的前 8 位）。
 - agent 找你时，消息追加到 `<dataDir>/messages.md`，macOS 上同时弹通知。要你批准时，消息里写着对应的 `aoa answer` 命令。
 - 你自己看分支、合并，然后用 `aoa close` 告诉 aoa 结局。`close` 只做记录；`serve` 在下一次检查（5 秒内）关掉任务、删掉 worktree，分支保留。
 - `bash` 里出现 `git push` 时会先问你。这只是约定，不是隔离：agent 的 shell 就是你的 shell。
@@ -161,9 +161,9 @@ agents: {
 aoa 自己没有主会话。你在别的聊天 agent（比如 Claude Code）里说话，让它敲命令就行：
 
 ```bash
-aoa send "..."                           # 派活，记下输出的线程
-aoa messages --since <游标> --wait 600    # 等下一条消息；输出末尾是新游标
-aoa answer <调用 id> approve|deny [理由]   # 消息是审批请求时
+aoa send "<text>"                        # 派活，记下输出的线程
+aoa messages --since <cursor> --wait 600  # 等下一条消息；输出末尾是新游标
+aoa answer <call-id> approve|deny [reason]  # 消息是审批请求时
 ```
 
 `messages` 读的是 outbox，不是 `messages.md`，所以两种模式都能用；加 `--json` 方便程序读。
