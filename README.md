@@ -39,7 +39,7 @@ interface Channel {
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/tool-call-dark.png">
-  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/tool-call-light.png">
+  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后，Jev 在旁边只打分不裁决；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/tool-call-light.png">
 </picture>
 
 - **裁决在模型之外**，依次是规则表、分类器、延后。只读工具和只读命令放行；`sudo`、强推、改 git 配置或远端、`curl | sh` 直接拦；规则判不了的交给分类器（一个小模型）；高风险和分类器拿不准的延后，未知工具默认延后。每次裁决连同依据写进日志。
