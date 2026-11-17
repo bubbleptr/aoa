@@ -2,7 +2,10 @@
 
 一个常驻的 agent 内核：你交代任务，它在自己的分支上做完，只在需要你的时候找你。
 
-![aoa 架构](docs/architecture.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
+  <img alt="aoa 架构：事件进入内核的 inbox，worker 开一次 run 交给 runtime，工具调用经过权限，消息从 outbox 送回；状态存在 SQLite；runtime 分第一档 pi 和第二档 Codex、dsh" src="docs/architecture-light.png">
+</picture>
 
 - **五个原语**都在内核里：Inbox 收事件，Timers 到点唤醒，Memory 跨 run 保留指令、笔记、进度和已发消息，Permissions 决定每次工具调用能不能做，Outbox 发消息并重试送达。所有状态都在一个 SQLite 文件里，进程崩溃后能接着做。
 - **Worker** 认领一批事件，开一次 run 交给 runtime，再记下这次 run 的结局。
