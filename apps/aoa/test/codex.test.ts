@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { FakeAppServer, type FakeTurn } from "../../../packages/runtimes/codex/test/fake-app-server.ts";
+import { snapshot } from "../src/observe.ts";
 import { serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
 import { World, call, say } from "./world.ts";
@@ -186,10 +187,16 @@ test("a codex reviewer takes an untainted implementer's handoff without an admit
 
   const [implementing] = w.sessions();
   w.agent.store.tx((t) => t.markTainted(implementing!.id));
-  w.script([call("send_to", { agent: "reviewer", text: "Look again." }), say("Sent.")]);
+  const longText = `Look again. ${"Every word of this should reach you before you let it in. ".repeat(6)}The end.`;
+  w.script([call("send_to", { agent: "reviewer", text: longText }), say("Sent.")]);
   await w.cli("send", "--to", implementing!.id, "Ask for another look.");
   await w.drain();
   await w.drain("reviewer");
   expect(admits()).toHaveLength(1);
   expect(w.runs("reviewer")).toHaveLength(1);
+  // What the page offers to let in is the whole message, not the kernel's 200-character preview.
+  const held = snapshot(reviewer).permissions.waiting[0]!;
+  expect(held).toMatchObject({ kind: "admit" });
+  expect(held.full).toContain("agent default");
+  expect(held.full).toContain(longText);
 });

@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type JournalRecord, type OutMsg, type PendingCall, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
+import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type Event, type JournalRecord, type OutMsg, type PendingCall, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
@@ -269,9 +269,24 @@ function recentlyDecided(decisions: DecisionRecord[], isClassifier: (basis: stri
  * One agent's view, read in one transaction, so the counts and totals agree with each other. `serve` is one process
  * for every agent, so its heartbeat is read from the default agent's inbox.
  */
-/** What a waiting call asks, unclipped. A bash call reads as its command; the rest of its args follow as JSON. */
-function fullAsk(d: PendingCall): string {
+/**
+ * What a waiting call asks, unclipped. A bash call reads as its command; the rest of its args follow as JSON. An
+ * admit reads as each held event in full, with who sent it, since its args carry only a 200-character preview.
+ */
+function fullAsk(d: PendingCall, events: Event[]): string {
   if (d.kind === "question") return String((d.args as { question?: unknown }).question);
+  if (d.kind === "admit") {
+    const ids = new Set((d.args as { events?: string[] }).events ?? []);
+    return events
+      .filter((e) => ids.has(e.id))
+      .map((e) => {
+        const payload = e.payload as { from?: unknown; text?: unknown } | null;
+        const who = e.source === "agent_message" && typeof payload?.from === "string" ? `agent ${payload.from}` : e.source;
+        const text = typeof payload?.text === "string" ? payload.text : JSON.stringify(e.payload, null, 2);
+        return `From ${who}${e.thread === null ? "" : ` on ${e.thread}`}:\n${text}`;
+      })
+      .join("\n\n");
+  }
   const args = typeof d.args === "object" && d.args !== null ? (d.args as Record<string, unknown>) : null;
   if (d.tool === "bash" && args && typeof args.command === "string") {
     const { command, ...rest } = args;
@@ -385,8 +400,9 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const journal: JournalRecord[] = sessions.flatMap((x) => t.listJournal(x.id)).sort((a, b) => a.intentAt - b.intentAt);
     const decisions = sessions.flatMap((x) => t.listDecisions(x.id)).sort((a, b) => a.at - b.at);
     const deferred = t.listDeferred(inboxId);
+    // The deferred row lasts until the run that takes the answer has settled the call, approved calls included.
     const queuedAnswer = (callId: string): "approve" | "deny" | null => {
-      const e = events.find((x) => x.source === "approval_answer" && x.status === "pending" && (x.payload as { callId?: unknown }).callId === callId);
+      const e = events.find((x) => x.source === "approval_answer" && (x.status === "pending" || x.status === "in_run") && (x.payload as { callId?: unknown }).callId === callId);
       return e ? (e.payload as { verdict: "approve" | "deny" }).verdict : null;
     };
     const judgments = t.listJudgments(inboxId, now - WEEK_MS);
@@ -517,7 +533,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
           expiresAt: d.expiresAt,
           answer: `aoa answer ${d.callId} approve|deny`,
           kind: d.kind,
-          full: fullAsk(d),
+          full: fullAsk(d, events),
           answered: queuedAnswer(d.callId),
         })),
         last24h,
