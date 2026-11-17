@@ -96,6 +96,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@aoa/kernel": "workspace:*",
+        "@aoa/runtime-pi": "workspace:*",
       },
       "devDependencies": {
         "@aoa/conformance": "workspace:*",

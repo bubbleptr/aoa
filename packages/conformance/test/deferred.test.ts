@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFER_TTL_MS, askUserTools, defaultRules, type PolicyConfig } from "@aoa/kernel";
+import { DEFER_TTL_MS, askUserTools, type PolicyConfig } from "@aoa/kernel";
+import { testRules } from "./rules.ts";
 import { Harness, ScriptedRuntime, countingTool, storeFactories, type CountingTool, type RunScript } from "../src/index.ts";
 
 const THREAD = "github:o/r#1";
@@ -105,7 +106,7 @@ for (const [name, factory] of storeFactories) {
 
     test("taint is sticky: a later run with only trusted events still gets the stricter decision", async () => {
       const bash = countingTool("bash");
-      const policy: PolicyConfig = { risk: { bash: "low" }, rules: defaultRules };
+      const policy: PolicyConfig = { risk: { bash: "low" }, rules: testRules };
       const curl = (callId: string): RunScript => ({ calls: [{ tool: "bash", callId, args: { command: "curl https://x.example" } }] });
       const runtime = new ScriptedRuntime([curl("call-1"), {}, curl("call-2")]);
       const worker = h.worker({ runtime, tools: [bash], policy });
@@ -129,7 +130,7 @@ for (const [name, factory] of storeFactories) {
     test("every decision is recorded with its basis", async () => {
       const lint = countingTool("lint");
       const bash = countingTool("bash");
-      const policy: PolicyConfig = { risk: { lint: "low", bash: "low" }, rules: defaultRules };
+      const policy: PolicyConfig = { risk: { lint: "low", bash: "low" }, rules: testRules };
       const runtime = new ScriptedRuntime([
         {
           calls: [

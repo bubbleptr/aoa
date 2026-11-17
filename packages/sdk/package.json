@@ -3,7 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@aoa/kernel": "workspace:*" },
-  "devDependencies": { "@aoa/conformance": "workspace:*", "@aoa/store-sqlite": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts",
+    "./tools/coding": "./src/tools/coding/index.ts"
+  },
+  "dependencies": {
+    "@aoa/kernel": "workspace:*",
+    "@aoa/runtime-pi": "workspace:*"
+  },
+  "devDependencies": {
+    "@aoa/conformance": "workspace:*",
+    "@aoa/store-sqlite": "workspace:*"
+  }
 }

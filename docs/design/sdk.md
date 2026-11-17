@@ -95,8 +95,8 @@ store 只有 SQLite 一个实现，但 SDK 的公开类型里不出现 `SqliteSt
 - 默认安全：不传 `policy` 时不再全部放行，而是按每个工具的风险等级走，未知工具延后。现在内核 `!policy` 就放行，使用者容易以为有默认保护。
 - 风险等级跟着工具走：`ToolDef` 多一个 `risk?: Risk`。内核自带的工具（timers、notify、memory、`send_to`、`follow`）自己标 `low`，`ask_user` 不经风险；编码工具包里的工具自己标等级。`policy.risk` 只用来覆盖。现在 `low` 的名单写死在 `apps/aoa/src/policy.ts`，SDK 用户一开 `policy`，连 `notify` 都会停下来等审批。
 - 规则只有一张有序的表，SDK 不往里拼任何东西。`apps/aoa` 现在分 `ahead` 和 `rules` 两段，是因为审查的只读拦截要排在凭据路径的延后之前，本地 `git push` 的延后要排在禁止强推之后；这种顺序由调用方自己拼表决定。
-- 编码相关的规则跟着编码工具走：内核的 `defaultRules`（sudo、强推、git 配置、`curl | sh`、凭据路径、tainted 时联网、只读命令）和 `apps/aoa` 的 `outsideWorktree` 都搬进 `@aoa/sdk/tools/coding`，导出成数组，由调用方放进自己的规则表。内核本身不带规则。
-- 分类器能读 session：`Classify` 的上下文多一个只读的 `read`（同 `Agent.read`），审核模型（§12「审核模型」）不用再绕过 agent 直接扫 store。它仍然只拿得到库里的东西，拿不到调用结果，§6.2 的要害不变。
+- 编码相关的规则跟着编码工具走：原来内核的 `defaultRules`（sudo、强推、git 配置、`curl | sh`、凭据路径、tainted 时联网、只读命令）改名 `codingRules`，和 `apps/aoa` 的 `outsideWorktree` 一起搬进 `@aoa/sdk/tools/coding`，分开导出，由调用方放进自己的规则表。规则名不变，库里记的 `rule:<名字>` 照旧能对上。内核本身不带规则。`tools/coding` 暂时转导出 `@aoa/runtime-pi` 的 `codingTools`，第 3 步内置 pi 不再自带工具时搬过来。
+- 分类器能读 session（第 4 步，随 `agent.read`）：`Classify` 的上下文多一个只读的 `read`（同 `Agent.read`），审核模型（§12「审核模型」）不用再绕过 agent 直接扫 store。它仍然只拿得到库里的东西，拿不到调用结果，§6.2 的要害不变。
 
 ## 两档 runtime
 
@@ -169,7 +169,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 ## 步骤
 
-每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段到对应的步骤再去掉：`AgentSpec.permissions`（第 3 步换成 runtime 的类型）、`AgentSpec.pollMs` 只在给了时才轮询（第 4 步 `poll` 变可选后改成默认 60 秒）、`agent.wake()`（第 4 步追加和答复自己唤醒）。`serve` 的心跳和每 5 秒的唤醒还在 `apps/aoa`，第 4 步随 `serving()` 和 `watch` 搬走。
+每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段到对应的步骤再去掉：`AgentSpec.permissions`（第 3 步换成 runtime 的类型）、`AgentSpec.pollMs` 只在给了时才轮询（第 4 步 `poll` 变可选后改成默认 60 秒）、`agent.wake()`（第 4 步追加和答复自己唤醒）。`serve` 的心跳和每 5 秒的唤醒还在 `apps/aoa`，第 4 步随 `serving()` 和 `watch` 搬走。第 2 步已完成（2026-11-18）：工具自带风险等级，不传 `policy` 按等级走，内核不再带规则，编码规则在 `@aoa/sdk/tools/coding`。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |

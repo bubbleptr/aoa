@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { defaultRules, type PolicyConfig } from "@aoa/kernel";
+import type { PolicyConfig } from "@aoa/kernel";
+import { testRules } from "./rules.ts";
 import { Harness, ScriptedRuntime, countingTool, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {
@@ -38,7 +39,7 @@ for (const [name, factory] of storeFactories) {
 
     test("a blocked call is not executed; the run is told why and goes on to another call", async () => {
       const bash = countingTool("bash");
-      const policy: PolicyConfig = { risk: { bash: "low" }, rules: defaultRules };
+      const policy: PolicyConfig = { risk: { bash: "low" }, rules: testRules };
       h.append();
       const runtime = new ScriptedRuntime([
         {

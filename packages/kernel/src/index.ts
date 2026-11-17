@@ -51,12 +51,7 @@ export {
 } from "./outbox.ts";
 export { ChannelPoller, POLL_INTERVAL_MS, type ChannelPollerOptions } from "./poller.ts";
 export {
-  BRANCH_LIST_FLAGS,
-  commandOf,
   decide,
-  defaultRules,
-  gitInvocations,
-  ownWorktreeRelative,
   type PolicyConfig,
   type PolicyContext,
   type Risk,
