@@ -14,17 +14,24 @@ export type ModelRef = {
 
 export type Role = "implement" | "review";
 
+/** Where aoa starts dsh, and which of its profiles. Both optional; see `DshRuntimeConfig`. */
+export type DshOptions = { command?: string; preset?: string };
+
 /**
  * What runs an agent (design §12). `pi`: aoa's own loop, every tool call decided by aoa. `codex`: a Codex app-server
  * thread whose own tools Codex runs under the user's Codex configuration; Codex authenticates itself, and `model`,
- * when set, is a Codex model id.
+ * when set, is a Codex model id. `dsh`: a DeepSeek Harness SDK process whose own tools dsh runs under its own
+ * sandbox and approval settings; `model` is a dsh model name and `apiKeyEnv` names the variable its key comes from.
  */
-export type RuntimeChoice = { runtime: "pi"; model: ModelRef } | { runtime: "codex"; model?: string };
+export type RuntimeChoice =
+  | { runtime: "pi"; model: ModelRef }
+  | { runtime: "codex"; model?: string }
+  | { runtime: "dsh"; model: string; apiKeyEnv: string; dsh?: DshOptions };
 
 export type Runtime = RuntimeChoice["runtime"];
 
 /** Who decides what the agent's own tools may do: aoa's kernel, or the harness the agent runs in. */
-export const permissionOwner = (runtime: Runtime): "kernel" | "harness" => (runtime === "codex" ? "harness" : "kernel");
+export const permissionOwner = (runtime: Runtime): "kernel" | "harness" => (runtime === "pi" ? "kernel" : "harness");
 
 /** A named agent with everything it did not set taken from the top level. */
 export type NamedAgent = {
@@ -41,12 +48,19 @@ export type AgentInput = {
   instructions?: string;
   runtime?: Runtime;
   model?: ModelRef | string;
+  /** For a dsh agent: the variable its key comes from. */
+  apiKeyEnv?: string;
+  /** For a dsh agent: where dsh is and which profile it runs. */
+  dsh?: DshOptions;
   classifier?: ModelRef;
   risk?: Record<string, Risk>;
 };
 
 export type AgentConfig = {
   dataDir: string;
+  /** Set for a dsh agent: the variable its key comes from, and where dsh is. */
+  apiKeyEnv?: string;
+  dsh?: DshOptions;
   repo: { path: string; base: string };
   /** Judges `medium` calls of the agents that run on pi; without one they wait for the user. */
   classifier?: ModelRef;
@@ -74,9 +88,11 @@ export type AgentConfig = {
 type GitHubConfig = NonNullable<AgentConfig["github"]>;
 
 /** What a config file writes; the App ids may be numbers, and the runtime defaults to pi. */
-export type AgentConfigInput = Omit<AgentConfig, "github" | "agents" | "runtime" | "model"> & {
+export type AgentConfigInput = Omit<AgentConfig, "github" | "agents" | "runtime" | "model" | "apiKeyEnv" | "dsh"> & {
   runtime?: Runtime;
   model?: ModelRef | string;
+  apiKeyEnv?: string;
+  dsh?: DshOptions;
   agents?: Record<string, AgentInput>;
   github?: Omit<GitHubConfig, "appId" | "installationId"> & { appId: string | number; installationId: string | number };
 };
@@ -120,8 +136,22 @@ function modelRef(value: unknown, field: string): ModelRef {
 }
 
 function runtimeOf(value: unknown, field: string): Runtime | undefined {
-  if (value === undefined || value === "pi" || value === "codex") return value;
-  throw new ConfigError(field, "must be pi or codex");
+  if (value === undefined || value === "pi" || value === "codex" || value === "dsh") return value;
+  throw new ConfigError(field, "must be pi, codex or dsh");
+}
+
+/** A dsh model name; the key and the provider route are configured next to it. */
+function dshModel(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") throw new ConfigError(field, "must be a dsh model name (a string) for a dsh agent");
+  return value;
+}
+
+function dshOptions(value: unknown, field: string): DshOptions {
+  const o = object(value, field, ["command", "preset"]);
+  const options: DshOptions = {};
+  if (o.command !== undefined) options.command = str(o, "command", `${field}.`);
+  if (o.preset !== undefined) options.preset = str(o, "preset", `${field}.`);
+  return options;
 }
 
 /** A Codex model id; Codex holds its own credentials, so there is nothing else to name. */
@@ -138,6 +168,15 @@ function runtimeChoice(o: Obj, field: string, inherited: RuntimeChoice | null): 
   if (runtime === "codex") {
     if (o.model !== undefined) return { runtime, model: codexModel(o.model, `${p}model`) };
     return same?.model === undefined ? { runtime } : { runtime, model: same.model as string };
+  }
+  if (runtime === "dsh") {
+    const inheritedDsh = inherited?.runtime === "dsh" ? inherited : null;
+    const model = o.model === undefined ? inheritedDsh?.model : dshModel(o.model, `${p}model`);
+    if (model === undefined) throw new ConfigError(`${p}model`, "is required for a dsh agent: a dsh model name");
+    const apiKeyEnv = o.apiKeyEnv === undefined ? inheritedDsh?.apiKeyEnv : str(o, "apiKeyEnv", p);
+    if (apiKeyEnv === undefined) throw new ConfigError(`${p}apiKeyEnv`, "is required for a dsh agent: the variable its key comes from");
+    const dsh = o.dsh === undefined ? inheritedDsh?.dsh : dshOptions(o.dsh, `${p}dsh`);
+    return dsh === undefined ? { runtime, model, apiKeyEnv } : { runtime, model, apiKeyEnv, dsh };
   }
   if (o.model === undefined && same) return { runtime, model: same.model as ModelRef };
   if (o.model === undefined && inherited) throw new ConfigError(`${p}model`, "is required for a pi agent when the top level runs codex");
@@ -208,10 +247,12 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
     const field = `agents.${name}`;
     if (!AGENT_NAME.test(name)) throw new ConfigError(field, "is not a valid agent name: a lowercase letter, then up to 31 lowercase letters, digits or -");
     if (name === DEFAULT_AGENT) throw new ConfigError(field, "is reserved for the agent the top-level fields describe");
-    const a = object(raw, field, ["role", "instructions", "runtime", "model", "classifier", "risk"]);
+    const a = object(raw, field, ["role", "instructions", "runtime", "model", "apiKeyEnv", "dsh", "classifier", "risk"]);
     if (a.role !== undefined && a.role !== "implement" && a.role !== "review") throw new ConfigError(`${field}.role`, "must be implement or review");
     const role = (a.role as Role | undefined) ?? "implement";
     const choice = runtimeChoice(a, field, top);
+    // dsh decides what its own tools may do under its own settings; aoa's read-only rules cannot bind it.
+    if (choice.runtime === "dsh" && role === "review") throw new ConfigError(`${field}.role`, "cannot be review on dsh: aoa's read-only rules do not apply to dsh's own tools");
     const agent: NamedAgent = { role, ...choice };
     if (a.instructions !== undefined) agent.instructions = str(a, "instructions", `${field}.`);
     const classifier = a.classifier === undefined ? top.classifier : modelRef(a.classifier, `${field}.classifier`);
@@ -225,7 +266,7 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
 
 /** Checks a loaded config; the error names the first bad field. */
 export function validateConfig(raw: unknown): AgentConfig {
-  const c = object(raw, "config", ["dataDir", "repo", "runtime", "model", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
+  const c = object(raw, "config", ["dataDir", "repo", "runtime", "model", "apiKeyEnv", "dsh", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
   const repo = object(c.repo, "repo", ["path", "base"]);
   const config: AgentConfig = {
     dataDir: str(c, "dataDir", ""),
@@ -233,8 +274,8 @@ export function validateConfig(raw: unknown): AgentConfig {
     ...runtimeChoice(c, "", null),
   };
   if (c.github !== undefined) {
-    // GitHub mode's push and pull request tools are aoa's; a Codex agent would push with its own, unasked.
-    if (config.runtime === "codex") throw new ConfigError("runtime", "cannot be codex with github: GitHub mode runs on pi");
+    // GitHub mode's push and pull request tools are aoa's; a harness agent would push with its own, unasked.
+    if (config.runtime !== "pi") throw new ConfigError("runtime", `cannot be ${config.runtime} with github: GitHub mode runs on pi`);
     config.github = github(c.github);
   }
   if (c.classifier !== undefined) config.classifier = modelRef(c.classifier, "classifier");

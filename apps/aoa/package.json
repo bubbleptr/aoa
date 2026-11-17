@@ -10,6 +10,7 @@
     "@aoa/channel-local": "workspace:*",
     "@aoa/kernel": "workspace:*",
     "@aoa/runtime-codex": "workspace:*",
+    "@aoa/runtime-dsh": "workspace:*",
     "@aoa/runtime-pi": "workspace:*",
     "@aoa/store-sqlite": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",

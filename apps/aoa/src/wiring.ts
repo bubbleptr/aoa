@@ -22,6 +22,7 @@ import {
   type ToolDef,
 } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/runtime-codex";
+import { type DshSpawn, dshRuntime } from "@aoa/runtime-dsh";
 import { codingTools, piClassifier, piRuntime } from "@aoa/runtime-pi";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
@@ -57,6 +58,8 @@ export type Seams = {
   notify?: Notifier;
   /** Starts a Codex app server for a codex agent's run; by default the `codex` on the PATH. */
   spawnCodex?: SpawnCodex;
+  /** Starts dsh for a dsh agent's run; by default the `dsh` the config names, or the one on the PATH. */
+  spawnDsh?: DshSpawn;
 };
 
 /**
@@ -213,7 +216,7 @@ type Shared = {
   clock: Clock;
   log: (line: string) => void;
   runGit: GitRunner;
-  keyOf: (m: ModelRef) => string | undefined;
+  keyOf: (m: { apiKeyEnv: string }) => string | undefined;
   roster: Spec[];
   agents: Agent[];
   /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
@@ -228,15 +231,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   const clock = seams.clock ?? systemClock;
   const env = seams.env ?? process.env;
   const roster: Spec[] = [
-    {
-      name: DEFAULT_AGENT,
-      role: "implement",
-      ...(config.runtime === "pi"
-        ? { runtime: "pi" as const, model: config.model }
-        : { runtime: "codex" as const, ...(config.model === undefined ? {} : { model: config.model }) }),
-      ...(config.classifier ? { classifier: config.classifier } : {}),
-      ...(config.risk ? { risk: config.risk } : {}),
-    },
+    { name: DEFAULT_AGENT, ...topAgent(config) },
     ...Object.entries(config.agents ?? {}).map(([name, a]) => ({ name, ...a })),
   ];
   const { dataDir, db } = derivePaths(config);
@@ -244,8 +239,15 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   const store = sqliteStore(db);
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
   const keys = new Map(
-    [...roster.flatMap((a) => [a.runtime === "pi" ? a.model : undefined, a.classifier]), config.shadowJudge]
-      .filter((m): m is ModelRef => m !== undefined)
+    [
+      ...roster.flatMap((a) => [
+        ...(a.runtime === "pi" ? [a.model] : []),
+        ...(a.runtime === "dsh" ? [{ apiKeyEnv: a.apiKeyEnv }] : []),
+        ...(a.classifier ? [a.classifier] : []),
+      ]),
+      config.shadowJudge,
+    ]
+      .filter((m): m is { apiKeyEnv: string } => m !== undefined)
       .map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]),
   );
   // The model clients hold the keys in memory from here on; the agents' bash and git inherit this environment, so they go.
@@ -288,7 +290,21 @@ function assembleOne(spec: Spec, s: Shared): Agent {
       : front.systemPrompt;
   const systemPrompt = spec.instructions === undefined ? rolePrompt : `${rolePrompt}\n\n${spec.instructions}`;
   const runtime =
-    spec.runtime === "pi"
+    spec.runtime === "dsh"
+      ? dshRuntime({
+          systemPrompt,
+          model: spec.model,
+          apiKey: s.keyOf({ apiKeyEnv: spec.apiKeyEnv }),
+          apiKeyEnv: spec.apiKeyEnv,
+          home: join(paths.dataDir, "dsh-home"),
+          cwd: paths.repo,
+          env: seams.env ?? process.env,
+          log,
+          ...(spec.dsh?.command === undefined ? {} : { command: spec.dsh.command }),
+          ...(spec.dsh?.preset === undefined ? {} : { preset: spec.dsh.preset }),
+          ...(seams.spawnDsh ? { spawn: seams.spawnDsh } : {}),
+        })
+      : spec.runtime === "pi"
       ? piRuntime({
           provider: spec.model.provider,
           modelId: spec.model.modelId,
@@ -444,6 +460,23 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     refreshPulls: () => lookUp(false),
     close: () => store.close(),
   };
+}
+
+/** The default agent: the top-level config, which describes nothing else about it. */
+function topAgent(config: AgentConfig): NamedAgent {
+  const common = {
+    role: "implement" as const,
+    ...(config.classifier ? { classifier: config.classifier } : {}),
+    ...(config.risk ? { risk: config.risk } : {}),
+  };
+  switch (config.runtime) {
+    case "pi":
+      return { ...common, runtime: "pi", model: config.model };
+    case "codex":
+      return { ...common, runtime: "codex", ...(config.model === undefined ? {} : { model: config.model }) };
+    case "dsh":
+      return { ...common, runtime: "dsh", model: config.model, apiKeyEnv: config.apiKeyEnv, ...(config.dsh === undefined ? {} : { dsh: config.dsh }) };
+  }
 }
 
 function runEndLine(r: RunOutcome): string {

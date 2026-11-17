@@ -761,8 +761,8 @@ function renderRuntime() {
     a.permissionOwner !== "harness"
       ? "aoa decides every tool call"
       : a.role === "review"
-        ? "Codex decides its own tools; its auto review answers what it asks"
-        : "Codex decides its own tools; aoa relays what it asks";
+        ? `${a.runtime} decides its own tools; its auto review answers what it asks`
+        : `${a.runtime} decides its own tools; aoa relays what it asks`;
 }
 
 function renderSwitch() {

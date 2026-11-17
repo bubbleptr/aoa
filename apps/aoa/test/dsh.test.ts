@@ -19,8 +19,10 @@ async function world(fake: FakeDshServer): Promise<World> {
   return w.start();
 }
 
-const askToRun = (t: FakeTurn, callId: string, args: object = { command: "rm -rf build", cwd: "/work" }) =>
-  t.request("approval/request", { sessionId: t.sessionId, toolName: "bash", callId, reason: "clean before rebuilding" });
+const askToRun = async (t: FakeTurn, callId: string, args: object = { command: "rm -rf build", cwd: "/work" }) => {
+  await t.toolCall(callId, "bash", args);
+  return t.request("approval/request", { sessionId: t.sessionId, toolName: "bash", callId, reason: "clean before rebuilding" });
+};
 
 test("a dsh agent works in its worktree and says what its bridged tool did", async () => {
   const fake = new FakeDshServer([

@@ -43,7 +43,6 @@ function worker(scripts: TurnScript[]) {
       cwd: "/repo",
       spawn: fake.spawn,
       log: () => {},
-    log: () => {},
     }),
     permissions: "harness",
     tools: [...outboxTools(deps), ...askUserTools(), ping],

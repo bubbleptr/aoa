@@ -19,6 +19,8 @@ export type FakeTurn = {
   ptcCall(subCallId: string, tool: string, args: object): Promise<void>;
   /** Calls one of aoa's tools through the bridge, as dsh's MCP client would. */
   mcp(tool: string, args: object): Promise<{ text: string; isError: boolean }>;
+  /** The tools the bridge offers dsh, as dsh's MCP client lists them. */
+  mcpTools(): Promise<string[]>;
   /** The process dies mid-turn: its output ends and it exits with `why`. */
   die(why: string): void;
 };
@@ -175,6 +177,7 @@ export class FakeDshServer {
             });
             await out.consumed();
           },
+          mcpTools: async () => (await (await mcp()).listTools()).tools.map((t) => t.name),
           mcp: async (tool, args) => {
             const reply = await (await mcp()).callTool({ name: tool, arguments: args as { [k: string]: unknown } });
             const content = (reply.content ?? []) as { type: string; text?: string }[];
