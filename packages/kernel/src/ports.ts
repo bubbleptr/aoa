@@ -14,6 +14,7 @@ import type {
   MsgId,
   RunEnd,
   RunId,
+  HarnessRunInput,
   RunInput,
   RunRecord,
   RunResult,
@@ -187,9 +188,26 @@ export interface Tx {
   setCursor(inboxId: InboxId, name: string, value: string): void;
 }
 
-export interface AgentRuntime {
+/**
+ * A runtime with no tools of its own (design §15, tier 1): every call it makes goes through `input.tools[i].invoke`,
+ * so the kernel decides, journals and executes it.
+ */
+export interface KernelRuntime {
+  readonly kind: "kernel";
   run(input: RunInput): Promise<RunResult>;
 }
+
+/**
+ * A harness that brings its own tools (design §15, tier 2). The kernel neither decides nor executes them; the
+ * harness asks through `input.ask` and the kernel relays the ask to the user (design §12). The kernel also holds
+ * untrusted input until the user admits it, since nothing it can see guards what the harness does with it.
+ */
+export interface HarnessRuntime {
+  readonly kind: "harness";
+  run(input: HarnessRunInput): Promise<RunResult>;
+}
+
+export type AgentRuntime = KernelRuntime | HarnessRuntime;
 
 /** Wall-clock time and timers. All waiting in the kernel goes through this port. */
 export interface Clock {

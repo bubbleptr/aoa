@@ -1,4 +1,4 @@
-import type { AgentRuntime, CallId, PermissionAsk, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
+import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
 import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/runtime-pi/prompt";
 import { resultText } from "@aoa/runtime-pi/results";
 import { Connection, RpcError, type SpawnCodex, spawnAppServer } from "./connection.ts";
@@ -68,12 +68,12 @@ const INTERRUPT_GRACE_MS = 10_000;
  * Codex runs its own tools under the user's Codex configuration and asks the kernel's gate when that configuration
  * says to ask; aoa's tools reach Codex as dynamic tools and go through `Tool.invoke` like any other runtime's.
  */
-export function codexRuntime(config: CodexRuntimeConfig): AgentRuntime {
+export function codexRuntime(config: CodexRuntimeConfig): HarnessRuntime {
   const spawn = config.spawn ?? spawnAppServer;
   return {
+    kind: "harness",
     async run(input) {
       const { ask } = input;
-      if (!ask) throw new Error("the Codex runtime needs harness permissions: the kernel gave this run no permission gate");
       const cwd = input.session.workdir ?? config.cwd;
       const proc = await spawn(cwd);
       const run = new CodexRun(config, input, ask, cwd);

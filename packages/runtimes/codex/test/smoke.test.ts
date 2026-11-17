@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Event, RunInput, Tool } from "@aoa/kernel";
+import type { Event, HarnessRunInput, Tool } from "@aoa/kernel";
 import { Connection, spawnAppServer } from "../src/connection.ts";
 import { codexRuntime } from "../src/index.ts";
 
@@ -41,7 +41,7 @@ test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
       nextAttemptAt: 0,
       run: null,
     });
-    const input = (text: string, ref: string | null): RunInput => ({
+    const input = (text: string, ref: string | null): HarnessRunInput => ({
       runId: crypto.randomUUID(),
       session: { id: "smoke", resumed: ref !== null, ref, workdir: dir },
       events: [event(text)],

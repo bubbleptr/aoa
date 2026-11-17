@@ -32,8 +32,6 @@ export type RuntimeChoice =
 export type Runtime = RuntimeChoice["runtime"];
 
 /** Who decides what the agent's own tools may do: aoa's kernel, or the harness the agent runs in. */
-export const permissionOwner = (runtime: Runtime): "kernel" | "harness" => (runtime === "pi" ? "kernel" : "harness");
-
 /** A named agent with everything it did not set taken from the top level. */
 export type NamedAgent = {
   role: Role;

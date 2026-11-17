@@ -1,4 +1,4 @@
-import type { AgentRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
+import type { KernelRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
@@ -37,10 +37,11 @@ export type PiRuntimeConfig = {
 const DEFERRED_PLACEHOLDER =
   "This call needs the user's decision. It has not been executed. The run stops here; the answer arrives in a later message.";
 
-export function piRuntime(config: PiRuntimeConfig): AgentRuntime {
+export function piRuntime(config: PiRuntimeConfig): KernelRuntime {
   let models: Promise<ModelRuntime> | null = null;
   const modelRuntime = () => (models ??= createModelRuntime(config));
   return {
+    kind: "kernel",
     run: async (input) => {
       try {
         return await run(config, await modelRuntime(), input);

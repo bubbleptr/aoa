@@ -45,7 +45,6 @@ function worker(scripts: TurnScript[]) {
       spawn: fake.spawn,
       log: () => {},
     }),
-    permissions: "harness",
     tools: [...outboxTools(deps), ...askUserTools(), ping],
   });
   return { fake, w };

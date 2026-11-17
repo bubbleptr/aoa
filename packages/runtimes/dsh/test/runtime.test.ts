@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Event, PermissionAsk, RunInput, Tool, ToolResult } from "@aoa/kernel";
+import type { Event, PermissionAsk, HarnessRunInput, Tool, ToolResult } from "@aoa/kernel";
 import { DISABLED_ROWS, SHUTDOWN_GRACE_MS, dshRuntime, type DshRuntimeConfig } from "../src/index.ts";
 import { FakeDshServer, dyingDsh, type FakeTurn } from "./fake-dsh-server.ts";
 
@@ -50,7 +50,7 @@ function event(text: string): Event {
   };
 }
 
-function runInput(over: Partial<RunInput> = {}): RunInput {
+function runInput(over: Partial<HarnessRunInput> = {}): HarnessRunInput {
   return {
     runId: "run-1",
     session: { id: "session-1", resumed: false, ref: null, workdir: "/work/tree" },
@@ -378,7 +378,7 @@ describe("dshRuntime: approval requests from dsh's own tools", () => {
   test("an approval the user gave earlier is described as approved but not yet done, to be done again", async () => {
     const fake = new FakeDshServer();
     const { runtime } = setup(fake);
-    const answer: RunInput["answer"] = {
+    const answer: HarnessRunInput["answer"] = {
       callId: "session-1:call-1",
       tool: "dsh:bash",
       args: { command: "rm -rf build" },

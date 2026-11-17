@@ -1,4 +1,4 @@
-import type { AgentRuntime, CallId, RunEnd, RunInput, RunResult, ToolResult } from "@aoa/kernel";
+import type { Ask, CallId, RunEnd, RunInput, RunResult, ToolResult } from "@aoa/kernel";
 
 /**
  * `args` may be computed from the run's input, e.g. to name the session's own progress file.
@@ -25,8 +25,12 @@ export type RunScript = {
 
 export type ObservedRun = { input: RunInput; toolResults: ToolResult[]; asks: ("allow" | "defer")[] };
 
-/** Plays one script per run, in order; runs past the end of the script list end silently. */
-export class ScriptedRuntime implements AgentRuntime {
+/**
+ * Plays one script per run, in order; runs past the end of the script list end silently. A `harness` one is a
+ * tier-2 runtime: it gets `ask` and the kernel holds untrusted input for it.
+ */
+export class ScriptedRuntime {
+  readonly kind: "kernel" | "harness";
   readonly runs: ObservedRun[] = [];
   /** The harness calls that ran because the gate allowed them, in order. */
   readonly harnessEffects: { tool: string; args: unknown }[] = [];
@@ -34,9 +38,14 @@ export class ScriptedRuntime implements AgentRuntime {
   maxActive = 0;
   private waiters: { count: number; resolve: () => void }[] = [];
 
-  constructor(private readonly scripts: RunScript[] = []) {}
+  constructor(
+    private readonly scripts: RunScript[] = [],
+    o: { kind?: "kernel" | "harness" } = {},
+  ) {
+    this.kind = o.kind ?? "kernel";
+  }
 
-  async run(input: RunInput): Promise<RunResult> {
+  async run(input: RunInput & { ask?: Ask }): Promise<RunResult> {
     const script = this.scripts[this.runs.length] ?? {};
     const observed: ObservedRun = { input, toolResults: [], asks: [] };
     this.runs.push(observed);

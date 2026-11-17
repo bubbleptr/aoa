@@ -19,7 +19,6 @@ import {
   type Role,
   type Runtime,
   derivePaths,
-  permissionOwner,
 } from "./config.ts";
 import { agentPolicy, deferPush, reviewReadOnly } from "./policy.ts";
 import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT, handOffPrompt, reviewPrompt } from "./prompt.ts";
@@ -327,7 +326,8 @@ function assembleOne(spec: Spec, s: Shared): Agent {
           autoReview: review,
           ...(seams.spawnCodex ? { spawn: seams.spawnCodex } : {}),
         });
-  const permissions = permissionOwner(spec.runtime);
+  // Who decides the agent's own tool calls follows from the runtime's tier.
+  const permissions = runtime.kind;
   const classify = spec.classifier
     ? withShadowJudge(
         reviewer({
@@ -367,7 +367,6 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     name: spec.name,
     inbox: inboxId,
     runtime,
-    permissions,
     // Codex reads, edits and runs commands with its own tools; it is offered only aoa's.
     tools: (builtins) => {
       const all = [

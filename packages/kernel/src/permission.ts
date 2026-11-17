@@ -5,7 +5,7 @@ import type { ToolContext } from "./tools.ts";
 import type { Event, EventId, InboxId, PendingCall, PermissionAsk, SessionId } from "./types.ts";
 
 /**
- * `RunInput.ask` for an agent whose harness owns its permissions (design §12). The kernel has no rules for the
+ * `HarnessRunInput.ask` for an agent whose harness owns its permissions (design §12). The kernel has no rules for the
  * harness's calls: it lets through, once, a call the user approved, and asks the user about anything else.
  */
 export async function askPermission(ctx: ToolContext, a: PermissionAsk): Promise<"allow" | "defer"> {

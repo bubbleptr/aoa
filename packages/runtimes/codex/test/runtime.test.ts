@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Event, PermissionAsk, RunInput, Tool, ToolResult } from "@aoa/kernel";
+import type { Event, PermissionAsk, HarnessRunInput, Tool, ToolResult } from "@aoa/kernel";
 import { codexRuntime } from "../src/index.ts";
 import { FakeAppServer, dyingProcess, type FakeTurn } from "./fake-app-server.ts";
 
@@ -24,7 +24,7 @@ function event(text: string): Event {
   };
 }
 
-function runInput(over: Partial<RunInput> = {}): RunInput {
+function runInput(over: Partial<HarnessRunInput> = {}): HarnessRunInput {
   return {
     runId: "run-1",
     session: { id: "session-1", resumed: false, ref: null, workdir: "/work/tree" },
@@ -327,7 +327,7 @@ describe("codexRuntime", () => {
 
   test("an answered harness call is described as approved but not yet done, to be done again", async () => {
     const fake = new FakeAppServer();
-    const answer: RunInput["answer"] = {
+    const answer: HarnessRunInput["answer"] = {
       callId: "session-1:turn-1:item-1",
       tool: "codex_command",
       args: { command: "rm -rf build", cwd: "/work/tree" },
@@ -344,7 +344,7 @@ describe("codexRuntime", () => {
 
   test("a denied harness call is described as not done, not to be tried again, with the user's words", async () => {
     const fake = new FakeAppServer();
-    const answer: RunInput["answer"] = {
+    const answer: HarnessRunInput["answer"] = {
       callId: "session-1:turn-1:item-1",
       tool: "codex_command",
       args: { command: "rm -rf build", cwd: "/work/tree" },

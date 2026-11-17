@@ -16,7 +16,6 @@ function worker(scripts: TurnScript[]) {
   const deps = { store: h.store, clock: h.clock, inboxId: h.inboxId };
   const w = h.worker({
     runtime: codexRuntime({ developerInstructions: "", cwd: "/repo", spawn: fake.spawn }),
-    permissions: "harness",
     tools: [...outboxTools(deps), ...askUserTools()],
   });
   return { fake, w };

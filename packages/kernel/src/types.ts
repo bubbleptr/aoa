@@ -131,14 +131,17 @@ export type RunInput = {
    * `result` tells the model to make the same call again, which `ask` then allows once.
    */
   answer?: { callId: CallId; tool: string; args: unknown; verdict: "approve" | "deny"; text?: string; result?: ToolResult };
-  /**
-   * Set only for an agent whose permissions belong to its harness (design §12): the runtime calls it when the
-   * harness asks permission for one of its own calls. `allow` means the user approved this exact call earlier;
-   * `defer` means the user has been asked (or the session already waits on a call): the runtime must end the run
-   * as `deferred`, and the verdict comes back as `answer` in a later run.
-   */
-  ask?: (request: PermissionAsk) => Promise<"allow" | "defer">;
 };
+
+/**
+ * Called by a harness runtime when its harness asks permission for one of its own calls (design §12). `allow` means
+ * the user approved this exact call earlier; `defer` means the user has been asked (or the session already waits on
+ * a call): the runtime must end the run as `deferred`, and the verdict comes back as `answer` in a later run.
+ */
+export type Ask = (request: PermissionAsk) => Promise<"allow" | "defer">;
+
+/** What a harness runtime gets: a run's input and the way to ask. */
+export type HarnessRunInput = RunInput & { ask: Ask };
 
 /** A harness's request for permission to make one of its own calls. */
 export type PermissionAsk = { callId: CallId; tool: string; args: unknown; reason?: string };

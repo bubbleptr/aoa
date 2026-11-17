@@ -2,6 +2,8 @@ export type * from "./types.ts";
 export type {
   AgentRuntime,
   Clock,
+  HarnessRuntime,
+  KernelRuntime,
   EventInsert,
   JournalRecord,
   OutMsgInsert,

@@ -11,6 +11,9 @@ const command = (callId: string, cmd = "rm -rf build"): ScriptedCall => ({
 });
 const asks = (...calls: ScriptedCall[]): RunScript => ({ calls });
 
+/** A tier-2 runtime: it asks for its own calls, and the kernel holds untrusted input for it. */
+const harness = (scripts: RunScript[] = []) => new ScriptedRuntime(scripts, { kind: "harness" });
+
 for (const [name, factory] of storeFactories) {
   describe(`harness permission gate [${name}]`, () => {
     let h: Harness;
@@ -19,7 +22,7 @@ for (const [name, factory] of storeFactories) {
     });
     afterEach(() => h.dispose());
 
-    const drain = (runtime: ScriptedRuntime) => h.worker({ runtime, permissions: "harness" }).drain();
+    const drain = (runtime: ScriptedRuntime) => h.worker({ runtime }).drain();
     const requests = () => h.outbox().filter((m) => m.kind === "approval_request");
     const reply = (text: string) => h.append({ thread: THREAD, payload: { text } });
 
@@ -31,7 +34,7 @@ for (const [name, factory] of storeFactories) {
     }
 
     test("the harness asks: one approval request, the session pauses, the run ends deferred", async () => {
-      const runtime = new ScriptedRuntime([asks({ ...command("call-1"), reason: "clean before rebuilding" }, command("call-2", "ls"))]);
+      const runtime = harness([asks({ ...command("call-1"), reason: "clean before rebuilding" }, command("call-2", "ls"))]);
       const session = await askFirst(runtime);
 
       expect(runtime.runs[0]!.asks).toEqual(["defer", "defer"]);
@@ -46,7 +49,7 @@ for (const [name, factory] of storeFactories) {
     test("approve: the answer says so, the same call is allowed once, a third ask is deferred again", async () => {
       // The same arguments with their keys in another order are the same call.
       const reordered: ScriptedCall = { ...command("call-2"), args: { cwd: "/work", command: "rm -rf build" } };
-      const runtime = new ScriptedRuntime([asks(command("call-1")), asks(reordered, command("call-3"))]);
+      const runtime = harness([asks(command("call-1")), asks(reordered, command("call-3"))]);
       const session = await askFirst(runtime);
       reply("/approve");
       await drain(runtime);
@@ -71,7 +74,7 @@ for (const [name, factory] of storeFactories) {
     });
 
     test("a grant covers only the arguments that were approved", async () => {
-      const runtime = new ScriptedRuntime([asks(command("call-1")), asks(command("call-2", "rm -rf src"))]);
+      const runtime = harness([asks(command("call-1")), asks(command("call-2", "rm -rf src"))]);
       await askFirst(runtime);
       reply("/approve");
       await drain(runtime);
@@ -82,7 +85,7 @@ for (const [name, factory] of storeFactories) {
     });
 
     test("an approved ask replays as allowed when a failed run is retried, without asking again", async () => {
-      const runtime = new ScriptedRuntime([
+      const runtime = harness([
         asks(command("call-1")),
         { ...asks(command("call-2")), fail: new Error("harness crashed") },
         asks(command("call-2")),
@@ -101,7 +104,7 @@ for (const [name, factory] of storeFactories) {
       ["deny", () => "/deny not today", { verdict: "deny", text: "not today" }],
       ["expiry", null, { verdict: "deny", text: "No answer within 24 hours." }],
     ] as const)("%s: the answer carries the denial and no grant is left", async (_label, text, expected) => {
-      const runtime = new ScriptedRuntime([asks(command("call-1")), asks(command("call-2"))]);
+      const runtime = harness([asks(command("call-1")), asks(command("call-2"))]);
       const session = await askFirst(runtime);
       if (text) reply(text());
       else {
@@ -118,7 +121,7 @@ for (const [name, factory] of storeFactories) {
     });
 
     test("asking again under the id of a call that was already answered is refused", async () => {
-      const runtime = new ScriptedRuntime([asks(command("call-1")), asks(command("call-1", "ls"))]);
+      const runtime = harness([asks(command("call-1")), asks(command("call-1", "ls"))]);
       await askFirst(runtime);
       reply("/deny no");
       await drain(runtime);

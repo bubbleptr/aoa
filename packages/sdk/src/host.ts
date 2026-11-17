@@ -38,8 +38,6 @@ export type AgentSpec = {
   name: string;
   inbox: InboxId;
   runtime: AgentRuntime;
-  /** Who decides the agent's own tool calls. Interim: the runtime's type says it from step 3 of design §15. */
-  permissions?: "kernel" | "harness";
   /**
    * The agent's tools. A list goes after the kernel's built-in ones (timers, notify, memory, ask_user). A function
    * gets the built-in ones and returns the whole list, in order, so it can place or leave out any of them.
@@ -157,7 +155,6 @@ export function createHost(o: HostOptions): Host {
       tools,
       ...(spec.memory ? { memory: spec.memory } : {}),
       ...(spec.policy ? { policy: spec.policy } : {}),
-      ...(spec.permissions ? { permissions: spec.permissions } : {}),
       debounceMs: spec.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       ...(spec.session?.prepare
         ? {

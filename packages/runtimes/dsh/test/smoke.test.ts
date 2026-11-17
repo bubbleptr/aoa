@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Event, RunInput, Tool, ToolResult } from "@aoa/kernel";
+import type { Event, HarnessRunInput, Tool, ToolResult } from "@aoa/kernel";
 import { type DshSpawn, dshRuntime, spawnDsh } from "../src/index.ts";
 
 /**
@@ -45,7 +45,7 @@ function tapping(observed: Observed): { spawn: DshSpawn; launched: () => ReturnT
   };
 }
 
-function input(o: { dir: string; text: string; ref: string | null; tools: Tool[]; ask: RunInput["ask"] }): RunInput {
+function input(o: { dir: string; text: string; ref: string | null; tools: Tool[]; ask: HarnessRunInput["ask"] }): HarnessRunInput {
   const event: Event = {
     id: crypto.randomUUID(),
     inboxId: "smoke",

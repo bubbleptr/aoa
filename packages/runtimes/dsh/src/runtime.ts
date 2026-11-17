@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentRuntime, CallId, PermissionAsk, RunInput, RunResult } from "@aoa/kernel";
+import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult } from "@aoa/kernel";
 import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/runtime-pi/prompt";
 import { CallTable, type Bridge, startBridge } from "./bridge.ts";
 import { Connection, RpcError, spawnDsh } from "./connection.ts";
@@ -90,11 +90,11 @@ export function childEnv(o: {
  * runtime's. dsh has no way to interrupt a turn, so a run that must stop replies to the request at hand,
  * shuts dsh down, and kills it if it does not go.
  */
-export function dshRuntime(config: DshRuntimeConfig): AgentRuntime {
+export function dshRuntime(config: DshRuntimeConfig): HarnessRuntime {
   return {
+    kind: "harness",
     async run(input) {
       const { ask } = input;
-      if (!ask) throw new Error("the dsh runtime needs harness permissions: the kernel gave this run no permission gate");
       const command = config.command ?? "dsh";
       const launcher = config.spawn ?? spawnDsh;
       const version = (await launcher.version(command)).trim();
