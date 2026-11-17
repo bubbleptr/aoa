@@ -315,7 +315,7 @@ describe("named agents", () => {
     );
     const reviewThread = (await w.cli("send", "--agent", "reviewer", "Run the deploy check.")).out.trim();
     await w.drain("reviewer");
-    expect((await w.named("reviewer").dispatcher.pass()).delivered).toBe(1);
+    expect((await w.named("reviewer").step.dispatcher()).delivered).toBe(1);
     expect(readFileSync(join(w.config.dataDir, "messages.md"), "utf8")).toContain(`reviewer · ${reviewThread} · approval_request`);
     expect(w.notes.at(-1)!.title).toContain("reviewer");
 

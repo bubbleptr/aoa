@@ -99,7 +99,7 @@ export function sendToTool(o: {
         { store: o.store, clock: o.clock, inboxId: target.inboxId },
         { source: "agent_message", dedupeKey: `send_to:${ctx.sessionId}:${ctx.callId}`, payload, thread, trusted },
       );
-      target.worker.wake();
+      target.wake();
       return { sent: true, to: target.name, thread };
     },
   };

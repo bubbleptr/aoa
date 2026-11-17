@@ -2,28 +2,11 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local";
-import {
-  ChannelPoller,
-  Dispatcher,
-  Scheduler,
-  Worker,
-  askUserTools,
-  closeSession,
-  dirMemory,
-  followTools,
-  memoryTools,
-  outboxTools,
-  systemClock,
-  timerTools,
-  type Channel,
-  type Clock,
-  type Rule,
-  type RunOutcome,
-  type ToolDef,
-} from "@aoa/kernel";
+import { POLL_INTERVAL_MS, closeSession, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/runtime-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/runtime-dsh";
 import { codingTools, piCompletion, piRuntime } from "@aoa/runtime-pi";
+import { type Agent as HostAgent, type Host, createHost } from "@aoa/sdk";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
@@ -110,10 +93,12 @@ export type Agent = {
   /** What serve runs besides the loops. */
   schedule: { polls: boolean; finishCheckMs: number };
   statusColumns: ModeColumns;
-  worker: Worker;
-  scheduler: Scheduler;
-  dispatcher: Dispatcher;
-  poller: ChannelPoller;
+  /** Wakes the agent's worker and dispatcher, for writes this process made outside a run. */
+  wake: HostAgent["wake"];
+  /** One pass of each of the agent's loops. */
+  step: HostAgent["step"];
+  /** The host that runs every agent's loops. */
+  host: Host;
   worktrees: Worktrees;
   /**
    * Closes every open session that has finished, and removes its worktree (never its branch). GitHub mode: its
@@ -239,6 +224,7 @@ type Shared = {
   page: PageLink;
   /** Worktree removals in progress, by session; preparing that session's worktree waits for its removal. */
   removals: Map<string, Promise<void>>;
+  host: Host;
 };
 
 /**
@@ -282,6 +268,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     agents: [],
     page: new PageLink(),
     removals: new Map(),
+    host: createHost({ store, clock, log: seams.log ?? defaultLog }),
   };
   for (const spec of roster) shared.agents.push(assembleOne(spec, shared));
   return shared.agents[0]!;
@@ -369,33 +356,6 @@ function assembleOne(spec: Spec, s: Shared): Agent {
       )
     : undefined;
 
-  const deps = { store, clock, inboxId };
-  const all = [
-    // Codex reads, edits and runs commands with its own tools; it is offered only aoa's.
-    ...(spec.runtime === "pi" ? codingTools() : []),
-    ...timerTools(deps),
-    ...outboxTools(deps),
-    ...memoryTools(memory),
-    ...askUserTools(),
-    ...front.tools,
-    ...(several ? [sendToTool({ store, clock, from: spec.name, inboxId, roster: s.roster, agents: () => s.agents })] : []),
-  ];
-  // A reviewer reads, runs and reports: no way to change files or to stop and ask (its verdict is the answer).
-  const tools = review ? all.filter((t) => !["edit", "write", "ask_user"].includes(t.name)) : all;
-
-  const logged: Channel = {
-    poll: (cursor) => channel.poll(cursor),
-    async deliver(m) {
-      try {
-        await channel.deliver(m);
-      } catch (err) {
-        log(`delivery of ${m.kind} ${m.id} to ${m.thread} failed: ${errorText(err)}`);
-        throw err;
-      }
-      log(`delivered ${m.kind} ${m.id} to ${m.thread}`);
-    },
-  };
-  const dispatcher = new Dispatcher({ ...deps, channel: logged, ...(config.rate ? { policy: config.rate } : {}) });
   /** The branch a review session was asked to look at: the first of its events that names one. */
   const reviewedBranch = (sessionId: string): string | undefined =>
     store.tx((t) =>
@@ -405,26 +365,34 @@ function assembleOne(spec: Spec, s: Shared): Agent {
         .map((e) => (e.payload as { branch?: unknown } | null)?.branch)
         .find((b): b is string => typeof b === "string"),
     );
-  const worker: Worker = new Worker({
-    ...deps,
+  const hosted = s.host.agent({
+    name: spec.name,
+    inbox: inboxId,
     runtime,
-    tools,
+    permissions,
+    // Codex reads, edits and runs commands with its own tools; it is offered only aoa's.
+    tools: (builtins) => {
+      const all = [
+        ...(spec.runtime === "pi" ? codingTools() : []),
+        ...builtins,
+        ...front.tools,
+        ...(several ? [sendToTool({ store, clock, from: spec.name, inboxId, roster: s.roster, agents: () => s.agents })] : []),
+      ];
+      // A reviewer reads, runs and reports: no way to change files or to stop and ask (its verdict is the answer).
+      return review ? all.filter((t) => !["edit", "write", "ask_user"].includes(t.name)) : all;
+    },
     memory,
     policy: agentPolicy({ risk: spec.risk, classify, ahead: review ? [reviewReadOnly] : [], rules: front.rules }),
-    permissions,
-    debounceMs: 2000,
-    prepareSession: async (session) => {
-      await removals.get(session.id);
-      return review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session);
-    },
-    onRunStart: (r) => log(`${named ? `${spec.name}: ` : ""}run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
-    onRunEnd: (r) => {
-      log(`${named ? `${spec.name}: ` : ""}${runEndLine(r)}`);
-      dispatcher.wake();
+    channel,
+    ...(front.polls ? { pollMs: POLL_INTERVAL_MS } : {}),
+    ...(config.rate ? { rate: config.rate } : {}),
+    session: {
+      prepare: async (session) => {
+        await removals.get(session.id);
+        return review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session);
+      },
     },
   });
-  const scheduler = new Scheduler({ ...deps, onFire: () => worker.wake() });
-  const poller = new ChannelPoller({ ...deps, channel: logged, onEvents: () => worker.wake() });
 
   const inRun = (sessionId: string) =>
     store.tx((t) => t.listEvents(inboxId)).some((e) => e.status === "in_run" && e.resume === sessionId);
@@ -475,10 +443,9 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     openThread: front.openThread,
     schedule: { polls: front.polls, finishCheckMs: front.finishCheckMs },
     statusColumns: front.statusColumns,
-    worker,
-    scheduler,
-    dispatcher,
-    poller,
+    wake: hosted.wake,
+    step: hosted.step,
+    host: s.host,
     worktrees: trees,
     closeFinished: () => lookUp(true),
     refreshPulls: () => lookUp(false),
@@ -501,17 +468,5 @@ function topAgent(config: AgentConfig): NamedAgent {
       return { ...common, runtime: "codex", ...(config.model === undefined ? {} : { model: config.model }) };
     case "dsh":
       return { ...common, runtime: "dsh", model: config.model, apiKeyEnv: config.apiKeyEnv, ...(config.dsh === undefined ? {} : { dsh: config.dsh }) };
-  }
-}
-
-function runEndLine(r: RunOutcome): string {
-  if (r.error !== null) return `run ${r.runId} failed: ${r.error}`;
-  switch (r.end?.kind) {
-    case "sent":
-      return `run ${r.runId} ended: sent ${r.end.msgs.length} message(s)`;
-    case "deferred":
-      return `run ${r.runId} ended: deferred call ${r.end.callId}`;
-    default:
-      return `run ${r.runId} ended: silent`;
   }
 }

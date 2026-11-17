@@ -1,4 +1,3 @@
-import { POLL_INTERVAL_MS } from "@aoa/kernel";
 import type { Agent } from "./wiring.ts";
 
 /** How often `serve` looks for work written by other processes (`aoa send`, `aoa answer`). */
@@ -10,8 +9,8 @@ export const SERVE_STARTED = "serve:started";
 export const SERVE_SEEN = "serve:seen";
 
 /**
- * Runs every agent's worker, scheduler, dispatcher, channel poller and finished-session check until `stop`
- * resolves, then stops them and waits for what is in flight. Polls once right away. The heartbeat is one, in the
+ * Runs the host (every agent's worker, scheduler, dispatcher and channel poller) and the finished-session check until
+ * `stop` resolves or a loop dies, then stops them and waits for what is in flight. The heartbeat is one, in the
  * default agent's inbox.
  */
 export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
@@ -54,36 +53,15 @@ export async function serve(agent: Agent, stop: Promise<void>): Promise<void> {
     });
   };
 
-  const several = agent.agents.length > 1;
-  const loops = agent.agents.flatMap((a) => {
-    const of = (name: string) => (several ? `${name} of ${a.name}` : name);
-    return [
-      [of("worker"), a.worker],
-      [of("scheduler"), a.scheduler],
-      [of("dispatcher"), a.dispatcher],
-    ] as const;
-  });
-  let failed: () => void = () => {};
-  const failure = new Promise<void>((resolve) => (failed = resolve));
-  const running = loops.map(([name, loop]) =>
-    loop.serve().catch((err) => {
-      log(`the ${name} stopped: ${err instanceof Error ? err.message : String(err)}`);
-      failed();
-    }),
-  );
+  agent.host.start();
 
-  for (const a of agent.agents) if (a.schedule.polls) every(POLL_INTERVAL_MS, "polling the channel", () => a.poller.pass());
   every(NUDGE_INTERVAL_MS, "waking the workers", () => {
     agent.store.tx((t) => t.setCursor(agent.inboxId, SERVE_SEEN, String(clock.now())));
-    for (const a of agent.agents) {
-      a.worker.wake();
-      a.dispatcher.wake();
-    }
+    for (const a of agent.agents) a.wake();
   });
   for (const a of agent.agents) every(a.schedule.finishCheckMs, "closing finished sessions", () => a.closeFinished());
 
-  await Promise.race([stop, failure]);
-  for (const [, loop] of loops) loop.stop();
-  await Promise.all([...repeating.map((r) => r.stop()), ...running]);
+  await Promise.race([stop, agent.host.stopped]);
+  await Promise.all([...repeating.map((r) => r.stop()), agent.host.stop()]);
   log("stopped");
 }

@@ -118,7 +118,7 @@ describe("snapshot", () => {
     await w.cli("send", "Do it.");
     await w.drain();
     w.advance(1_000);
-    w.agent.scheduler.pass();
+    w.agent.step.scheduler();
     const [waiting] = observe(w).permissions.waiting;
     w.script([say("Done.")]);
     await w.cli("answer", waiting!.callId, "approve");

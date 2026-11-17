@@ -241,7 +241,7 @@ export class World {
     );
     this.agent = assemble(validateConfig(this.config), this.seams);
     // A first poll only sets the cursor; GitHub items after it are new.
-    await this.agent.poller.pass();
+    await this.agent.step.poller();
     this.advance(1000);
     return this;
   }
@@ -281,17 +281,17 @@ export class World {
   }
 
   poll() {
-    return this.agent.poller.pass();
+    return this.agent.step.poller();
   }
 
   /** Waits out the worker's debounce, then runs everything ready in the default agent's inbox, or the named one's. */
   async drain(agent?: string) {
     this.advance(2000);
-    return this.named(agent).worker.drain();
+    return this.named(agent).step.worker();
   }
 
   dispatch() {
-    return this.agent.dispatcher.pass();
+    return this.agent.step.dispatcher();
   }
 
   /** Runs the CLI as another process would: same config file, its own store connection. */

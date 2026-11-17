@@ -82,7 +82,7 @@ function answerFromPage(agent: Agent, body: unknown): Response {
     return plain(409, err instanceof Error ? err.message : String(err));
   }
   if (result.status === "dropped") return plain(409, `Call ${callId} already has an answer waiting for the agent.`);
-  for (const a of agent.agents) if (a.inboxId === pending.inboxId) a.worker.wake();
+  for (const a of agent.agents) if (a.inboxId === pending.inboxId) a.wake();
   return Response.json({ callId, verdict });
 }
 

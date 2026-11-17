@@ -22,6 +22,7 @@
         "@aoa/runtime-codex": "workspace:*",
         "@aoa/runtime-dsh": "workspace:*",
         "@aoa/runtime-pi": "workspace:*",
+        "@aoa/sdk": "workspace:*",
         "@aoa/store-sqlite": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
         "@modelcontextprotocol/sdk": "1.32.2",
@@ -90,6 +91,17 @@
         "typebox": "1.3.27",
       },
     },
+    "packages/sdk": {
+      "name": "@aoa/sdk",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+        "@aoa/store-sqlite": "workspace:*",
+      },
+    },
     "packages/store-sqlite": {
       "name": "@aoa/store-sqlite",
       "version": "0.0.0",
@@ -116,6 +128,8 @@
     "@aoa/runtime-dsh": ["@aoa/runtime-dsh@workspace:packages/runtimes/dsh"],
 
     "@aoa/runtime-pi": ["@aoa/runtime-pi@workspace:packages/runtimes/pi"],
+
+    "@aoa/sdk": ["@aoa/sdk@workspace:packages/sdk"],
 
     "@aoa/store-sqlite": ["@aoa/store-sqlite@workspace:packages/store-sqlite"],
 
