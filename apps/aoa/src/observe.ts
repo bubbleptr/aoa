@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type JournalRecord, type OutMsg, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
+import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type JournalRecord, type OutMsg, type Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
@@ -145,8 +145,6 @@ export type Snapshot = {
     files: MemoryFile[];
     totalBytes: number;
     writesToday: { sessionId: string; count: number }[];
-    /** What every run is given as "already told the user": the latest delivered messages, oldest first. */
-    told: { id: string; thread: string | null; body: string; createdAt: number }[];
   };
   permissions: {
     waiting: WaitingCall[];
@@ -413,8 +411,6 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
       const sessionId = PROGRESS_FILE.exec(f.path)?.[1];
       if (sessionId !== undefined) f.task = { sessionId, state: stateOf.get(sessionId) ?? "unknown" };
     }
-    // The same read the worker makes for a run's "Already told the user".
-    const told = t.listRecentSent(inboxId, RESIDENT_RECENT_MESSAGES).map((m) => ({ id: m.id, thread: m.thread, body: m.body, createdAt: m.createdAt }));
     const today = startOfDay(now);
     const writesToday = new Map<string, number>();
     for (const j of writes) if (j.intentAt >= today) writesToday.set(j.sessionId, (writesToday.get(j.sessionId) ?? 0) + 1);
@@ -483,7 +479,6 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
         files,
         totalBytes: files.reduce((n, f) => n + f.size, 0),
         writesToday: [...writesToday].map(([sessionId, count]) => ({ sessionId, count })),
-        told,
       },
       permissions: {
         waiting: deferred.map((d) => ({

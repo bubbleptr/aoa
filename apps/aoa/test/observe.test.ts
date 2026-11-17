@@ -172,17 +172,6 @@ describe("snapshot", () => {
     });
   });
 
-  test("the messages a run is told it already sent are the latest five delivered, oldest first", async () => {
-    const w = await world();
-    for (let i = 1; i <= 6; i++) {
-      w.script([call("notify", { body: `Update ${i}.` }), say("Done.")]);
-      await w.cli("send", `Task ${i}.`);
-      await w.drain();
-      await w.dispatch();
-    }
-    expect(observe(w).memory.told.map((m) => m.body)).toEqual(["Update 2.", "Update 3.", "Update 4.", "Update 5.", "Update 6."]);
-  });
-
   test("memory text past the total cap goes to the latest files; older ones keep only a head", async () => {
     const w = await world();
     const dir = w.agent.paths.memory;

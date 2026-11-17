@@ -117,7 +117,7 @@ details.file summary { padding: 8px 16px; cursor: pointer; display: flex; justif
 details.file summary::-webkit-details-marker { display: none; }
 details.file summary::before { content: "▸"; color: var(--muted); flex: none; }
 details.file[open] summary::before { content: "▾"; }
-details.file summary .path { font-family: var(--mono); overflow-wrap: anywhere; flex: 1; }
+details.file summary .path { font-family: var(--mono); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 details.file summary .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
 details.file .text-box { margin: 0 16px 10px; max-height: 240px; overflow: auto; font-family: var(--mono); font-size: 12px; }
 details.file .note { margin: -4px 16px 10px; color: var(--muted); font-size: 12px; }
@@ -126,9 +126,6 @@ details.file .note:empty { display: none; }
 .mem-group h3 { margin: 0; padding: 10px 16px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .mem-group .missing { padding: 4px 16px 10px; color: var(--muted); font-size: 12px; }
 .mem-group .missing .path { font-family: var(--mono); color: var(--text); }
-ol.told { list-style: none; margin: 0; padding: 0 16px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
-ol.told .when { color: var(--muted); font-family: var(--mono); }
-ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   .node.waiting rect.halo, .flash { animation: none; }
@@ -216,7 +213,6 @@ ol.told .body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5e
     <div class="mem-group"><h3>Progress · loaded into its own task's runs</h3><div id="mem-progress"></div></div>
     <div class="mem-group"><h3>Notes · read when the agent needs them</h3><div id="mem-notes"></div></div>
     <div class="mem-group" id="mem-other-group"><h3>Other files · not part of any run</h3><div id="mem-other"></div></div>
-    <div class="mem-group"><h3>Already told you · loaded into every run</h3><ol class="told" id="mem-told"></ol></div>
   </section>
 </aside>
 </div>
@@ -597,7 +593,9 @@ function memoryFile(f) {
     details.open = f.kind === "instructions" || f.kind === "index";
     const summary = el("summary");
     const meta = el("span", "meta");
-    summary.append(el("span", "path", f.path), meta);
+    const name = el("span", "path", displayName(f));
+    name.title = f.path;
+    summary.append(name, meta);
     const box = el("div", "text-box");
     const note = el("div", "note");
     details.append(summary, box, note);
@@ -605,7 +603,7 @@ function memoryFile(f) {
     memoryEls.set(f.path, m);
   }
   const task = f.task ? "task " + (f.task.state === "unknown" ? "unknown" : f.task.state) : null;
-  m.meta.textContent = [task, bytes(f.size), clockTime(f.mtime), f.writtenBy ? "session " + short(f.writtenBy) : null].filter(Boolean).join(" · ");
+  m.meta.textContent = [task, bytes(f.size), clockTime(f.mtime), f.writtenBy && f.writtenBy !== f.task?.sessionId ? "session " + short(f.writtenBy) : null].filter(Boolean).join(" · ");
   const shown = f.binary ? "" : f.text;
   if (m.shown !== shown) {
     m.box.hidden = shown === "";
@@ -620,6 +618,9 @@ function memoryFile(f) {
   m.details.dataset.key = f.path + ":" + f.mtime;
   return m.details;
 }
+
+/** A progress file is named after its session's full id; the first 8 characters say which task, as elsewhere on the page. */
+const displayName = (f) => (f.kind === "progress" ? f.path.replace(/([0-9a-f]{8})-[0-9a-f-]{27}\.md$/, "$1") : f.path);
 
 function renderMemory(s) {
   const m = s.memory;
@@ -641,7 +642,6 @@ function renderMemory(s) {
   const other = of("other").map(memoryFile);
   document.getElementById("mem-other-group").hidden = other.length === 0;
   placeFiles("mem-other", other);
-  renderTold(m.told);
   return newKeys("memory", m.files.map((f) => f.path + ":" + f.mtime));
 }
 
@@ -671,19 +671,6 @@ function placeFiles(id, items, emptyText) {
   }
   items.forEach((item, i) => { if (list.children[i] !== item) list.insertBefore(item, list.children[i] || null); });
   while (list.children.length > items.length) list.lastElementChild.remove();
-}
-
-function renderTold(told) {
-  const list = document.getElementById("mem-told");
-  if (told.length === 0) {
-    list.replaceChildren(el("li", "missing", "Nothing delivered yet."));
-    return;
-  }
-  list.replaceChildren(...told.map((msg) => {
-    const li = el("li");
-    li.append(el("div", "when", clockTime(msg.createdAt) + (msg.thread ? " · " + msg.thread : "")), el("div", "body", msg.body));
-    return li;
-  }));
 }
 
 /** Looks the rows up when it runs: a later update may have replaced the panel's list since. */
