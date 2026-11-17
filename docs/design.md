@@ -412,7 +412,7 @@ Codex 的请求怎么对应到 aoa：
 第二档的第二个 runtime，接的是 dsh 的 SDK 档：`dsh --profile sdk`，stdio 上换行分隔的 JSON-RPC 2.0（[方案](proposals/deepseek-harness.md)，依据 dsh `0.2.2-rc.3`）。
 
 - 配置：`runtime: "dsh"`（顶层或具名 agent），要写 `model`（dsh 的模型名）和 `apiKeyEnv`（密钥所在的环境变量），可选 `dsh: { command, preset }`：`command` 默认 `dsh`；`preset` 是权限预设（`read-only`、`workspace-write`（默认）、`danger-full-access`），aoa 把它写进 patch，profile 固定是 `sdk`。这个 agent 的 worker 是 `permissions: "harness"`。只能用在本地模式；审查角色不支持（dsh 的工具不经过 aoa 的只读规则，拦不住）。provider 固定是 `deepseek-official`，aoa 不提供别的路由。`serve` 不要求 dsh agent 配分类器：它自己的工具不经过 aoa，aoa 给它的工具都是 `low`。
-- 进程和会话：每次 run 起一个 dsh 子进程，工作目录是 session 的 worktree，run 结束就停掉。`initialize` 带 `cwd`、`provider`、`model`、`approvalRequests: true` 和 `capabilities: { userQuestions: true }`。新会话的 `sessionId` 由 aoa 生成，直接 `session/prompt`，它就是这个 session 的 `sessionRef`；已有的会话先 `session/resume` 再 prompt。`session.status` 进入 `idle` 就是 run 结束。但 idle 不等于成功：`turn/end` 事件的 `reason.kind` 是 `error` 时这次 run 直接抛错交给内核重试（鉴权失败、模型报错都会走到这里）；日志里没有结论时再问一次 `session/wait`，让 dsh 手里的 live failure 也冒出来。本次 run 的事件按 pi 的格式写成一个 text block。
+- 进程和会话：每次 run 起一个 dsh 子进程，工作目录是 session 的 worktree，run 结束就停掉。`initialize` 带 `cwd`、`provider`、`model`、`approvalRequests: true` 和 `capabilities: { userQuestions: true }`。新会话的 `sessionId` 由 aoa 生成，直接 `session/prompt`，它就是这个 session 的 `sessionRef`；已有的会话先 `session/resume`，再用 dsh 自己的 `/permission <预设>` 命令把权限预设重新设一遍（dsh 把 sandbox 和 approval 策略存在会话里，恢复时它们优先于 patch 的默认值，所以从 `danger-full-access` 改成 `workspace-write` 之后继续同一个任务，下一次 run 就是 workspace-write；dsh 没有这个命令、或者命令报错时 run 直接失败，不会带着旧权限往下跑），最后才 prompt。`session.status` 进入 `idle` 就是 run 结束。但 idle 不等于成功：`turn/end` 事件的 `reason.kind` 是 `error` 时这次 run 直接抛错交给内核重试（鉴权失败、模型报错都会走到这里）；日志里没有结论时再问一次 `session/wait`，让 dsh 手里的 live failure 也冒出来。本次 run 的事件按 pi 的格式写成一个 text block。
 - 版本：dsh 握手里的 `version` 固定写死是 `0.0.1`，分不出发布版本，所以启动前先跑 `<command> --version`，要求等于代码里的常量 `0.2.2-rc.3`，不一致就让这次 run 失败并说明原因。dsh 还在开发者预览阶段，换版本时 patch 里的行 id 也要重新核对一遍。
 - 独立的 home 和 patch：`$DSH_HOME` 是 `<dataDir>/dsh-home`，不带用户的 dsh 插件、MCP 和设置。每次 run 在 `<dataDir>/dsh-home/patches/` 下写一个 patch：把权限预设写成 `sandbox-policy` 的 `mode` 和 `approval` 的 `policy`（用户 dsh 里的设置放宽不了它）；关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理器，以及它自己的提问和调度工具（这样提问只有 aoa 的 `ask_user`、定时只有 `wake_me_at`）；插入一行 `dsh-mcp-client`，server 名 `aoa`，指向这次 run 的桥；再用 `system-prompt` 行的 `personaSuffix` 把 aoa 的系统提示交给 dsh，因为 SDK 协议没有 instructions 字段。行 id 逐项对照过 dsh 的 base 和 sdk-app profile。
 - 子进程环境只有 `DSH_HOME`、`DEEPSEEK_API_KEY`（从 `apiKeyEnv` 读出，放进 dsh 默认读的那个变量）、`AOA_DSH_SYSTEM_PROMPT`，以及 `PATH`、`HOME`、`TMPDIR`。aoa 启动时从自己环境里删掉的 key 不会出现在里面，别的 agent 的 key 也不会。
@@ -427,7 +427,7 @@ Codex 的请求怎么对应到 aoa：
 
 - 系统提示走 patch 的 `personaSuffix` 而不是握手字段：SDK 协议没有这个字段，而覆盖 `system-prompt` 这一行会连带丢掉 sdk-app 自带的 `personaPrefix`（「You are a coding agent powered by …」）。现在 dsh 的系统提示是它自己的身份和指引，后面接 aoa 的提示。
 - 版本检查是跑 `--version` 读输出，而不是像 dsh 官方 client 那样读包清单；`dsh.command` 指向的如果不是那个包的 bin（比如包了一层脚本），检查的依据就是脚本打印的版本。
-- `session/query`（斜杠命令）、`session/wait`、`subagent.*` 通知都没用；dsh 的 PTC 子调用照样进调用表，没有别的特殊处理。
+- `session/query` 只用来在恢复会话时跑 `/permission`，别的斜杠命令不用；`subagent.*` 通知忽略；dsh 的 PTC 子调用照样进调用表，没有别的特殊处理。
 - 认领 MCP 调用靠参数深度相等。dsh 如果在事件和实际调用之间改写了参数（比如把相对路径换成绝对路径），桥就认领不到，这次调用会被拒、不会执行；这是有意的失败方向。
 - `dsh.preset` 按方案 §5 是**权限预设**，不是 dsh 的 profile：aoa 把它翻译成 `sandbox-policy.mode` 和 `approval.policy` 写进 patch，profile 固定 `sdk`（方案里 `dsh --profile sdk` 是另一种「profile」，容易混）。
 

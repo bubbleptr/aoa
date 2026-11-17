@@ -15,6 +15,8 @@ import type {
   SessionEventNotification,
   SessionPromptParams,
   SessionPromptResult,
+  SessionQueryParams,
+  SessionQueryResult,
   SessionResumeParams,
   SessionStatusNotification,
   ToolCallData,
@@ -202,7 +204,12 @@ class DshRun {
         capabilities: { userQuestions: true },
       };
       await this.conn.request<InitializeResult>("initialize", init);
-      if (this.input.session.ref !== null) await this.conn.request("session/resume", { sessionId: this.sessionId } satisfies SessionResumeParams);
+      if (this.input.session.ref !== null) {
+        await this.conn.request("session/resume", { sessionId: this.sessionId } satisfies SessionResumeParams);
+        // A resumed session keeps the sandbox and approval policy it was saved with, and those win over the
+        // patch's defaults. dsh's own /permission command is the one way to change them for this session.
+        await this.applyPreset();
+      }
       // `attempts` counts failed runs, so a non-zero one means an earlier attempt at these events stopped part way.
       const retry = this.input.events.some((e) => e.attempts > 0);
       const text = renderUserMessage(this.input, retry, renderDshAnswer);
@@ -233,6 +240,25 @@ class DshRun {
       // A process that exited on its own (after `shutdown`, or by crashing) is left alone.
       if (!this.exited) proc?.kill("SIGKILL");
     }
+  }
+
+  /**
+   * Sets the configured permission preset on a resumed session, through dsh's `/permission` command. dsh
+   * pins sandbox mode and approval policy per session and a resumed session keeps the values it was saved
+   * with, so without this a task started under a wider preset would stay wide after the config tightens.
+   */
+  private async applyPreset(): Promise<void> {
+    const result = await this.conn.request<SessionQueryResult>("session/query", {
+      sessionId: this.sessionId,
+      contentBlocks: [{ type: "text", text: `/permission ${this.preset}` }],
+    } satisfies SessionQueryParams);
+    if (result?.kind !== "command") {
+      throw new Error(
+        `dsh has no /permission command in this profile, so aoa cannot set its permission preset ${this.preset} on the resumed session`,
+      );
+    }
+    const outcome = result.execution.result;
+    if (outcome.kind !== "success") throw new Error(`dsh refused the permission preset ${this.preset}: ${outcome.text}`);
   }
 
   private notification(method: string, params: unknown): void {

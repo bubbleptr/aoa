@@ -27,6 +27,16 @@ export type SessionPromptResult = { messageId: string };
 
 export type SessionResumeParams = { sessionId: string };
 
+/** `session/query` with a slash command: dsh's own command entry, not a prompt. */
+export type SessionQueryParams = { sessionId: string; contentBlocks: PromptContentBlock[] };
+
+export type SessionQueryResult =
+  | { kind: "prompt"; messageId: string }
+  | {
+      kind: "command";
+      execution: { commandId: string; result: { kind: "success"; text?: string } | { kind: "error"; text: string } };
+    };
+
 /** One entry of the server's session log, as pushed by `session.event`. */
 export type SessionEvent = { type: string; seq?: number; time?: number; data?: Record<string, unknown> };
 

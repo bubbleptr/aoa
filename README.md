@@ -74,7 +74,7 @@ agents: {
 },
 ```
 
-读文件、改代码、跑命令用的是 dsh 自己的工具，沙箱和审批由 `dsh.preset` 定（默认 workspace-write，要审批时问你）；aoa 会为每次运行准备一个独立的 dsh home（`<dataDir>/dsh-home`）和一个 patch，把权限预设写进去，关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理器，以及它自己的提问和调度工具。dsh 要问审批时，问题变成 aoa 的审批请求，你批准后 dsh 再做一次同样的操作并直接放行。记忆、`notify`、`ask_user`、`send_to` 这些 aoa 自己的工具通过一个只监听 `127.0.0.1`、每次运行一个 token 的 MCP 桥交给 dsh，仍由 aoa 裁决和记录。启动前 aoa 会查 `dsh --version`，不是它测试过的 `0.2.2-rc.3` 就不跑。只能用在本地模式，审查角色不支持。
+读文件、改代码、跑命令用的是 dsh 自己的工具，沙箱和审批由 `dsh.preset` 定（默认 workspace-write，要审批时问你）；改了预设之后，已经在跑的任务在下一次运行前也会被切过去。aoa 会为每次运行准备一个独立的 dsh home（`<dataDir>/dsh-home`）和一个 patch，把权限预设写进去，关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理器，以及它自己的提问和调度工具。dsh 要问审批时，问题变成 aoa 的审批请求，你批准后 dsh 再做一次同样的操作并直接放行。记忆、`notify`、`ask_user`、`send_to` 这些 aoa 自己的工具通过一个只监听 `127.0.0.1`、每次运行一个 token 的 MCP 桥交给 dsh，仍由 aoa 裁决和记录。启动前 aoa 会查 `dsh --version`，不是它测试过的 `0.2.2-rc.3` 就不跑。只能用在本地模式，审查角色不支持。
 
 注意：和 Codex 一样，aoa 的推送规则和 `~/.aoa` 规则管不到 dsh 自己的工具，`serve` 启动时会提醒一次；dsh 还在开发者预览阶段，换版本可能要跟着改 patch 和版本常量。
 
