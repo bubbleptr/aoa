@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { english } from "./english.ts";
 
 const root = join(import.meta.dir, "../..");
-const docs = join(root, "docs");
-const boardsDir = join(docs, "diagrams/boards");
-const logosDir = join(docs, "diagrams/logos");
+const out = join(root, "docs/diagrams");
+const boardsDir = join(out, "boards");
+const logosDir = join(out, "logos");
 const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 // The canvas references uploaded assets by id; these are the same files under readable names.
@@ -110,7 +110,7 @@ function screenshot(name: string, width: number, height: number) {
     const r = Bun.spawnSync([
       chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2",
       `--window-size=${width + 32},${height + 32}`, "--virtual-time-budget=4000",
-      `--screenshot=${join(docs, `${name}-${theme}.png`)}`, `file://${join(docs, `${name}.html`)}#${theme}`,
+      `--screenshot=${join(out, `${name}-${theme}.png`)}`, `file://${join(out, `${name}.html`)}#${theme}`,
     ], { stderr: "ignore" });
     if (r.exitCode !== 0) throw new Error(`chrome failed on ${name} ${theme}`);
   }
@@ -118,8 +118,8 @@ function screenshot(name: string, width: number, height: number) {
 
 for (const { name, title } of boards) {
   const { html, width, height } = page(readFileSync(join(boardsDir, `${name}.dc.html`), "utf8"), title);
-  writeFileSync(join(docs, `${name}.html`), html);
-  writeFileSync(join(docs, `${name}-en.html`), english(html, name));
+  writeFileSync(join(out, `${name}.html`), html);
+  writeFileSync(join(out, `${name}-en.html`), english(html, name));
   screenshot(name, width, height);
   screenshot(`${name}-en`, width, height);
   console.log(`${name}: ${width}×${height}`);

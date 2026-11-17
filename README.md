@@ -12,8 +12,8 @@
 一个常驻的 agent 内核：你交代任务，它在自己的分支上做完，只在需要你的时候找你。
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
-  <img alt="aoa 架构：入口是通过 MCP 接入的 Claude，Webhook 待做；任务进内核的 Inbox，Worker 加载 Memory、开 run 交给 runtime，工具调用回到 Permissions 裁决，消息和审批请求从 Outbox 发回，Timers 到期唤醒；状态都在 SQLite；runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/architecture-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.png">
+  <img alt="aoa 架构：入口是通过 MCP 接入的 Claude，Webhook 待做；任务进内核的 Inbox，Worker 加载 Memory、开 run 交给 runtime，工具调用回到 Permissions 裁决，消息和审批请求从 Outbox 发回，Timers 到期唤醒；状态都在 SQLite；runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/diagrams/architecture-light.png">
 </picture>
 
 - **五个原语**都在内核里：Inbox 收事件，Timers 到点唤醒，Memory 跨 run 保留指令、笔记、进度和已发消息，Permissions 决定每次工具调用能不能做，Outbox 发消息并重试送达。所有状态都在一个 SQLite 文件里，进程崩溃后能接着做。
@@ -47,8 +47,8 @@ interface Channel {
 ### 一次工具调用
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/tool-call-dark.png">
-  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后，Jev 现在只在旁边打分，之后接管裁决；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/tool-call-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/tool-call-dark.png">
+  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后，Jev 现在只在旁边打分，之后接管裁决；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/diagrams/tool-call-light.png">
 </picture>
 
 - **裁决在模型之外**，依次是规则表、分类器、延后。只读工具和只读命令放行；`sudo`、强推、改 git 配置或远端、`curl | sh` 直接拦；规则判不了的交给分类器（一个小模型）；高风险和分类器拿不准的延后，未知工具默认延后。每次裁决连同依据写进日志。
@@ -109,8 +109,8 @@ aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，�
 在配置里加 `agents`，就能让几个具名 agent 跑在同一个 `serve` 里。顶层字段就是默认 agent；每个具名 agent 有自己的 inbox、worker、角色、权限和记忆，没写的字段（`model`、`classifier`、`risk`）沿用顶层。
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/multi-agent-dark.png">
-  <img alt="多 agent：实现 agent 和审查 agent 各有自己的 Inbox、Worker 和 pi；实现 agent 用 send_to 把分支交给审查 agent，审查 agent 把结论发回；两者共用一个 SQLite 库，表按 inbox 分" src="docs/multi-agent-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/multi-agent-dark.png">
+  <img alt="多 agent：实现 agent 和审查 agent 各有自己的 Inbox、Worker 和 pi；实现 agent 用 send_to 把分支交给审查 agent，审查 agent 把结论发回；两者共用一个 SQLite 库，表按 inbox 分" src="docs/diagrams/multi-agent-light.png">
 </picture>
 
 每个 agent 一个 inbox、一个 worker：一个 inbox 同时只有一个 run，不同 agent 的 run 可以同时跑。agent 之间只通过往对方的 inbox 写事件合作，所有 agent 共用一个库和一个时钟。
