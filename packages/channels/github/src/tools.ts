@@ -42,6 +42,7 @@ export function githubTools(config: GitHubToolsConfig): ToolDef[] {
 
   const gitPush: ToolDef = {
     name: "git_push",
+    risk: "medium",
     description: `Push a branch from your working directory to ${cfg.owner}/${cfg.repo} on GitHub (never forced, never the default branch).`,
     schema: {
       type: "object",
@@ -81,6 +82,7 @@ export function githubTools(config: GitHubToolsConfig): ToolDef[] {
 
   const openPr: ToolDef = {
     name: "github_open_pr",
+    risk: "low",
     description: `Open a pull request in ${cfg.owner}/${cfg.repo}, or return the one already open for the same head branch.`,
     idempotent: true,
     schema: {
@@ -120,6 +122,7 @@ export function githubTools(config: GitHubToolsConfig): ToolDef[] {
 
   const comment: ToolDef = {
     name: "github_comment",
+    risk: "low",
     description: `Post a comment on an issue or pull request in ${cfg.owner}/${cfg.repo}.`,
     schema: {
       type: "object",

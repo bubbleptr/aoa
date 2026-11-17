@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type PolicyConfig, type Rule, decide } from "@aoa/kernel";
 import { createModelRuntime, redact } from "../../../packages/runtimes/pi/src/models.ts";
-import { agentPolicy, deferPush, reviewReadOnly } from "../src/policy.ts";
+import { agentPolicy, deferPush, reviewReadOnly, toolRisk } from "../src/policy.ts";
 import { REVIEWER_PROMPT, type ReviewToggles, reviewMessage } from "../src/reviewer.ts";
 import { type AgentInfo, type CallRecord, reviewInputOf } from "./export.ts";
 
@@ -93,7 +93,8 @@ function loadCases(): { cases: Case[]; agentsMd: string | null } {
 function policyFor(agent: AgentInfo, classify: NonNullable<PolicyConfig["classify"]>): PolicyConfig {
   const ahead: Rule[] = agent.role === "review" ? [reviewReadOnly] : [];
   const rules: Rule[] = agent.mode === "local" ? [deferPush] : [];
-  return agentPolicy({ ...(agent.risk ? { risk: agent.risk } : {}), classify, ahead, rules });
+  // A replayed call is known only by its tool name, so the tiers its tool would carry come from the table.
+  return agentPolicy({ risk: { ...toolRisk(), ...agent.risk }, classify, ahead, rules });
 }
 
 async function route(c: Case, judgeRuleDefers: Set<string>): Promise<Route> {

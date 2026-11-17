@@ -1,7 +1,7 @@
 import { posix } from "node:path";
-import type { CallId, Decision, SessionId } from "./types.ts";
+import type { CallId, Decision, Risk, SessionId } from "./types.ts";
 
-export type Risk = "low" | "medium" | "high";
+export type { Risk } from "./types.ts";
 
 /** What the policy sees of a call. Nothing the model says about its own safety is part of it (spec §6.2). */
 export type ToolCall = { tool: string; args: unknown };
@@ -30,13 +30,13 @@ export type PolicyConfig = {
 export type Verdict = { decision: Decision; basis: string };
 
 /** Decision order: first rule with an opinion, then the risk tier, `medium` through the classifier (spec §6.3). */
-export async function decide(policy: PolicyConfig | undefined, call: ToolCall, ctx: PolicyContext): Promise<Verdict> {
+export async function decide(policy: PolicyConfig | undefined, call: ToolCall, ctx: PolicyContext, toolRisk?: Risk): Promise<Verdict> {
   if (!policy) return { decision: "allow", basis: "no policy" };
   for (const rule of policy.rules ?? []) {
     const decision = rule.match(call, ctx);
     if (decision) return { decision, basis: `rule:${rule.name}` };
   }
-  const risk = policy.risk[call.tool] ?? "high";
+  const risk = policy.risk[call.tool] ?? toolRisk ?? "high";
   if (risk === "low") return { decision: "allow", basis: "risk:low" };
   if (risk === "high") return { decision: "defer", basis: "risk:high" };
   if (!policy.classify) return { decision: "defer", basis: "reviewer:missing" };

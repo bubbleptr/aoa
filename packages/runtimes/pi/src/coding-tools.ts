@@ -1,4 +1,4 @@
-import type { ToolDef } from "@aoa/kernel";
+import type { Risk, ToolDef } from "@aoa/kernel";
 import {
   createBashTool,
   createEditTool,
@@ -18,14 +18,15 @@ type PiTool = {
   execute(toolCallId: string, params: any): Promise<unknown>;
 };
 
-const BUILTINS: Array<{ create: (cwd: string) => PiTool; idempotent: boolean }> = [
-  { create: createBashTool, idempotent: false },
-  { create: createReadTool, idempotent: true },
-  { create: createEditTool, idempotent: false },
-  { create: createWriteTool, idempotent: false },
-  { create: createGrepTool, idempotent: true },
-  { create: createFindTool, idempotent: true },
-  { create: createLsTool, idempotent: true },
+/** Reading and editing files is low risk: the policy's rules keep it inside the working directory. A command is medium. */
+const BUILTINS: Array<{ create: (cwd: string) => PiTool; idempotent: boolean; risk: Risk }> = [
+  { create: createBashTool, idempotent: false, risk: "medium" },
+  { create: createReadTool, idempotent: true, risk: "low" },
+  { create: createEditTool, idempotent: false, risk: "low" },
+  { create: createWriteTool, idempotent: false, risk: "low" },
+  { create: createGrepTool, idempotent: true, risk: "low" },
+  { create: createFindTool, idempotent: true, risk: "low" },
+  { create: createLsTool, idempotent: true, risk: "low" },
 ];
 
 /**
@@ -33,7 +34,7 @@ const BUILTINS: Array<{ create: (cwd: string) => PiTool; idempotent: boolean }> 
  * Each call builds the pi tool for the session's workdir; `execute` returns pi's own `{ content, details }`.
  */
 export function codingTools(): ToolDef[] {
-  return BUILTINS.map(({ create, idempotent }) => {
+  return BUILTINS.map(({ create, idempotent, risk }) => {
     // Name, description and schema do not depend on the directory, so any path serves as the template.
     const template = create(".");
     return {
@@ -41,6 +42,7 @@ export function codingTools(): ToolDef[] {
       description: template.description,
       schema: template.parameters,
       idempotent,
+      risk,
       async execute(args, ctx) {
         if (ctx.workdir === null) {
           throw new Error(`${template.name} needs a working directory, and this session has none`);

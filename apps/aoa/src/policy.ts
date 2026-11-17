@@ -1,27 +1,25 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { BRANCH_LIST_FLAGS, commandOf, defaultRules, gitInvocations, type PolicyConfig, type Risk, type Rule } from "@aoa/kernel";
-
-const LOW = [
-  "read",
-  "grep",
-  "find",
-  "ls",
-  "edit",
-  "write",
-  "memory_read",
-  "memory_write",
-  "memory_list",
-  "notify",
-  "wake_me_at",
-  "cancel_wake",
-  "follow",
-  "github_comment",
-  "github_open_pr",
-  "send_to",
-];
-const MEDIUM = ["bash", "git_push"];
+import { githubTools } from "@aoa/channel-github";
+import {
+  BRANCH_LIST_FLAGS,
+  askUserTools,
+  commandOf,
+  defaultRules,
+  followTools,
+  gitInvocations,
+  memoryTools,
+  outboxTools,
+  systemClock,
+  timerTools,
+  type PolicyConfig,
+  type Risk,
+  type Rule,
+  type ToolDef,
+} from "@aoa/kernel";
+import { codingTools } from "@aoa/runtime-pi";
+import { sendToTool } from "./send-to.ts";
 
 const FILE_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 
@@ -97,7 +95,7 @@ export const reviewReadOnly: Rule = {
 };
 
 /**
- * The agent's policy: the built-in risk table under the config's overrides, the worktree rule, the role's `ahead`
+ * The agent's policy: the config's risk overrides (each tool carries its own tier), the worktree rule, the role's `ahead`
  * rules, the kernel's rules, then the mode's `rules`. The role's rules come first so their blocks win over the
  * kernel's deferrals (a commit naming a path under `~/.aoa` would otherwise become a question). The mode's come after the kernel's so its blocks (a force
  * push, sudo) stay blocks instead of becoming questions; they still come before the risk tier, so the classifier
@@ -109,14 +107,31 @@ export function agentPolicy(o: {
   ahead?: Rule[];
   rules?: Rule[];
 }): PolicyConfig {
-  const risk: Record<string, Risk> = {
-    ...Object.fromEntries(LOW.map((t) => [t, "low" as const])),
-    ...Object.fromEntries(MEDIUM.map((t) => [t, "medium" as const])),
-    ...o.risk,
-  };
   return {
-    risk,
+    // Each tool carries its own tier; the config's table overrides it.
+    risk: { ...o.risk },
     rules: [outsideWorktree, ...(o.ahead ?? []), ...defaultRules, ...(o.rules ?? [])],
     ...(o.classify ? { classify: o.classify } : {}),
   };
+}
+
+/**
+ * Every tool aoa can give an agent, by name, with the tier its definition declares. For deciding a call known only by
+ * its tool name, as the eval's replay and the policy tests do; a live call gets its tool's tier from the tool itself.
+ * The tools are built only to read their names and tiers, so they get inert stand-ins for what they would run against.
+ */
+export function toolRisk(): Record<string, Risk> {
+  const inert = undefined as never;
+  const deps = { store: inert, clock: systemClock, inboxId: "" };
+  const defs: ToolDef[] = [
+    ...codingTools(),
+    ...timerTools(deps),
+    ...outboxTools(deps),
+    ...memoryTools(inert),
+    ...askUserTools(),
+    ...followTools(deps),
+    ...githubTools({ owner: "", repo: "", userLogin: "", botLogin: "", appId: "", installationId: "", privateKeyPath: "" }),
+    sendToTool({ store: inert, clock: systemClock, from: "", inboxId: "", roster: [], agents: () => [] }),
+  ];
+  return Object.fromEntries(defs.flatMap((d) => (d.risk ? [[d.name, d.risk]] : [])));
 }

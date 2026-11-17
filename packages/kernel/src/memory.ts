@@ -94,6 +94,7 @@ export function memoryTools(memory: Memory): ToolDef[] {
   return [
     {
       name: "memory_read",
+      risk: "low",
       description: "Read a file from your memory directory.",
       schema: { type: "object", properties: { path: pathSchema }, required: ["path"], additionalProperties: false },
       idempotent: true,
@@ -103,6 +104,7 @@ export function memoryTools(memory: Memory): ToolDef[] {
     },
     {
       name: "memory_write",
+      risk: "low",
       description:
         "Create or replace a file in your memory directory. Keep only what cannot be looked up again; " +
         "for issues, PRs and commits store a pointer, not a copy. Update index.md when you add or remove a file. " +
@@ -123,6 +125,7 @@ export function memoryTools(memory: Memory): ToolDef[] {
     },
     {
       name: "memory_list",
+      risk: "low",
       description: "List the entries of a directory in your memory (default: the root). Directories end in /.",
       schema: {
         type: "object",

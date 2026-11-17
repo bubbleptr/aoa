@@ -18,6 +18,7 @@ export type OutboxToolDeps = { store: Store; clock: Clock; inboxId: InboxId };
 export function outboxTools({ store, clock, inboxId }: OutboxToolDeps): ToolDef[] {
   const notify: ToolDef = {
     name: "notify",
+    risk: "low",
     description:
       "Send the user a message about this task. Use it only when the user needs to know something " +
       "(you opened a PR, the task failed) or has to decide something. Ending a run without a message is normal; " +

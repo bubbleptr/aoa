@@ -151,6 +151,7 @@ type WakeArgs = { at?: string; inMs?: number; note: string };
 export function timerTools({ store, clock, inboxId }: TimerToolDeps): ToolDef[] {
   const wakeMeAt: ToolDef = {
     name: "wake_me_at",
+    risk: "low",
     description:
       "Schedule a follow-up for this task: at the given time an event with your note wakes you in this same session. " +
       "Give either `at` (an ISO 8601 time) or `inMs` (milliseconds from now). Returns the timer id and its due time.",
@@ -184,6 +185,7 @@ export function timerTools({ store, clock, inboxId }: TimerToolDeps): ToolDef[] 
 
   const cancelWake: ToolDef = {
     name: "cancel_wake",
+    risk: "low",
     description:
       "Cancel a follow-up this task set earlier with wake_me_at. Returns whether an armed follow-up of this task was cancelled.",
     schema: {

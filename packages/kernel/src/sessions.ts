@@ -24,6 +24,7 @@ export type FollowToolDeps = { store: Store; inboxId: InboxId };
 export function followTools({ store, inboxId }: FollowToolDeps): ToolDef[] {
   const follow: ToolDef = {
     name: "follow",
+    risk: "low",
     description:
       "Follow another thread for this task, e.g. the pull request you opened: later comments there come back to " +
       "this session. Pass the thread key a tool returned, such as github:owner/repo#12.",

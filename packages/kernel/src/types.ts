@@ -87,11 +87,16 @@ export type JournalEntry = {
   result: ToolResult | null;
 };
 
+/** How much harm a tool call can do; decides what happens to a call no rule has an opinion on (spec §6.3). */
+export type Risk = "low" | "medium" | "high";
+
 /** A tool as registered with the kernel. */
 export type ToolDef = {
   name: string;
   description: string;
   schema: unknown;
+  /** The tool's own risk tier; the policy's `risk` table overrides it, and a tool with neither is high risk. */
+  risk?: Risk;
   /** Safe to execute again when a crash left its outcome unknown (it carries its own idempotency key). */
   idempotent?: boolean;
   execute(args: unknown, ctx: ToolExecContext): Promise<unknown>;

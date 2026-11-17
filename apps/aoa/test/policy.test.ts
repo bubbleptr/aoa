@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decide } from "@aoa/kernel";
-import { agentPolicy, deferPush, reviewReadOnly } from "../src/policy.ts";
+import { agentPolicy, deferPush, reviewReadOnly, toolRisk } from "../src/policy.ts";
 
 // Through tmpdir's symlink (/var -> /private/var on macOS), as a configured path may arrive.
 const root = mkdtempSync(join(tmpdir(), "aoa-policy-"));
@@ -12,7 +12,9 @@ mkdirSync(join(workdir, "src"), { recursive: true });
 symlinkSync(root, join(workdir, "escape"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-const policy = agentPolicy({});
+// Calls are decided by tool name here, so the tiers the tools carry come from the table.
+const risk = toolRisk();
+const policy = agentPolicy({ risk });
 const ctx = { tainted: false, workdir: realpathSync(workdir) };
 const decision = async (tool: string, args: object) => (await decide(policy, { tool, args }, ctx)).decision;
 
@@ -55,13 +57,13 @@ describe("risk tiers", () => {
   });
 
   test("the config overrides a tool's tier", async () => {
-    const strict = agentPolicy({ risk: { github_comment: "high" } });
+    const strict = agentPolicy({ risk: { ...risk, github_comment: "high" } });
     expect((await decide(strict, { tool: "github_comment", args: {} }, ctx)).decision).toBe("defer");
   });
 });
 
 describe("local mode: no pushing without the user", () => {
-  const local = agentPolicy({ classify: async () => "allow", rules: [deferPush] });
+  const local = agentPolicy({ risk, classify: async () => "allow", rules: [deferPush] });
 
   test.each(["git push", "git add -A && git commit -qm x && git push origin aoa/x", "git -C ../repo push", "echo ok; /usr/bin/git push -u origin HEAD"])(
     "%s is deferred even though the classifier would allow it",
@@ -86,7 +88,7 @@ describe("local mode: no pushing without the user", () => {
 });
 
 describe("a reviewer cannot change refs or history", () => {
-  const review = agentPolicy({ ahead: [reviewReadOnly], classify: async () => "allow" });
+  const review = agentPolicy({ risk, ahead: [reviewReadOnly], classify: async () => "allow" });
 
   test.each([
     ["merge", "git merge main"],

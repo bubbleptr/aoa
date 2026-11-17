@@ -37,6 +37,7 @@ export function sendToTool(o: {
   const others = () => o.agents().filter((a) => a.name !== o.from);
   return {
     name: "send_to",
+    risk: "low",
     description:
       "Send a message to another agent working on this repository; it arrives as an event in that agent's inbox. " +
       `The other agents: ${o.roster
