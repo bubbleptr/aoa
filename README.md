@@ -58,8 +58,6 @@ agents: {
 
 有审查 agent 时，实现 agent 提交后用 `send_to` 把分支交给它。审查 agent 在一个停在那个提交上的独立 worktree 里检查能否干净合并、跑测试、确认新测试去掉修复后会失败，然后把结论发回实现 agent，同时通知你。结论只是建议，合并、关任务、回答审批都由你来。两个 agent 之间来回最多 4 条消息，再多就会转来找你。
 
-具名 agent 的 inbox 是 `local/<repo>@<名字>`，记忆和 worktree 在 `memory/local/<repo>@<名字>/`、`worktrees/local/<repo>@<名字>/` 下，分支是 `aoa/<名字>/<会话 id 前 8 位>`。`status`、`messages`、`answer`、`send --to`、`close` 会在所有 agent 里找。只能用在本地模式。
-
 ### 崩溃后接着做
 
 - 五个存储和辅助表都在一个 SQLite 文件里，规范里的 ATOMIC 就是一个事务：run 的结局、session 的更新和事件标完成一起提交。

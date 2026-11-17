@@ -58,8 +58,6 @@ agents: {
 
 With a review agent configured, the implementation agent hands its branch over with `send_to` after committing. In a separate worktree pinned to that commit, the review agent checks that it merges cleanly, runs the tests, and confirms that new tests fail with the fix removed, then sends its findings back to the implementation agent and notifies you. The findings are advice only: merging, closing the task and answering approvals stay with you. The two agents exchange at most 4 messages before the thread is turned over to you.
 
-A named agent's inbox is `local/<repo>@<name>`, its memory and worktrees live under `memory/local/<repo>@<name>/` and `worktrees/local/<repo>@<name>/`, and its branches are `aoa/<name>/<first 8 characters of the session id>`. `status`, `messages`, `answer`, `send --to` and `close` search all agents. Local mode only.
-
 ### Picking up after a crash
 
 - The five stores and the supporting tables are all in one SQLite file, so ATOMIC in the spec is one transaction: the run's outcome, the session update and marking the events done commit together.
