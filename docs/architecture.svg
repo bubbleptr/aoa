@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" width="1000" height="540" role="img" aria-labelledby="t d">
   <title id="t">aoa 架构</title>
-  <desc id="d">入口经过通道把事件送进内核的 inbox；worker 认领事件、开一次 run 交给 runtime；工具调用和审批经过权限；消息从 outbox 经通道送回给你；一切状态存在一个 SQLite 文件里。</desc>
+  <desc id="d">事件从入口经通道进入内核的 inbox；worker 认领事件、开一次 run 交给 runtime；工具调用和审批经过权限；消息从 outbox 送回给你；一切状态存在一个 SQLite 文件里。runtime 分两档：第一档 pi，第二档 Codex 和 dsh。</desc>
   <style>
     .bg { fill: #ffffff; }
     .zone { fill: #f6f7f9; stroke: #d5d9e0; }
@@ -9,12 +9,13 @@
     .prim { fill: #ffffff; stroke: #5b84d6; stroke-width: 1.4; }
     .t1 { fill: #f1faf3; stroke: #7cbf8e; }
     .t2 { fill: #fff7ec; stroke: #e0a85c; }
+    .sub { fill: #ffffff; stroke: #e0a85c; }
     .store { fill: #f3f0fa; stroke: #a594d4; }
-    .h { font: 600 14px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #1f2733; }
-    .n { font: 600 13px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #1f2733; }
-    .s { font: 11.5px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #5a6575; }
-    .m { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #5a6575; }
-    .lbl { font: 11px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #3d5d9e; }
+    .h { font: 600 15px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #1f2733; }
+    .n { font: 600 13.5px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #1f2733; }
+    .s { font: 12px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #5a6575; }
+    .m { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #5a6575; }
+    .lbl { font: 11.5px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #3d5d9e; }
     .edge { stroke: #6f7d93; stroke-width: 1.4; fill: none; }
     .dash { stroke-dasharray: 5 4; }
     .head { fill: #6f7d93; }
@@ -22,11 +23,12 @@
       .bg { fill: #0d1117; }
       .zone { fill: #161b22; stroke: #30363d; }
       .kernel { fill: #121d33; stroke: #3b5a96; }
-      .box, .prim { fill: #0d1117; }
+      .box, .prim, .sub { fill: #0d1117; }
       .box { stroke: #4a5361; }
       .prim { stroke: #6f97e6; }
       .t1 { fill: #0f2117; stroke: #3f8a55; }
       .t2 { fill: #261b0c; stroke: #b07a33; }
+      .sub { stroke: #b07a33; }
       .store { fill: #1c1730; stroke: #7a68b8; }
       .h, .n { fill: #e6edf3; }
       .s, .m { fill: #9aa6b5; }
@@ -41,118 +43,87 @@
     </marker>
   </defs>
 
-  <rect class="bg" width="1000" height="560"/>
+  <rect class="bg" width="1000" height="540"/>
 
-  <!-- 入口 -->
-  <rect class="zone" x="16" y="16" width="176" height="528" rx="10"/>
-  <text class="h" x="32" y="42">入口</text>
-  <rect class="box" x="30" y="60" width="148" height="58" rx="7"/>
-  <text class="n" x="42" y="83">CLI</text>
-  <text class="m" x="42" y="104">send · answer · close</text>
-  <rect class="box" x="30" y="132" width="148" height="58" rx="7"/>
-  <text class="n" x="42" y="155">MCP</text>
-  <text class="s" x="42" y="176">aoa mcp，给聊天 agent</text>
-  <rect class="box" x="30" y="204" width="148" height="58" rx="7"/>
-  <text class="n" x="42" y="227">GitHub</text>
-  <text class="s" x="42" y="248">issue · 评论 · PR</text>
-  <rect class="box" x="30" y="456" width="148" height="58" rx="7"/>
-  <text class="n" x="42" y="479">观察页</text>
-  <text class="s" x="42" y="500">aoa web，只读</text>
-
-  <!-- 通道 -->
-  <rect class="zone" x="212" y="16" width="132" height="528" rx="10"/>
-  <text class="h" x="228" y="42">通道</text>
-  <rect class="box" x="226" y="60" width="104" height="202" rx="7"/>
-  <text class="n" x="238" y="84">channel-local</text>
-  <text class="s" x="238" y="104">messages.md</text>
-  <text class="s" x="238" y="121">桌面通知</text>
-  <text class="n" x="238" y="156">channel-github</text>
-  <text class="s" x="238" y="176">webhook 收事件</text>
-  <text class="s" x="238" y="193">评论 · PR 发消息</text>
-  <text class="s" x="238" y="236">进：变成事件</text>
-  <text class="s" x="238" y="253">出：送达消息</text>
+  <!-- 入口 · 通道（简化） -->
+  <rect class="box" x="16" y="70" width="128" height="372" rx="10"/>
+  <text class="n" x="30" y="98">你</text>
+  <text class="s" x="30" y="120">CLI · MCP</text>
+  <text class="s" x="30" y="138">GitHub issue</text>
+  <text class="m" x="30" y="420">通道：local</text>
+  <text class="m" x="30" y="436">/ github</text>
 
   <!-- 内核 -->
-  <rect class="kernel" x="364" y="16" width="342" height="440" rx="12"/>
-  <text class="h" x="380" y="42">内核 kernel · 五个原语</text>
+  <rect class="kernel" x="180" y="16" width="420" height="440" rx="12"/>
+  <text class="h" x="198" y="44">内核 · 五个原语</text>
 
-  <rect class="prim" x="380" y="60" width="150" height="62" rx="8"/>
-  <text class="n" x="392" y="83">Inbox</text>
-  <text class="s" x="392" y="104">去重 · 租约 · 失败重试</text>
-  <rect class="prim" x="542" y="60" width="150" height="62" rx="8"/>
-  <text class="n" x="554" y="83">Timers</text>
-  <text class="s" x="554" y="104">wake_me_at · 到期唤醒</text>
+  <rect class="prim" x="198" y="62" width="186" height="66" rx="8"/>
+  <text class="n" x="212" y="87">Inbox</text>
+  <text class="s" x="212" y="109">收事件 · 去重 · 租约 · 重试</text>
+  <rect class="prim" x="396" y="62" width="186" height="66" rx="8"/>
+  <text class="n" x="410" y="87">Timers</text>
+  <text class="s" x="410" y="109">wake_me_at，到期变成事件</text>
 
-  <rect class="box" x="380" y="158" width="312" height="62" rx="8"/>
-  <text class="n" x="392" y="181">Worker</text>
-  <text class="s" x="392" y="202">认领一批事件 → 开一次 run → 记下结局</text>
+  <rect class="box" x="198" y="160" width="384" height="66" rx="8"/>
+  <text class="n" x="212" y="185">Worker</text>
+  <text class="s" x="212" y="207">认领一批事件 → 开一次 run → 记下结局，崩溃后接着做</text>
 
-  <rect class="prim" x="380" y="256" width="150" height="62" rx="8"/>
-  <text class="n" x="392" y="279">Memory</text>
-  <text class="s" x="392" y="300">指令 · 笔记 · 进度 · 已发</text>
-  <rect class="prim" x="542" y="256" width="150" height="62" rx="8"/>
-  <text class="n" x="554" y="279">Permissions</text>
-  <text class="s" x="554" y="300">策略 · 分类器 · 审批 · 许可</text>
+  <rect class="prim" x="198" y="258" width="186" height="66" rx="8"/>
+  <text class="n" x="212" y="283">Memory</text>
+  <text class="s" x="212" y="305">指令 · 笔记 · 进度 · 已发消息</text>
+  <rect class="prim" x="396" y="258" width="186" height="66" rx="8"/>
+  <text class="n" x="410" y="283">Permissions</text>
+  <text class="s" x="410" y="305">策略 · 分类器 · 审批 · 许可</text>
 
-  <rect class="prim" x="380" y="354" width="312" height="62" rx="8"/>
-  <text class="n" x="392" y="377">Outbox</text>
-  <text class="s" x="392" y="398">消息 · 审批请求 · 送达重试</text>
+  <rect class="prim" x="198" y="356" width="384" height="66" rx="8"/>
+  <text class="n" x="212" y="381">Outbox</text>
+  <text class="s" x="212" y="403">消息 · 审批请求 · 至多送达一次</text>
 
   <!-- 存储 -->
-  <rect class="store" x="364" y="474" width="342" height="70" rx="10"/>
-  <text class="n" x="380" y="500">store-sqlite</text>
-  <text class="s" x="380" y="522">一个 SQLite 文件（WAL）：事件、会话、日志、决定、消息</text>
+  <rect class="store" x="180" y="474" width="420" height="50" rx="10"/>
+  <text class="n" x="198" y="504">SQLite</text>
+  <text class="s" x="252" y="504">一个文件（WAL）：事件、会话、日志、决定、消息</text>
 
   <!-- runtime -->
-  <rect class="zone" x="726" y="16" width="258" height="528" rx="10"/>
-  <text class="h" x="742" y="42">Runtime</text>
-  <rect class="t1" x="740" y="60" width="230" height="104" rx="8"/>
-  <text class="n" x="752" y="84">第一档 · pi</text>
-  <text class="s" x="752" y="106">只有 aoa 给的工具</text>
-  <text class="s" x="752" y="124">每次调用都过内核的 Tool.invoke：</text>
-  <text class="s" x="752" y="142">裁决、写日志、执行</text>
-  <rect class="t2" x="740" y="190" width="230" height="166" rx="8"/>
-  <text class="n" x="752" y="214">第二档 · harness</text>
-  <text class="m" x="752" y="234">codex app-server · dsh sdk</text>
-  <text class="s" x="752" y="258">用自己的工具和沙箱</text>
-  <text class="s" x="752" y="276">它要问的审批交给内核转给你，</text>
-  <text class="s" x="752" y="294">批准后记一次性许可</text>
-  <text class="s" x="752" y="318">aoa 的工具：动态工具 / MCP 桥，</text>
-  <text class="s" x="752" y="336">仍是第一档</text>
-  <text class="s" x="742" y="392">每个 agent 选一个 runtime；</text>
-  <text class="s" x="742" y="410">多个 agent 共用一个 serve，</text>
-  <text class="s" x="742" y="428">各有 inbox、记忆和 worktree</text>
+  <text class="h" x="638" y="44">Runtime · 每个 agent 选一个</text>
+  <rect class="t1" x="636" y="62" width="348" height="112" rx="10"/>
+  <text class="n" x="652" y="88">第一档 · pi</text>
+  <text class="s" x="652" y="112">只有 aoa 给的工具（读写、bash、记忆、通知……）</text>
+  <text class="s" x="652" y="132">每次调用都过内核 Tool.invoke：</text>
+  <text class="s" x="652" y="152">裁决、写日志、执行，崩溃后按日志重放</text>
 
-  <!-- 入口 → 通道 -->
-  <path class="edge" marker-end="url(#a)" d="M178,89 H224"/>
-  <path class="edge" marker-end="url(#a)" d="M178,161 H224"/>
-  <path class="edge" marker-end="url(#a)" d="M178,233 H224"/>
-  <!-- 通道 → Inbox -->
-  <path class="edge" marker-end="url(#a)" d="M330,91 H378"/>
-  <text class="lbl" x="336" y="84">事件</text>
-  <!-- Timers → Inbox -->
-  <path class="edge" marker-end="url(#a)" d="M542,91 H532"/>
-  <!-- Inbox → Worker -->
-  <path class="edge" marker-end="url(#a)" d="M455,122 V156"/>
-  <!-- Worker ↔ runtime -->
-  <path class="edge" marker-start="url(#a)" marker-end="url(#a)" d="M694,189 H714 V112 H738"/>
-  <path class="edge" marker-end="url(#a)" d="M714,189 V230 H738"/>
-  <text class="lbl" x="742" y="180">run</text>
-  <!-- Worker → Memory -->
-  <path class="edge dash" marker-end="url(#a)" d="M455,220 V254"/>
-  <text class="lbl" x="462" y="242">加载</text>
-  <!-- runtime → Permissions -->
-  <path class="edge" marker-end="url(#a)" d="M738,300 H694"/>
-  <text class="lbl" x="704" y="292">调用</text>
-  <!-- Permissions → Outbox -->
-  <path class="edge" marker-end="url(#a)" d="M617,318 V352"/>
-  <text class="lbl" x="624" y="340">审批请求</text>
-  <!-- Outbox → 通道 -->
-  <path class="edge" marker-end="url(#a)" d="M380,385 H278 V264"/>
-  <text class="lbl" x="290" y="378">送达</text>
-  <!-- 内核 ↔ 存储 -->
-  <path class="edge" marker-start="url(#a)" marker-end="url(#a)" d="M535,456 V472"/>
-  <!-- 观察页 读存储 -->
-  <path class="edge dash" marker-end="url(#a)" d="M178,505 H362"/>
-  <text class="lbl" x="250" y="498">只读</text>
+  <rect class="t2" x="636" y="198" width="348" height="258" rx="10"/>
+  <text class="n" x="652" y="224">第二档 · 外部 harness</text>
+  <text class="s" x="652" y="248">用自己的工具和沙箱；它要问的审批交给内核转给你，</text>
+  <text class="s" x="652" y="266">批准后记一次性许可，它重做时直接放行</text>
+  <rect class="sub" x="652" y="284" width="154" height="90" rx="8"/>
+  <text class="n" x="664" y="306">Codex</text>
+  <text class="m" x="664" y="326">codex app-server</text>
+  <text class="s" x="664" y="346">aoa 工具：动态工具</text>
+  <text class="s" x="664" y="363">审查：auto review</text>
+  <rect class="sub" x="816" y="284" width="154" height="90" rx="8"/>
+  <text class="n" x="828" y="306">dsh</text>
+  <text class="m" x="828" y="326">dsh --profile sdk</text>
+  <text class="s" x="828" y="346">aoa 工具：MCP 桥</text>
+  <text class="s" x="828" y="363">权限：dsh.preset</text>
+  <text class="s" x="652" y="400">aoa 自己的工具（记忆、通知、ask_user、send_to）</text>
+  <text class="s" x="652" y="418">在这里仍然过内核，仍是第一档</text>
+
+  <!-- 边 -->
+  <path class="edge" marker-end="url(#a)" d="M144,95 H196"/>
+  <text class="lbl" x="152" y="88">事件</text>
+  <path class="edge" marker-end="url(#a)" d="M396,95 H386"/>
+  <path class="edge" marker-end="url(#a)" d="M291,128 V158"/>
+  <path class="edge dash" marker-end="url(#a)" d="M291,226 V256"/>
+  <text class="lbl" x="298" y="246">加载</text>
+  <path class="edge" marker-start="url(#a)" marker-end="url(#a)" d="M584,193 H610 V118 H634"/>
+  <path class="edge" marker-end="url(#a)" d="M610,193 V240 H634"/>
+  <text class="lbl" x="614" y="184">run</text>
+  <path class="edge" marker-end="url(#a)" d="M634,300 H584"/>
+  <text class="lbl" x="600" y="292">调用</text>
+  <path class="edge" marker-end="url(#a)" d="M489,324 V354"/>
+  <text class="lbl" x="496" y="344">审批请求</text>
+  <path class="edge" marker-end="url(#a)" d="M196,389 H146"/>
+  <text class="lbl" x="152" y="382">送达</text>
+  <path class="edge" marker-start="url(#a)" marker-end="url(#a)" d="M390,456 V472"/>
 </svg>

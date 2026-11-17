@@ -7,7 +7,7 @@
 - **五个原语**都在内核里：Inbox 收事件，Timers 到点唤醒，Memory 跨 run 保留指令、笔记、进度和已发消息，Permissions 决定每次工具调用能不能做，Outbox 发消息并重试送达。所有状态都在一个 SQLite 文件里，进程崩溃后能接着做。
 - **Worker** 认领一批事件，开一次 run 交给 runtime，再记下这次 run 的结局。
 - **Runtime 分两档。** 第一档 pi 只有 aoa 给的工具，每次调用都由内核裁决和记录。第二档 Codex、dsh 用它们自己的工具和沙箱，它们要问的审批会转给你；aoa 自己的工具仍然走内核。
-- **通道**把外面的消息变成事件，再把 outbox 里的消息送出去。本地模式写 `messages.md` 并弹桌面通知；GitHub 模式用 issue 和 PR。
+- 你通过 CLI、MCP 或 GitHub issue 交代任务；本地模式的消息写进 `messages.md` 并弹桌面通知，GitHub 模式发在 issue 和 PR 上。
 
 设计见 [docs/design.md](docs/design.md)，规范见 [docs/spec.md](docs/spec.md)。
 
