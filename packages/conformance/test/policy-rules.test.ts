@@ -120,6 +120,29 @@ describe("default rules", () => {
     });
   });
 
+  describe("text a heredoc feeds to a program", () => {
+    // Reduced from a live call: a script that edits docs which mention the data directory.
+    test.each([
+      "python3 - <<'PYEOF'\ns = s.replace('old', 'aoa rules and `~/.aoa` rules do not apply')\nPYEOF\ngrep -n rules README.md",
+      'cat > notes.md <<EOF\nKeep secrets out of ~/.ssh and .env.\nEOF',
+      "node <<-JS\n\tconsole.log('~/.aoa')\n\tJS",
+      'cat <<"A" > a.md && cat <<B > b.md\n~/.aoa\nA\n.env\nB',
+    ])("is not a credential path when no shell reads it: %s", async (command) => {
+      expect(await bash(command)).not.toMatchObject({ basis: "rule:credential-paths" });
+    });
+
+    test.each([
+      "bash <<EOF\ncat ~/.ssh/id_rsa\nEOF",
+      "cat <<EOF | sh\ncat ~/.aoa/aoa.db\nEOF",
+      "python3 - <<EOF ~/.aoa/aoa.db\nprint(1)\nEOF",
+      "python3 - <<EOF\nprint(1)\nEOF\ncat ~/.ssh/config",
+      "python3 - <<EOF\ncat ~/.ssh/config",
+      "cat <<<~/.ssh/config",
+    ])("still waits when a shell reads it, or the path is outside the body: %s", async (command) => {
+      expect(await bash(command)).toMatchObject({ decision: "defer", basis: "rule:credential-paths" });
+    });
+  });
+
   test("file tools touching credentials wait for the user", async () => {
     for (const [tool, args] of [
       ["read", { path: "/Users/me/.ssh/id_rsa" }],

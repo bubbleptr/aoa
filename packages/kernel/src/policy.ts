@@ -186,13 +186,43 @@ export function ownWorktreeRelative(text: string, workdir: string | null): strin
   });
 }
 
+const HEREDOC = /(?<!<)<<(?!<)(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|\\?([\w.-]+))/g;
+const SHELL_PROGRAMS = new Set(["sh", "bash", "zsh", "dash", "ksh", "eval", "source"]);
+
+/**
+ * The command without the bodies of heredocs that no shell reads. Such a body is data or another language's code
+ * (a script editing docs that mention `~/.aoa`), not a path the shell opens. A body on a line that runs a shell
+ * stays, and so does everything when a terminator is missing. A python or node body that opens a credential path
+ * gets past this rule to the risk tier, like any script file would (design §12).
+ */
+function withoutDataHeredocs(command: string): string {
+  const lines = command.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    kept.push(line);
+    const openers = [...line.matchAll(HEREDOC)].map((m) => ({ strip: m[1] === "-", delimiter: (m[2] ?? m[3] ?? m[4])! }));
+    if (openers.length === 0) continue;
+    let end = i;
+    for (const { strip, delimiter } of openers) {
+      do end++;
+      while (end < lines.length && (strip ? lines[end]!.replace(/^\t+/, "") : lines[end]) !== delimiter);
+      if (end >= lines.length) return command;
+    }
+    const shellReads = simpleCommands(line).some((words) => words.some((w) => SHELL_PROGRAMS.has(programName(w))));
+    if (shellReads) kept.push(...lines.slice(i + 1, end + 1));
+    i = end;
+  }
+  return kept.join("\n");
+}
+
 /** Credentials are never reachable through a rule's allow: the user decides. */
 const credentialPaths: Rule = {
   name: "credential-paths",
   match(call, ctx) {
     const hits = (text: string) => CREDENTIAL_PATH.test(ownWorktreeRelative(text, ctx.workdir));
     const command = commandOf(call);
-    if (command !== null) return hits(unquote(command)) ? "defer" : null;
+    if (command !== null) return hits(unquote(withoutDataHeredocs(command))) ? "defer" : null;
     if (FILE_TOOLS.has(call.tool)) return pathArgs(call).some(hits) ? "defer" : null;
     return null;
   },
