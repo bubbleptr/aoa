@@ -5,7 +5,8 @@ import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local
 import { POLL_INTERVAL_MS, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/runtime-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/runtime-dsh";
-import { codingTools, piCompletion, piRuntime } from "@aoa/runtime-pi";
+import { piCompletion, piRuntime } from "@aoa/runtime-pi";
+import { codingTools } from "@aoa/sdk/tools/coding";
 import { type Agent as HostAgent, type Host, createHost } from "@aoa/sdk";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
