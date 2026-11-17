@@ -109,7 +109,7 @@ describe("codexRuntime", () => {
     expect(result.sessionRef).toBe("thread-77");
   });
 
-  test("auto review: a new and a resumed thread route Codex's approvals to its own reviewer; the sandbox stays the user's", async () => {
+  test("auto review: a new and a resumed thread run in Codex's auto review mode whatever the user's Codex settings", async () => {
     const fresh = new FakeAppServer();
     const resumed = new FakeAppServer();
     const autoReview = (fake: FakeAppServer) =>
@@ -119,9 +119,7 @@ describe("codexRuntime", () => {
     await autoReview(resumed).run(runInput({ session: { id: "session-1", resumed: true, ref: "thread-77", workdir: null } }));
 
     for (const params of [fresh.sent("thread/start")[0], resumed.sent("thread/resume")[0]]) {
-      expect(params).toMatchObject({ approvalsReviewer: "auto_review" });
-      expect(params).not.toHaveProperty("sandbox");
-      expect(params).not.toHaveProperty("approvalPolicy");
+      expect(params).toMatchObject({ sandbox: "workspace-write", approvalPolicy: "on-request", approvalsReviewer: "auto_review" });
     }
   });
 

@@ -153,7 +153,7 @@ test("a codex reviewer leaves its approvals to Codex's auto review, and status a
 
   await w.cli("send", "--agent", "reviewer", "Review aoa/abc.");
   await w.drain("reviewer");
-  expect(fake.sent("thread/start")[0]).toMatchObject({ approvalsReviewer: "auto_review" });
+  expect(fake.sent("thread/start")[0]).toMatchObject({ sandbox: "workspace-write", approvalPolicy: "on-request", approvalsReviewer: "auto_review" });
 
   const status = JSON.parse((await w.cli("status", "--json")).out);
   expect(status.agents[1]).toEqual({ name: "reviewer", runtime: "codex", permissionOwner: "harness", autoReview: true });
