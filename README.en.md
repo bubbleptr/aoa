@@ -21,7 +21,7 @@ An Always-on Agent framework that runs 24x7 on an Inbox + Worker model. You hand
 - **Runtimes come in two kinds.** The built-in pi only has the tools aoa gives it, and the kernel decides and logs every call. The external harnesses, Codex and dsh, use their own tools and sandboxes; whatever they would ask about is forwarded to you, and aoa's own tools still go through the kernel.
 - You hand out tasks through the CLI, MCP or a GitHub issue. In local mode, messages are appended to `messages.md` with a desktop notification; in GitHub mode they are posted on the issue and the PR.
 
-The design is in [docs/design.md](docs/design.md) and the spec in [docs/spec.md](docs/spec.md) (both in Chinese).
+The design is in [docs/design/](docs/design/README.md) and the spec in [docs/spec.md](docs/spec.md) (both in Chinese).
 
 ## Design and implementation
 

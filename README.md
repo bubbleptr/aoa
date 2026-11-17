@@ -21,7 +21,7 @@
 - **Runtime 分两类。** Built-in 的 pi 只有 aoa 给的工具，每次调用都由内核裁决和记录。外部 harness Codex、dsh 用它们自己的工具和沙箱，它们要问的审批会转给你；aoa 自己的工具仍然走内核。
 - 你通过 CLI、MCP 或 GitHub issue 交代任务；本地模式的消息写进 `messages.md` 并弹桌面通知，GitHub 模式发在 issue 和 PR 上。
 
-设计见 [docs/design.md](docs/design.md)，规范见 [docs/spec.md](docs/spec.md)。
+设计见 [docs/design/](docs/design/README.md)，规范见 [docs/spec.md](docs/spec.md)。
 
 ## 设计和实现
 
