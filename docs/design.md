@@ -3,7 +3,6 @@
 - 状态：已实现。本地模式在一次性仓库上用真实模型（DeepSeek flash）冒烟跑通过一次；GitHub 模式只在假 GitHub 和脚本模型上跑过，还没接过真实的 GitHub App
 - 日期：2026-11-16
 - 规范：[spec.md](spec.md)（下文的 §、I-*、C*、D-* 编号都指它）
-- 决策记录：<（链接已删除）>
 
 ## 1. 要做什么
 
@@ -13,11 +12,9 @@ aoa 是按规范从头写的 always-on agent 内核，第一件事是写代码�
 
 它要回答一个问题：只保留规范里的五个原语，不加任何外围，能不能提高生产力。所以第一版刻意精简，并且从第一天起记录能回答这个问题的数（§10）。
 
-和 早先的项目 的关系：独立新写，不抽取 早先的项目 的 Inbox。早先的项目 那层绑在 pi-durable 文档和「项目 / 任务 / worktree」模型上；它在 ADR-0051、ADR-0052 里记下的实现教训直接沿用，下文标「沿用 早先的项目」的都是。
-
 ### 不做
 
-界面、收件对话、插件系统、推送服务、沙箱、多用户、公网 webhook 入口、记忆的定期整理。这些在 早先的项目 里已经有，再做一遍只会让「结构本身有没有用」的结论变浑。
+界面、收件对话、插件系统、推送服务、沙箱、多用户、公网 webhook 入口、记忆的定期整理。加进来只会让「结构本身有没有用」的结论变浑。
 
 ## 2. 用法
 
@@ -121,7 +118,7 @@ runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消�
 
 ### 事件怎么回到原任务
 
-沿用 早先的项目：事件带 `thread`（例如 `github:owner/repo#12`），`threads` 表把它映射到 session。开出任务的事件自带的 thread 在建 session 时登记；之后才出现的（agent 开的 PR）由 agent 调 `follow` 工具登记。对得上就设 `resume`，对不上就开新 session。这个判断只读数据库，不读 worker 内存（§3.2）。
+事件带 `thread`（例如 `github:owner/repo#12`），`threads` 表把它映射到 session。开出任务的事件自带的 thread 在建 session 时登记；之后才出现的（agent 开的 PR）由 agent 调 `follow` 工具登记。对得上就设 `resume`，对不上就开新 session。这个判断只读数据库，不读 worker 内存（§3.2）。
 
 组批的键是 `resume`；没有 `resume` 的事件按 `thread` 分组，两者都没有的才共用一个新 session。规范的 I-EVT-6 让所有首次出现的事件共用一个新 session，这里收紧了：两个不同的 issue 不该进同一项任务。一次 run 仍然只在一个 session 里。
 
@@ -152,11 +149,11 @@ runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消�
 
 ### dispatcher
 
-读 `outbox` 里 pending 的消息，按节奏交给 `Channel.deliver`，失败按 1、2、4、8 分钟退避，超过上限的留在表里并在 `aoa status` 里显示（I-OUT-4）。节奏规则是纯函数，方便测试（沿用 早先的项目）。
+读 `outbox` 里 pending 的消息，按节奏交给 `Channel.deliver`，失败按 1、2、4、8 分钟退避，超过上限的留在表里并在 `aoa status` 里显示（I-OUT-4）。节奏规则是纯函数，方便测试。
 
 ### 事件源
 
-GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里存下，崩溃只会重复一次轮询，重复的事件被 `dedupe_key` 去掉（沿用 早先的项目）。
+GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里存下，崩溃只会重复一次轮询，重复的事件被 `dedupe_key` 去掉。
 
 ## 6. 权限
 
@@ -170,7 +167,7 @@ GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里�
 
 每次裁决连同依据写进 `decisions`。
 
-凭据（GitHub 模式；本地模式下宿主手里只有模型的 key）：`git_push`、`github_open_pr`、`github_comment` 是宿主进程里的工具，由宿主加上凭据再发请求，agent 的上下文和调用参数里不出现凭据（I-PRM-1）。不做沙箱。agent 的 shell 和宿主是同一个系统用户，所以读凭据路径和 `~/.aoa` 的调用不会被规则直接放行。这是已知并接受的风险，和 早先的项目 ADR-0052 §7 撤回后的状态一致。
+凭据（GitHub 模式；本地模式下宿主手里只有模型的 key）：`git_push`、`github_open_pr`、`github_comment` 是宿主进程里的工具，由宿主加上凭据再发请求，agent 的上下文和调用参数里不出现凭据（I-PRM-1）。不做沙箱。agent 的 shell 和宿主是同一个系统用户，所以读凭据路径和 `~/.aoa` 的调用不会被规则直接放行。这是已知并接受的风险。
 
 延后调用照 §6.4：session 存盘，run 结束，请求进 outbox，答复作为 `approval_answer` 事件回到 inbox，同一个 `call_id` 的第二次答复被去重丢掉。24 小时没答复就写一个到期事件。
 
@@ -193,7 +190,7 @@ GitHub 靠轮询，不开 webhook 入口。游标和事件在同一个事务里�
 
 只存查不到的东西；issue、PR、提交只存指针。
 
-两处和规范的写法不同，都沿用 早先的项目：
+两处和规范的写法不同：
 
 - 「已告知过的内容」不由 agent 维护 `reported.md`，由宿主从 outbox 取最近几条放进上下文。
 - 指令和索引放在每批事件的消息开头，不放系统提示。放进系统提示的话，索引一变整条对话的缓存就失效。
@@ -248,7 +245,7 @@ agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 
 - 被问次数：`decisions` 里这个 session 裁决为 `defer` 的条数（`deferred` 表只留到答复或过期，不能数它）。
 - 时长：第一个事件的 `received_at` 到交付。
 
-`aoa status` 直接出这张表，拿去和同期 早先的项目 Inbox 的任务比。
+`aoa status` 直接出这张表。
 
 ## 11. 测试
 
@@ -460,5 +457,3 @@ Codex 的请求怎么对应到 aoa：
 - 消息量评测。
 - 多用户和 inbox 拆分。
 - 再一个 runtime 适配器（Claude Agent SDK）。
-- 早先的项目 要不要迁到 aoa 上。
-- 公开仓库：公开前要把 `spec.md` 里逐字引用的原文改成转述加链接。原文已经进了 git 历史，所以还要重写历史或换一个新仓库。
