@@ -57,7 +57,7 @@ aoa web                                 # 只读的实时观察页，http://127.
 | [memory-and-outbox.md](memory-and-outbox.md) | §7 记忆、§8 发件 |
 | [parameters-and-tests.md](parameters-and-tests.md) | §9 参数、§10 怎么判断有没有用、§11 测试 |
 | [decisions.md](decisions.md) | §12 实现中定下的（零散的决定） |
-| [agents.md](agents.md) | §12 具名 agent |
+| [named-agents.md](named-agents.md) | §12 具名 agent |
 | [reviewer.md](reviewer.md) | §12 审核模型、影子判断 Jev |
 | [observe.md](observe.md) | §12 观察页 `aoa web`、主会话接入 `aoa mcp` |
 | [harness.md](harness.md) | §12 权限归 harness 的 agent、Codex runtime、dsh runtime |
