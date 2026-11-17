@@ -191,8 +191,9 @@ const SHELL_PROGRAMS = new Set(["sh", "bash", "zsh", "dash", "ksh", "eval", "sou
 
 /**
  * The command without the bodies of heredocs that no shell reads. Such a body is data or another language's code
- * (a script editing docs that mention `~/.aoa`), not a path the shell opens. A body on a line that runs a shell
- * stays, and so does everything when a terminator is missing. A python or node body that opens a credential path
+ * (a script editing docs that mention `~/.aoa`), not a path the shell opens. A body stays when its line runs a
+ * shell, or when its delimiter is unquoted and the body has `$` or a backtick the shell expands; everything stays
+ * when a terminator is missing. A python or node body that opens a credential path
  * gets past this rule to the risk tier, like any script file would (design §12).
  */
 function withoutDataHeredocs(command: string): string {
@@ -201,16 +202,24 @@ function withoutDataHeredocs(command: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     kept.push(line);
-    const openers = [...line.matchAll(HEREDOC)].map((m) => ({ strip: m[1] === "-", delimiter: (m[2] ?? m[3] ?? m[4])! }));
+    const openers = [...line.matchAll(HEREDOC)].map((m) => ({
+      strip: m[1] === "-",
+      delimiter: (m[2] ?? m[3] ?? m[4])!,
+      literal: m[4] === undefined || m[0].includes("\\"),
+    }));
     if (openers.length === 0) continue;
+    const shellReads = simpleCommands(line).some((words) => words.some((w) => SHELL_PROGRAMS.has(programName(w))));
     let end = i;
-    for (const { strip, delimiter } of openers) {
+    for (const { strip, delimiter, literal } of openers) {
+      const start = end + 1;
       do end++;
       while (end < lines.length && (strip ? lines[end]!.replace(/^\t+/, "") : lines[end]) !== delimiter);
       if (end >= lines.length) return command;
+      const body = lines.slice(start, end);
+      // An unquoted delimiter lets the shell expand `$(...)` and backticks in the body.
+      if (shellReads || (!literal && body.some((l) => /[$`]/.test(l)))) kept.push(...body);
+      kept.push(lines[end]!);
     }
-    const shellReads = simpleCommands(line).some((words) => words.some((w) => SHELL_PROGRAMS.has(programName(w))));
-    if (shellReads) kept.push(...lines.slice(i + 1, end + 1));
     i = end;
   }
   return kept.join("\n");

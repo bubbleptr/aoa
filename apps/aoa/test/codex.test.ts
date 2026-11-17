@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { FakeAppServer, type FakeTurn } from "../../../packages/runtimes/codex/test/fake-app-server.ts";
 import { serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
-import { World } from "./world.ts";
+import { World, call, say } from "./world.ts";
 
 let cleanup: (() => void)[] = [];
 afterEach(() => {
@@ -166,4 +166,30 @@ test("a codex reviewer leaves its approvals to Codex's auto review, and status a
   const line = w.logs.find((l) => l.includes("reviewer") && l.includes("Codex"));
   expect(line).toContain("auto review");
   expect(line).toContain("~/.aoa");
+});
+
+test("a codex reviewer takes an untainted implementer's handoff without an admit, and a tainted one's only after it", async () => {
+  const fake = new FakeAppServer();
+  const w = new World({ local: true, agents: { reviewer: { role: "review", runtime: "codex" } } });
+  w.spawnCodex = fake.spawn;
+  cleanup.push(() => w.dispose());
+  await w.start();
+  const reviewer = w.named("reviewer");
+  const admits = () => reviewer.store.tx((t) => t.listDeferred(reviewer.inboxId)).filter((d) => d.kind === "admit");
+
+  w.script([call("send_to", { agent: "reviewer", text: "Please review the change." }), say("Sent.")]);
+  await w.cli("send", "Make a change.");
+  await w.drain();
+  await w.drain("reviewer");
+  expect(admits()).toHaveLength(0);
+  expect(w.runs("reviewer")).toHaveLength(1);
+
+  const [implementing] = w.sessions();
+  w.agent.store.tx((t) => t.markTainted(implementing!.id));
+  w.script([call("send_to", { agent: "reviewer", text: "Look again." }), say("Sent.")]);
+  await w.cli("send", "--to", implementing!.id, "Ask for another look.");
+  await w.drain();
+  await w.drain("reviewer");
+  expect(admits()).toHaveLength(1);
+  expect(w.runs("reviewer")).toHaveLength(1);
 });

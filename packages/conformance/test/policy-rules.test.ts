@@ -138,6 +138,8 @@ describe("default rules", () => {
       "python3 - <<EOF\nprint(1)\nEOF\ncat ~/.ssh/config",
       "python3 - <<EOF\ncat ~/.ssh/config",
       "cat <<<~/.ssh/config",
+      "cat > out.md <<EOF\n$(cat ~/.ssh/id_rsa)\nEOF",
+      "cat > out.md <<EOF\n`cat ~/.aoa/aoa.db`\nEOF",
     ])("still waits when a shell reads it, or the path is outside the body: %s", async (command) => {
       expect(await bash(command)).toMatchObject({ decision: "defer", basis: "rule:credential-paths" });
     });
