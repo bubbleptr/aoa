@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Event, RunInput, Tool } from "@aoa/kernel";
+import { Connection, spawnAppServer } from "../src/connection.ts";
 import { codexRuntime } from "../src/index.ts";
 
 /**
@@ -36,7 +37,7 @@ test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
       trusted: true,
       status: "in_run",
       leaseUntil: null,
-      attempts: 1,
+      attempts: 0,
       nextAttemptAt: 0,
       run: null,
     });
@@ -61,4 +62,25 @@ test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
     }
   },
   300_000,
+);
+
+test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
+  "aoa's Codex child starts with no MCP tools, hooks or plugins from the user's Codex config",
+  async () => {
+    const proc = await spawnAppServer(tmpdir());
+    const conn = new Connection(proc, { request: async () => null, notification: () => {}, replied: () => {} });
+    try {
+      await conn.request("initialize", { clientInfo: { name: "aoa-smoke", version: "0" }, capabilities: { experimentalApi: true } });
+      conn.notify("initialized", undefined);
+      const mcp = (await conn.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" })) as { data: { tools: object }[] };
+      expect(mcp.data.flatMap((s) => Object.keys(s.tools))).toEqual([]);
+      const hooks = (await conn.request("hooks/list", {})) as { data: { hooks: unknown[] }[] };
+      expect(hooks.data.flatMap((h) => h.hooks)).toEqual([]);
+      const plugins = (await conn.request("plugin/installed", {})) as { marketplaces: unknown[] };
+      expect(plugins.marketplaces).toEqual([]);
+    } finally {
+      proc.kill();
+    }
+  },
+  60_000,
 );
