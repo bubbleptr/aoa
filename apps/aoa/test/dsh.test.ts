@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { FakeDshServer, type FakeTurn } from "../../../packages/runtime-dsh/test/fake-dsh-server.ts";
+import { FakeDshServer, type FakeTurn } from "../../../packages/runtimes/dsh/test/fake-dsh-server.ts";
 import { serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
 import { KEY_ENV, MODEL_KEY, World } from "./world.ts";

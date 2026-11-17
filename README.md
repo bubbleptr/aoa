@@ -193,8 +193,8 @@ Bun + TypeScript 的 monorepo。
 |---|---|
 | `packages/kernel` | 五个原语、worker、策略、调度，不依赖存储和模型 |
 | `packages/store-sqlite` | SQLite 存储和迁移 |
-| `packages/runtime-pi` · `runtime-codex` · `runtime-dsh` | 三个 runtime 适配器 |
-| `packages/channel-local` · `channel-github` | 本地和 GitHub 通道 |
+| `packages/runtimes/`：`pi` · `codex` · `dsh` | 三个 runtime 适配器 |
+| `packages/channels/`：`local` · `github` | 本地和 GitHub 通道 |
 | `packages/conformance` | 规范 §9 的 C1–C20 一致性测试 |
 | `apps/aoa` | `aoa` 命令：配置、接线、serve、MCP |
 
@@ -202,6 +202,6 @@ Bun + TypeScript 的 monorepo。
 bun test               # 全部测试，不调用真实模型
 bun run typecheck
 bun scripts/diagrams/build.ts   # 从 docs/diagrams/boards 重新生成 README 里的图（需要 Chrome）
-AOA_CODEX_SMOKE=1 bun test packages/runtime-codex/test/smoke.test.ts   # 真实 Codex，会消耗额度
-AOA_DSH_SMOKE=1 bun test packages/runtime-dsh/test/smoke.test.ts       # 真实 dsh 和 DeepSeek key
+AOA_CODEX_SMOKE=1 bun test packages/runtimes/codex/test/smoke.test.ts   # 真实 Codex，会消耗额度
+AOA_DSH_SMOKE=1 bun test packages/runtimes/dsh/test/smoke.test.ts       # 真实 dsh 和 DeepSeek key
 ```

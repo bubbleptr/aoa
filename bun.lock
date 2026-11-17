@@ -31,14 +31,14 @@
         "@aoa/conformance": "workspace:*",
       },
     },
-    "packages/channel-github": {
+    "packages/channels/github": {
       "name": "@aoa/channel-github",
       "version": "0.0.0",
       "dependencies": {
         "@aoa/kernel": "workspace:*",
       },
     },
-    "packages/channel-local": {
+    "packages/channels/local": {
       "name": "@aoa/channel-local",
       "version": "0.0.0",
       "dependencies": {
@@ -57,7 +57,7 @@
       "name": "@aoa/kernel",
       "version": "0.0.0",
     },
-    "packages/runtime-codex": {
+    "packages/runtimes/codex": {
       "name": "@aoa/runtime-codex",
       "version": "0.0.0",
       "dependencies": {
@@ -68,7 +68,7 @@
         "@aoa/conformance": "workspace:*",
       },
     },
-    "packages/runtime-dsh": {
+    "packages/runtimes/dsh": {
       "name": "@aoa/runtime-dsh",
       "version": "0.0.0",
       "dependencies": {
@@ -80,7 +80,7 @@
         "@aoa/conformance": "workspace:*",
       },
     },
-    "packages/runtime-pi": {
+    "packages/runtimes/pi": {
       "name": "@aoa/runtime-pi",
       "version": "0.0.0",
       "dependencies": {
@@ -101,9 +101,9 @@
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.129.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw=="],
 
-    "@aoa/channel-github": ["@aoa/channel-github@workspace:packages/channel-github"],
+    "@aoa/channel-github": ["@aoa/channel-github@workspace:packages/channels/github"],
 
-    "@aoa/channel-local": ["@aoa/channel-local@workspace:packages/channel-local"],
+    "@aoa/channel-local": ["@aoa/channel-local@workspace:packages/channels/local"],
 
     "@aoa/cli": ["@aoa/cli@workspace:apps/aoa"],
 
@@ -111,11 +111,11 @@
 
     "@aoa/kernel": ["@aoa/kernel@workspace:packages/kernel"],
 
-    "@aoa/runtime-codex": ["@aoa/runtime-codex@workspace:packages/runtime-codex"],
+    "@aoa/runtime-codex": ["@aoa/runtime-codex@workspace:packages/runtimes/codex"],
 
-    "@aoa/runtime-dsh": ["@aoa/runtime-dsh@workspace:packages/runtime-dsh"],
+    "@aoa/runtime-dsh": ["@aoa/runtime-dsh@workspace:packages/runtimes/dsh"],
 
-    "@aoa/runtime-pi": ["@aoa/runtime-pi@workspace:packages/runtime-pi"],
+    "@aoa/runtime-pi": ["@aoa/runtime-pi@workspace:packages/runtimes/pi"],
 
     "@aoa/store-sqlite": ["@aoa/store-sqlite@workspace:packages/store-sqlite"],
 

@@ -7,7 +7,7 @@ import { type DshSpawn, dshRuntime, spawnDsh } from "../src/index.ts";
 
 /**
  * Against the real `dsh --profile sdk`, with a real key, so it calls a real model. Run it by hand:
- * `AOA_DSH_SMOKE=1 DEEPSEEK_API_KEY=... bun test packages/runtime-dsh/test/smoke.test.ts`
+ * `AOA_DSH_SMOKE=1 DEEPSEEK_API_KEY=... bun test packages/runtimes/dsh/test/smoke.test.ts`
  * It answers dsh's own tool list from the session events it streams, and never touches the user's dsh home.
  */
 const enabled = process.env.AOA_DSH_SMOKE === "1";

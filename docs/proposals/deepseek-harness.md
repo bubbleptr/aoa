@@ -76,7 +76,7 @@ dsh 的 checkpoint 和事件推送是两回事 **[源码 session/session-checkpo
 
 ## 6. 范围和步骤
 
-1. `packages/runtime-dsh`：协议子集（手写，不加依赖）、子进程、调用表、审批映射、MCP 桥、停下顺序、版本检查。全部针对 fake server 先写失败测试。
+1. `packages/runtimes/dsh`：协议子集（手写，不加依赖）、子进程、调用表、审批映射、MCP 桥、停下顺序、版本检查。全部针对 fake server 先写失败测试。
 2. 配置、接线、`status` 和网页、文档：`runtime: "dsh"`，权限归 harness，只能用在本地模式，审查角色先不支持。
 3. 冒烟测试，只在 `AOA_DSH_SMOKE=1` 时跑：真实 dsh 加真实 key，测冷启动时间、MCP 工具没有被 gate 拦、关掉的工具确实不可见、杀进程后能恢复。
 

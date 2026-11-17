@@ -193,8 +193,8 @@ A Bun + TypeScript monorepo.
 |---|---|
 | `packages/kernel` | The five primitives, worker, policy and scheduling, independent of storage and models |
 | `packages/store-sqlite` | SQLite storage and migrations |
-| `packages/runtime-pi` · `runtime-codex` · `runtime-dsh` | The three runtime adapters |
-| `packages/channel-local` · `channel-github` | Local and GitHub channels |
+| `packages/runtimes/`: `pi` · `codex` · `dsh` | The three runtime adapters |
+| `packages/channels/`: `local` · `github` | Local and GitHub channels |
 | `packages/conformance` | The C1–C20 conformance tests from §9 of the spec |
 | `apps/aoa` | The `aoa` command: config, wiring, serve, MCP |
 
@@ -202,6 +202,6 @@ A Bun + TypeScript monorepo.
 bun test               # all tests, no real models called
 bun run typecheck
 bun scripts/diagrams/build.ts   # rebuild the README diagrams from docs/diagrams/boards (needs Chrome)
-AOA_CODEX_SMOKE=1 bun test packages/runtime-codex/test/smoke.test.ts   # real Codex, uses quota
-AOA_DSH_SMOKE=1 bun test packages/runtime-dsh/test/smoke.test.ts       # real dsh and a DeepSeek key
+AOA_CODEX_SMOKE=1 bun test packages/runtimes/codex/test/smoke.test.ts   # real Codex, uses quota
+AOA_DSH_SMOKE=1 bun test packages/runtimes/dsh/test/smoke.test.ts       # real dsh and a DeepSeek key
 ```

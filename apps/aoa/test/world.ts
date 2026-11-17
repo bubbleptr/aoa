@@ -16,7 +16,7 @@ import type { DshSpawn } from "@aoa/runtime-dsh";
 import { type Agent, assemble } from "../src/wiring.ts";
 import { type AgentConfigInput, type AgentInput, validateConfig } from "../src/config.ts";
 import { main } from "../src/main.ts";
-import { APP_ID, BOT, FakeGitHub, INSTALLATION_ID, OWNER, REPO, USER, writeAppKey } from "../../../packages/channel-github/test/fake-github.ts";
+import { APP_ID, BOT, FakeGitHub, INSTALLATION_ID, OWNER, REPO, USER, writeAppKey } from "../../../packages/channels/github/test/fake-github.ts";
 
 export { BOT, OWNER, REPO, USER };
 

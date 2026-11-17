@@ -86,11 +86,11 @@ interface Channel {
 | --- | --- |
 | `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
-| `packages/runtime-pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
-| `packages/runtime-codex` | Codex app-server 适配器：Codex 用自己的工具，aoa 转达它的询问（§12） |
-| `packages/runtime-dsh` | DeepSeek Harness（dsh）SDK 适配器：dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
-| `packages/channel-local` | 本地通道：消息写文件，发桌面通知 |
-| `packages/channel-github` | 可选。轮询 issue 和评论，开 PR，发评论 |
+| `packages/runtimes/pi` | agent loop 适配器（`@earendil-works/pi-coding-agent`） |
+| `packages/runtimes/codex` | Codex app-server 适配器：Codex 用自己的工具，aoa 转达它的询问（§12） |
+| `packages/runtimes/dsh` | DeepSeek Harness（dsh）SDK 适配器：dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
+| `packages/channels/local` | 本地通道：消息写文件，发桌面通知 |
+| `packages/channels/github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
 | `apps/aoa` | CLI、`serve`、worktree 管理 |
 
@@ -258,7 +258,7 @@ agent 用独立的 GitHub 身份，一个 GitHub App。它发的评论和开的 
 | --- | --- | --- |
 | C1–C10、C14–C20 | `packages/conformance` | 真内核、真 SQLite，假 runtime 和假时钟，在命名的提交点崩溃 |
 | C11 | 没有 | 压缩由 pi 自己做，内核看不到；靠常驻上下文里要求 agent 随时更新 `progress/` |
-| C12 | `packages/runtime-pi` | 恢复 transcript 后不重跑旧调用 |
+| C12 | `packages/runtimes/pi` | 恢复 transcript 后不重跑旧调用 |
 | C13 | `apps/aoa` 的端到端测试 | 扫描模型收到的每个请求、每张表的每一行、数据目录下的每个文件、日志 |
 
 C13 不保证「shell 读不到凭据」（§6）。模型的 API key 在 `serve` 读入后会从环境变量里删掉，所以 agent 的 shell 继承不到它；GitHub App 的私钥文件和 `~/.aoa` 仍然靠规则把关。C19 检查宿主放进上下文的最近消息，不检查 `reported.md`（§7）。
@@ -373,7 +373,7 @@ runtime 分两档。第一档（现在的 `runtime-pi`）自己没有工具，�
 - `admit` 不对应任何工具调用，但用的是 `PendingCall` 这个结构；规范里的 `PendingCall` 只包着一个 `ToolCall`。它的 session 也不是在 run 里停下的，而是在 `select()` 里，没有 run 以 `deferred` 结束。
 - §3.3 的 `dropped` 原本只表示重复投递。这里多了一条 `pending → dropped`：被拒绝或过期的不可信输入，以及回答这次放行请求的那条 `approval_answer`。答复依然只生效一次（I-PRM-5），只是它的行是 `dropped`，不是 `done`。
 
-### Codex runtime（`packages/runtime-codex`）
+### Codex runtime（`packages/runtimes/codex`）
 
 第二档的第一个 runtime。配置里 `runtime: "codex"`（顶层或具名 agent，默认 `pi`），这个 agent 的 worker 就是 `permissions: "harness"`；pi 的 agent 永远是 `"kernel"`。
 
@@ -409,7 +409,7 @@ Codex 的请求怎么对应到 aoa：
 - Codex 会把每个新的 cwd 写进 `~/.codex/config.toml`，成为一条 `[projects."…"]` 记录。aoa 的每个 worktree 都是新目录，所以你的配置会跟着变长，目前没有拦。
 - 如果配置里某个 `apiKeyEnv` 和 Codex 用的是同一个环境变量，aoa 启动时会把它从环境里删掉，Codex 子进程也就拿不到。
 
-### DeepSeek Harness runtime（`packages/runtime-dsh`）
+### DeepSeek Harness runtime（`packages/runtimes/dsh`）
 
 第二档的第二个 runtime，接的是 dsh 的 SDK 档：`dsh --profile sdk`，stdio 上换行分隔的 JSON-RPC 2.0（[方案](proposals/deepseek-harness.md)，依据 dsh `0.2.2-rc.3`）。
 
@@ -423,7 +423,7 @@ Codex 的请求怎么对应到 aoa：
 - aoa 的工具走 MCP 桥：每次 run 在本进程起一个 streamable-http MCP server，只监听 `127.0.0.1`、端口随机，路径里带这次 run 才有的 token（每次询问都是新的），dsh 看到的工具名是 `mcp__aoa__<名字>`。dsh 发给 MCP 的只有名字和参数，不带它自己的 callId，所以桥按「同一会话、工具名对应、参数深度相等、还没被认领、最早的一条」从调用表里认领，内核 call id 用 `<session>:<dsh callId>`；认领不到就回 MCP 错误、不执行。延后的 aoa 工具回一句「等用户决定」然后停下；重试时同一个 dsh callId 得到同一个内核 call id，日志里已有结果的直接重放，不会再执行一次。
 - 停下和恢复：dsh 没有取消方法。要停时先回复手上的请求（审批回 `rejected`，aoa 工具回「等用户决定」），之后来的审批请求和 MCP 调用一律拒绝、不再问内核；**正在执行的 aoa 工具调用要等它做完并回完话**——桥记着在途的调用数，run 不会带着一个还在跑的旧调用结束，也不会在它的回复送出之前停 dsh。然后发 `shutdown`：dsh 是先回话、再 flush 会话、再退出，所以等的是**进程退出**而不是回话，最多 10 秒，超时 SIGTERM，再等 10 秒，还不走就 SIGKILL。`shutdown` 回的错只记日志、不改这次 run 的结局：那时 run 已经做完了，抛错只会让内核把同一件事再做一遍。正常 `idle` 也走这一套。会话用 JSONL 持久化、锁是 flock，进程一死就释放，所以下一次 run 能 resume；在途调用的结果 dsh 自己会标成未知，模型从修好的历史里看到。
 - 和 Codex 一样：dsh 不问就执行的、它的沙箱允许的操作，aoa 既看不到也拦不住，aoa 的推送规则、`~/.aoa` 规则和 worktree 边界对 dsh 自己的工具不起作用。`serve` 启动时为每个 dsh agent 提醒一次，`aoa status` 和观察页标出 runtime 和权限归谁。
-- 冒烟测试只在 `AOA_DSH_SMOKE=1` 时跑（真的要 dsh 和真的 key，`bun test packages/runtime-dsh/test/smoke.test.ts`）：冷启动时间、aoa 的 MCP 工具没有被 gate 拦、patch 关掉的工具确实不在模型能看到的工具列表里（从会话的 `request/header` 事件里读，dsh 自己的读写、bash 工具照常留着）、杀掉进程后能恢复。
+- 冒烟测试只在 `AOA_DSH_SMOKE=1` 时跑（真的要 dsh 和真的 key，`bun test packages/runtimes/dsh/test/smoke.test.ts`）：冷启动时间、aoa 的 MCP 工具没有被 gate 拦、patch 关掉的工具确实不在模型能看到的工具列表里（从会话的 `request/header` 事件里读，dsh 自己的读写、bash 工具照常留着）、杀掉进程后能恢复。
 
 和方案不完全一样、或者没做到的：
 
