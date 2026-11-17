@@ -75,7 +75,7 @@ const textOf = (e: Event): string => {
 export function liveReviewInput(
   store: Store,
   o: { inboxId: string; role: Role; sessionId: string; workdir: string | null; tainted: boolean },
-  call: ToolCall,
+  call: ToolCall & { id: string },
 ): ReviewInput {
   return store.tx((t) => {
     const runs = new Map(t.listRuns(o.inboxId).map((r) => [r.id, r.sessionId]));
@@ -86,7 +86,7 @@ export function liveReviewInput(
       .filter((e) => sessionOf(e) === o.sessionId)
       .sort((a, b) => a.receivedAt - b.receivedAt);
     const firsts = new Map<string, DecisionRecord>();
-    for (const d of t.listDecisions(o.sessionId)) if (!firsts.has(d.callId)) firsts.set(d.callId, d);
+    for (const d of t.listDecisions(o.sessionId)) if (d.callId !== call.id && !firsts.has(d.callId)) firsts.set(d.callId, d);
     const argsOf = new Map(t.listJournal(o.sessionId).map((j) => [j.callId, j.args]));
     return {
       role: o.role,
@@ -116,7 +116,11 @@ export function reviewer(o: {
 }): NonNullable<PolicyConfig["classify"]> {
   return async (call, ctx) => {
     const input = ctx.call
-      ? liveReviewInput(o.store, { inboxId: o.inboxId, role: o.role, sessionId: ctx.call.sessionId, workdir: ctx.workdir, tainted: ctx.tainted }, call)
+      ? liveReviewInput(
+          o.store,
+          { inboxId: o.inboxId, role: o.role, sessionId: ctx.call.sessionId, workdir: ctx.workdir, tainted: ctx.tainted },
+          { ...call, id: ctx.call.id },
+        )
       : { role: o.role, workdir: ctx.workdir, userMessages: [], agentMessages: [], priorCalls: [], ...call, tainted: ctx.tainted };
     const answer = (await o.complete(REVIEWER_PROMPT, reviewMessage(input, REVIEW_CONTEXT))).toLowerCase();
     return answer === "allow" || answer === "block" ? answer : "unsure";

@@ -77,3 +77,30 @@ test("the reviewer is sent exactly what the eval replayed for the same calls", a
   expect(replayed).toHaveLength(2);
   expect(reviewed(w).sort()).toEqual(replayed.sort());
 });
+
+test("after an approval and a follow-up message, the reviewer still matches the eval's replay", async () => {
+  const w = await world();
+  w.judge = (shown) => (shown.includes("echo second") ? "ask" : "allow");
+  w.script([...task.slice(0, 2), say("Waiting on you."), call("bash", { command: "echo third | tee -a marker.txt" }), say("Done.")]);
+  await w.cli("send", "Print the marker, then echo.");
+  await w.drain();
+  const [session] = w.sessions();
+  expect((await w.cli("answer", session!.pending!, "approve")).code).toBe(0);
+  await w.drain();
+  await w.cli("send", "--to", session!.id, "Now add a third line.");
+  await w.drain();
+
+  const third = reviewed(w).find((m) => m.includes("echo third"))!;
+  expect(third).toContain("Now add a third line.");
+  expect(third).toContain("echo second");
+
+  const db = new Database(w.agent.paths.db, { readonly: true });
+  cleanup.push(() => db.close());
+  const { calls } = buildExport(db, {
+    agentOf: () => ({ name: "default", role: "implement", mode: "local" }),
+    workdirOf: () => session!.workdir!,
+  });
+  const replayed = calls.filter((c) => c.tool === "bash").map((c) => reviewMessage(reviewInputOf(c), REVIEW_CONTEXT));
+  expect(replayed).toHaveLength(3);
+  expect(reviewed(w).sort()).toEqual(replayed.sort());
+});
