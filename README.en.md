@@ -71,17 +71,34 @@ Each of C1–C20 in §9 of the spec was written as a failing test before its imp
 
 ## Quick start
 
-1. Install [Bun](https://bun.sh). Run `bun install` at the repository root, then `bun link` in `apps/aoa`, and `aoa` works from any directory.
-2. Copy `aoa.config.example.ts` to `~/.aoa/aoa.config.ts` and fill in the repository path and models. The config only names environment variables, never keys; it is looked up from `--config`, then `aoa.config.ts` in the current directory, then `~/.aoa/aoa.config.ts`.
-3. Agents running on pi need a `classifier` model: without it every `bash` call waits for your approval, and the agent can neither run checks nor commit.
-4. Start it and hand out work:
-
 ```bash
-aoa serve                         # stays running; Ctrl-C to stop
-aoa send "Fix the typo in README" # opens a task and prints its thread, e.g. local:1a2b3c4d
+# Install
+curl -fsSL https://bun.sh/install | bash
+git clone https://github.com/bubbleptr/aoa.git && cd aoa
+bun install
+(cd apps/aoa && bun link)
+
+# Configure: set repo.path, model and classifier
+mkdir -p ~/.aoa
+cp aoa.config.example.ts ~/.aoa/aoa.config.ts
+$EDITOR ~/.aoa/aoa.config.ts
+export ANTHROPIC_API_KEY=<your key>
+
+# Start
+aoa serve
 ```
 
-Without a `github` section you are in local mode: no GitHub, no pushes, no PRs.
+In another terminal:
+
+```bash
+aoa send "Fix the typo in README"    # hand out work; prints the thread, e.g. local:1a2b3c4d
+aoa messages                         # what the agent has said
+aoa answer <call id> approve         # when it asks for approval
+aoa status                           # tasks and pending approvals
+aoa close local:1a2b3c4d merged      # after you've reviewed and merged the branch
+
+claude mcp add aoa -- aoa mcp        # optional: use it straight from Claude Code
+```
 
 ## Commands
 

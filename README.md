@@ -71,17 +71,34 @@ agents: {
 
 ## 快速开始
 
-1. 装 [Bun](https://bun.sh)。在仓库根目录运行 `bun install`，再在 `apps/aoa` 下运行 `bun link`，之后 `aoa` 在任何目录都能用。
-2. 把 `aoa.config.example.ts` 复制成 `~/.aoa/aoa.config.ts`，填上仓库路径和模型。配置里只写环境变量名，不写密钥；按 `--config`、当前目录的 `aoa.config.ts`、`~/.aoa/aoa.config.ts` 的顺序找。
-3. 跑在 pi 上的 agent 需要一个 `classifier` 模型：没有它，每条 `bash` 都要等你批准，agent 既跑不了检查也提交不了。
-4. 启动，然后派活：
-
 ```bash
-aoa serve                       # 常驻；Ctrl-C 停
-aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，如 local:1a2b3c4d
+# 安装
+curl -fsSL https://bun.sh/install | bash
+git clone https://github.com/bubbleptr/aoa.git && cd aoa
+bun install
+(cd apps/aoa && bun link)
+
+# 配置：改 repo.path、model 和 classifier
+mkdir -p ~/.aoa
+cp aoa.config.example.ts ~/.aoa/aoa.config.ts
+$EDITOR ~/.aoa/aoa.config.ts
+export ANTHROPIC_API_KEY=<你的 key>
+
+# 启动
+aoa serve
 ```
 
-没有 `github` 一段就是本地模式：不用 GitHub，不推送，不开 PR。
+另开一个终端：
+
+```bash
+aoa send "修掉 README 的错字"        # 派活，输出线程，如 local:1a2b3c4d
+aoa messages                         # 看 agent 说了什么
+aoa answer <调用 id> approve         # 它要你批准时
+aoa status                           # 任务和待审批
+aoa close local:1a2b3c4d merged      # 你看过分支、合并之后
+
+claude mcp add aoa -- aoa mcp        # 可选：在 Claude Code 里直接用
+```
 
 ## 命令
 
