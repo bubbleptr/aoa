@@ -69,7 +69,7 @@ export function codexRuntime(config: CodexRuntimeConfig): AgentRuntime {
       const { ask } = input;
       if (!ask) throw new Error("the Codex runtime needs harness permissions: the kernel gave this run no permission gate");
       const cwd = input.session.workdir ?? config.cwd;
-      const proc = spawn(cwd);
+      const proc = await spawn(cwd);
       const run = new CodexRun(config, input, ask, cwd);
       try {
         return await run.go(new Connection(proc, run));

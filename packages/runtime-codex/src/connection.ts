@@ -12,10 +12,34 @@ export type CodexProcess = {
 };
 
 /** Starts the app server for one run, in the session's working directory. */
-export type SpawnCodex = (cwd: string) => CodexProcess;
+export type SpawnCodex = (cwd: string) => CodexProcess | Promise<CodexProcess>;
 
-export const spawnAppServer: SpawnCodex = (cwd) => {
-  const child = Bun.spawn(["codex", "app-server"], { cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+/**
+ * Overrides that keep the user's Codex extensions out of aoa's runs: they cost a minute of startup per run, and their
+ * hooks (memory, telemetry) would act on aoa's work. Permissions, model and login still come from the user's config.
+ * Disabling plugins also drops the MCP servers they bring; each server configured directly is turned off by name,
+ * since an empty `mcp_servers` override merges with the config instead of replacing it.
+ */
+export function isolationArgs(mcpServers: string[]): string[] {
+  const args = ["--disable", "plugins", "--disable", "apps", "--disable", "hooks"];
+  for (const name of mcpServers) {
+    // Codex splits `-c` paths on dots and does not unquote, so any other name would add a broken entry and stay on.
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) throw new Error(`cannot turn off the Codex MCP server ${JSON.stringify(name)} for aoa's runs`);
+    args.push("-c", `mcp_servers.${name}.enabled=false`);
+  }
+  return args;
+}
+
+async function configuredMcpServers(): Promise<string[]> {
+  const list = Bun.spawn(["codex", "--disable", "plugins", "mcp", "list", "--json"], { stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([new Response(list.stdout).text(), new Response(list.stderr).text(), list.exited]);
+  if (code !== 0) throw new Error(`codex mcp list exited with code ${code}: ${err.trim()}`);
+  return (JSON.parse(out) as { name: string }[]).map((s) => s.name);
+}
+
+export const spawnAppServer: SpawnCodex = async (cwd) => {
+  const args = isolationArgs(await configuredMcpServers());
+  const child = Bun.spawn(["codex", "app-server", ...args], { cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   let tail = "";
   const stderr = (async () => {
     for await (const chunk of decoded(child.stderr)) tail = (tail + chunk).slice(-2000);
