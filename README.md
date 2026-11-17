@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
-  <img alt="aoa 架构：事件进入内核的 inbox，worker 开一次 run 交给 runtime，工具调用经过权限，消息从 outbox 送回；状态存在 SQLite；runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/architecture-light.png">
+  <img alt="aoa 架构：入口是通过 MCP 接入的 Claude，Webhook 待做；任务进内核的 Inbox，Worker 加载 Memory、开 run 交给 runtime，工具调用回到 Permissions 裁决，消息和审批请求从 Outbox 发回，Timers 到期唤醒；状态都在 SQLite；runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/architecture-light.png">
 </picture>
 
 - **五个原语**都在内核里：Inbox 收事件，Timers 到点唤醒，Memory 跨 run 保留指令、笔记、进度和已发消息，Permissions 决定每次工具调用能不能做，Outbox 发消息并重试送达。所有状态都在一个 SQLite 文件里，进程崩溃后能接着做。
@@ -14,7 +14,50 @@
 
 设计见 [docs/design.md](docs/design.md)，规范见 [docs/spec.md](docs/spec.md)。
 
-状态：内核、SQLite 存储、三个 runtime（pi、Codex、dsh）、本地和 GitHub 通道、`aoa` 命令和观察页都已实现，aoa 在自己的仓库上用过（写代码、审查、合并）。dsh 还没在真机上跑过冒烟测试。
+状态：内核、SQLite 存储、三个 runtime（pi、Codex、dsh）、本地和 GitHub 通道、`aoa` 命令都已实现，aoa 在自己的仓库上用过（写代码、审查、合并）。dsh 还没在真机上跑过冒烟测试。
+
+## 设计和实现
+
+### 内核只认三个端口
+
+内核不知道 GitHub、worktree 和具体模型，只认存储、runtime 和通道：
+
+```ts
+interface Store { tx<T>(fn: (t: Tx) => T): T }   // 一个事务 = 规范里的 ATOMIC
+interface AgentRuntime { run(input: RunInput): Promise<RunResult> }
+interface Channel {
+  deliver(m: OutMsg): Promise<void>;
+  poll(cursor: string | null): Promise<{ events: NewEvent[]; cursor: string }>;
+}
+```
+
+- runtime 拿到的工具是内核包好的：`invoke` 里先裁决，再记日志，再执行，适配器绕不过去。pi 自带的 bash、read、edit、write 也被包成内核工具，pi 自己不直接执行任何工具。
+- 一次 run 的结局只有三种：发了消息、没说话、停在一个延后的调用上。
+- 「任务」不是内核概念。内核只有 session；`apps/aoa` 给新 session 建一个 worktree，一项任务就是一个 session 加一个 worktree。
+
+### 一次工具调用
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/tool-call-dark.png">
+  <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="docs/tool-call-light.png">
+</picture>
+
+- **裁决在模型之外**，依次是规则表、分类器、延后。只读工具和只读命令放行；`sudo`、强推、改 git 配置或远端、`curl | sh` 直接拦；规则判不了的交给分类器（一个小模型）；高风险和分类器拿不准的延后，未知工具默认延后。每次裁决连同依据写进日志。
+- **延后不占着 worker。** session 存盘，run 结束，审批请求进 outbox。你的答复作为事件回到 inbox；新 run 开始前，内核自己执行被批准的那次调用，把结果交给 runtime，模型不会再调一次。同一个调用的第二次答复被去重，24 小时没答复就写一个到期事件。
+- **只有你的话能批准。** 按作者判断，不按内容：issue 正文、别人的评论、另一个 agent 发来的消息都是外部内容，永远变不成审批答复。
+- **凭据不进 agent。** GitHub 模式下 `git_push`、`github_open_pr`、`github_comment` 在宿主进程里执行，宿主加上凭据再发请求，agent 的上下文和参数里没有凭据。模型的 API key 在 `serve` 读入后从环境变量里删掉。aoa 不做沙箱：agent 的 shell 和宿主是同一个系统用户，所以碰 `~/.aoa` 或凭据路径的命令不会被直接放行，要问你。
+- **auto review** 只用在 Codex 上的审查 agent：它的审批交给 Codex 自己的自动审查，不经过内核，也不问你。
+
+### 崩溃后接着做
+
+- 五个存储和辅助表都在一个 SQLite 文件里，规范里的 ATOMIC 就是一个事务：run 的结局、session 的更新和事件标完成一起提交。
+- worker 的互斥靠数据库里的租约，不靠进程里的锁：claim 是一个事务，只有这个 inbox 没有未过期的租约时才成功。失败的一批事件 30 秒、2 分钟后重试，三次后停在 `dead`，`aoa status` 里看得到。
+- 工具执行前先在 `tool_journal` 记下意图。恢复时遇到有意图、没结果的调用不重跑，而是把「结果未知，先查再决定」作为工具结果交回给 agent。
+- 事件按 `(inbox, source, dedupe_key)` 去重；GitHub 轮询的游标和事件在同一个事务里存下，崩溃最多多轮询一次。outbox 送达失败按 1、2、4、8 分钟退避。
+
+### 一致性测试
+
+规范 §9 的 C1–C20 每条先写成失败的测试再实现，跑在带故障注入点的假 runtime 和假时钟上。每个提交点都有名字（`after_append`、`after_claim`、`after_tool_exec`、`after_tool_result`、`before_complete`），测试在这些位置杀进程再恢复。
 
 ## 快速开始
 
@@ -24,7 +67,7 @@
 4. 启动，然后派活：
 
 ```bash
-aoa serve                       # 常驻；同时打开观察页 http://127.0.0.1:7878；Ctrl-C 停
+aoa serve                       # 常驻；Ctrl-C 停
 aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，如 local:1a2b3c4d
 ```
 
@@ -34,7 +77,7 @@ aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，�
 
 | 命令 | 作用 |
 |---|---|
-| `aoa serve [--port <n>]` | 常驻运行，顺带开观察页 |
+| `aoa serve` | 常驻运行 |
 | `aoa send "<文字>"` | 开一个任务 |
 | `aoa send --agent <名字> [--branch <分支>] "<文字>"` | 给具名 agent 派活；`--branch` 指定审查 agent 要审的分支 |
 | `aoa send --to <线程或前缀> "<文字>"` | 接着某个任务说；任务在等回答时，`/approve` 是批准，其他内容算拒绝和理由 |
@@ -42,7 +85,6 @@ aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，�
 | `aoa close <线程或会话前缀> merged\|discarded` | 本地模式：告诉 aoa 分支的结局 |
 | `aoa messages [--since <游标>] [--wait <秒>] [--json]` | agent 说过的话，末尾是新游标 |
 | `aoa status [--json] [--refresh]` | 任务、结局、待审批、死信、失败的消息、每个 agent 的 runtime |
-| `aoa web [--port <n>]` | serve 没在跑时单独开观察页 |
 | `aoa mcp` | 把 send、messages、status、close、answer 作为 stdio 上的 MCP 工具 |
 
 ## 一个任务怎么走（本地模式）
@@ -55,6 +97,13 @@ aoa send "修掉 README 的错字"   # 开一个任务，输出它的线程，�
 ## 多个 agent：实现加审查
 
 在配置里加 `agents`，就能让几个具名 agent 跑在同一个 `serve` 里。顶层字段就是默认 agent；每个具名 agent 有自己的 inbox、worker、角色、权限和记忆，没写的字段（`model`、`classifier`、`risk`）沿用顶层。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/multi-agent-dark.png">
+  <img alt="多 agent：实现 agent 和审查 agent 各有自己的 Inbox、Worker 和 pi；实现 agent 用 send_to 把分支交给审查 agent，审查 agent 把结论发回；两者共用一个 SQLite 库，表按 inbox 分" src="docs/multi-agent-light.png">
+</picture>
+
+每个 agent 一个 inbox、一个 worker：一个 inbox 同时只有一个 run，不同 agent 的 run 可以同时跑。agent 之间只通过往对方的 inbox 写事件合作，所有 agent 共用一个库和一个时钟。
 
 - `implement`（默认）：写代码。
 - `review`：只读。没有 edit、write，改引用或改历史的 git 命令一律拦掉。
@@ -104,15 +153,6 @@ agents: {
 - `dsh.preset` 默认 `workspace-write`，可选 `read-only`、`danger-full-access`。改了预设，已经开始的任务在下一次 run 前也会切过去。
 - 启动前会检查 `dsh --version`，不是测试过的 `0.2.2-rc.3` 就不跑。dsh 还在开发者预览阶段，换版本可能要跟着改 patch 和版本常量。
 
-## 观察页
-
-`aoa serve` 会顺带打开观察页，地址打印在终端；端口被占用时只打一行提示，`serve` 照常跑。`serve` 停着时用 `aoa web` 单独开，它不需要模型的 key。
-
-- 页面上方是流向图：事件进 inbox、worker 认领、工具调用过权限、定时器和记忆、outbox 发消息。哪条边上有东西经过，就有一个点沿着它走一遍。
-- 下面五块是五个原语的计数和最近几条；等你回答的调用旁边写着对应的 `aoa answer` 命令。记忆按规范分成 User instructions、User notes、Task progress、Past messages 四类。
-- 页面靠推送更新，不轮询：库里每有一次提交就重读一遍，有变化才推给浏览器。头部显示 `serve` 在不在跑，超过 15 秒没心跳就显示离线。
-- 只监听 `127.0.0.1`，没有任何写操作。配置了多个 agent 时，页面顶部可以切换看哪一个。
-
 ## 让聊天里的 agent 当入口
 
 aoa 自己没有主会话。你在别的聊天 agent（比如 Claude Code）里说话，让它敲命令就行：
@@ -153,7 +193,7 @@ Bun + TypeScript 的 monorepo。
 | `packages/runtime-pi` · `runtime-codex` · `runtime-dsh` | 三个 runtime 适配器 |
 | `packages/channel-local` · `channel-github` | 本地和 GitHub 通道 |
 | `packages/conformance` | 规范 §9 的 C1–C20 一致性测试 |
-| `apps/aoa` | `aoa` 命令：配置、接线、serve、观察页、MCP |
+| `apps/aoa` | `aoa` 命令：配置、接线、serve、MCP |
 
 ```bash
 bun test               # 全部测试，不调用真实模型
