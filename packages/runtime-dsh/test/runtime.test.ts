@@ -124,7 +124,7 @@ describe("dshRuntime: sessions", () => {
     const result = await runtime.run(runInput({ session: { id: "session-1", resumed: true, ref: "sess-77", workdir: null } }));
 
     expect(fake.launches[0]!.cwd).toBe("/repo");
-    expect(fake.received.map((m) => m.method)).toEqual(["initialize", "session/resume", "session/prompt", "shutdown"]);
+    expect(fake.received.map((m) => m.method)).toEqual(["initialize", "session/resume", "session/prompt", "session/wait", "shutdown"]);
     expect(fake.sent("session/resume")).toEqual([{ sessionId: "sess-77" }]);
     expect(fake.sent("session/prompt")[0].sessionId).toBe("sess-77");
     expect(fake.sent("initialize")[0].model).toBe("deepseek-pro");
@@ -213,7 +213,7 @@ describe("dshRuntime: approval requests from dsh's own tools", () => {
     ]);
     fake.stayAfterShutdown = true;
     const gate = recordingAsk(() => "defer");
-    const { runtime } = setup(fake);
+    const { runtime } = setup(fake, { shutdownMs: 20 });
 
     const result = await runtime.run(runInput({ ask: gate.ask }));
 
@@ -226,7 +226,7 @@ describe("dshRuntime: approval requests from dsh's own tools", () => {
     expect(fake.live).toBe(0);
   });
 
-  test("a dsh that does not answer shutdown is signaled, first SIGTERM and then SIGKILL", async () => {
+  test("a dsh that does not answer shutdown is given SIGTERM, and the run waits for it to be gone", async () => {
     const fake = new FakeDshServer([
       async (t) => {
         await t.toolCall("call-1", "bash", { command: "rm -rf build" });
@@ -240,8 +240,38 @@ describe("dshRuntime: approval requests from dsh's own tools", () => {
 
     expect(SHUTDOWN_GRACE_MS).toBe(10_000);
     expect(fake.sent("shutdown")).toHaveLength(1);
-    expect(fake.kills.slice(0, 2)).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(fake.kills).toEqual(["SIGTERM"]);
+    expect(fake.live).toBe(0);
     expect(result.end).toEqual({ kind: "deferred", callId: "session-1:call-1" });
+  });
+
+  test("a wedged dsh that ignores shutdown and SIGTERM is killed with SIGKILL, and the run still ends", async () => {
+    const fake = new FakeDshServer([
+      async (t) => {
+        await t.toolCall("call-1", "bash", { command: "rm -rf build" });
+        await askToRun(t, "call-1");
+      },
+    ]);
+    fake.answerShutdown = false;
+    fake.ignoreSignals = true;
+    const { runtime } = setup(fake, { shutdownMs: 20 });
+
+    const result = await runtime.run(runInput({ ask: async () => "defer" }));
+
+    expect(fake.kills).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(result.end).toEqual({ kind: "deferred", callId: "session-1:call-1" });
+  });
+
+  test("a shutdown whose answer is an error is reported and does not change the run's outcome", async () => {
+    const fake = new FakeDshServer();
+    fake.shutdownError = "session teardown failed";
+    const logs: string[] = [];
+    const { runtime } = setup(fake, { log: (line) => logs.push(line) });
+
+    const result = await runtime.run(runInput());
+
+    expect(result.end).toEqual({ kind: "silent" });
+    expect(logs.join("\n")).toContain("session teardown failed");
   });
 
   test("a call dsh never logged is refused without asking the user, and the run goes on", async () => {
@@ -378,6 +408,44 @@ describe("dshRuntime: aoa's tools over the MCP bridge", () => {
     expect(second.sessionRef).toBe(first.sessionRef);
   });
 
+  test("a run waits for a tool call that is still running before it stops dsh", async () => {
+    let release = () => {};
+    let running = false;
+    const slow: Tool = {
+      name: "slow",
+      description: "Waits until the test lets it go.",
+      schema: { type: "object", properties: {} },
+      async invoke() {
+        running = true;
+        await new Promise<void>((resolve) => (release = resolve));
+        return { status: "ok", output: "done" };
+      },
+    };
+    const askUser = recordingTool("ask_user", () => ({ status: "deferred" }));
+    let shutdownWhileRunning = -1;
+    const fake = new FakeDshServer([
+      async (t) => {
+        await t.toolCall("call-1", "mcp__aoa__slow", {});
+        await t.toolCall("call-2", "mcp__aoa__ask_user", { question: "Which colour?" });
+        const slowCall = t.mcp("slow", {});
+        while (!running) await Bun.sleep(1);
+        // A second call defers while the first is still inside the kernel: the run must not end yet.
+        await t.mcp("ask_user", { question: "Which colour?" });
+        shutdownWhileRunning = fake.sent("shutdown").length;
+        release();
+        await slowCall;
+      },
+    ]);
+    const { runtime } = setup(fake);
+
+    const result = await runtime.run(runInput({ tools: [slow, askUser.tool] }));
+
+    expect(shutdownWhileRunning).toBe(0);
+    expect(result.end).toEqual({ kind: "deferred", callId: "session-1:call-2" });
+    expect(fake.sent("shutdown")).toHaveLength(1);
+    expect(fake.live).toBe(0);
+  });
+
   test("a deferred aoa tool that dsh retries is the same kernel call, so the bridge replays instead of running it twice", async () => {
     // Within one run, an entry is claimed once: a second identical call with no new tool/call is refused rather
     // than silently running the same aoa tool twice. The kernel replay across runs is tested in kernel.test.ts.
@@ -394,6 +462,45 @@ describe("dshRuntime: aoa's tools over the MCP bridge", () => {
     await runtime.run(runInput({ tools: [notify.tool] }));
 
     expect(notify.calls).toHaveLength(1);
+  });
+});
+
+describe("dshRuntime: a turn that failed", () => {
+  test("a turn that ends with an error fails the run even though dsh goes idle, after it is shut down", async () => {
+    const fake = new FakeDshServer([
+      async (t) => {
+        t.notify("session.event", {
+          sessionId: t.sessionId,
+          event: { type: "turn/end", data: { turn: 1, reason: { kind: "error", error: { message: "401 invalid api key", code: "UNAUTHORIZED" } } } },
+        });
+      },
+    ]);
+    const { runtime } = setup(fake);
+
+    const run = runtime.run(runInput());
+
+    await expect(run).rejects.toThrow(/401 invalid api key/);
+    expect(fake.sent("shutdown")).toHaveLength(1);
+  });
+
+  test("a live failure that the log does not show is asked about with session/wait and fails the run", async () => {
+    const fake = new FakeDshServer();
+    fake.waitError = "the model request failed: socket closed";
+    const { runtime } = setup(fake);
+
+    await expect(runtime.run(runInput())).rejects.toThrow(/socket closed/);
+  });
+
+  test("a completed turn is a silent run and needs no second opinion", async () => {
+    const fake = new FakeDshServer([
+      async (t) => {
+        t.notify("session.event", { sessionId: t.sessionId, event: { type: "turn/end", data: { turn: 1, reason: { kind: "completed" } } } });
+      },
+    ]);
+    const { runtime } = setup(fake);
+
+    expect((await runtime.run(runInput())).end).toEqual({ kind: "silent" });
+    expect(fake.sent("session/wait")).toEqual([]);
   });
 });
 
@@ -417,14 +524,27 @@ describe("dshRuntime: the patch and the child", () => {
     expect(args.slice(2, 4)).toEqual(["--patch", expect.stringMatching(new RegExp(`^${home}/patches/`))]);
   });
 
-  test("the configured command and preset are what aoa starts, and the version check asks the same command", async () => {
+  test("the configured command is what aoa starts and asks for its version; the preset is dsh's permission preset", async () => {
     const fake = new FakeDshServer();
-    const { runtime } = setup(fake, { command: "/opt/dsh/bin/dsh", preset: "sdk-app" });
+    const { runtime } = setup(fake, { command: "/opt/dsh/bin/dsh", preset: "read-only" });
 
     await runtime.run(runInput());
 
     expect(fake.versionChecks).toEqual(["/opt/dsh/bin/dsh"]);
     expect(fake.launches[0]!.command).toBe("/opt/dsh/bin/dsh");
-    expect(fake.launches[0]!.args.slice(0, 2)).toEqual(["--profile", "sdk-app"]);
+    // dsh.preset is the permission preset, written into the patch; the profile stays the SDK one.
+    expect(fake.launches[0]!.args.slice(0, 2)).toEqual(["--profile", "sdk"]);
+    expect(fake.patch()).toContain("- id: sandbox-policy\n  config:\n    mode: read-only\n");
+    expect(fake.patch()).toContain("- id: approval\n  config:\n    policy: ask\n");
+  });
+
+  test("the default permission preset is dsh's workspace-write with approvals on ask", async () => {
+    const fake = new FakeDshServer();
+    const { runtime } = setup(fake);
+
+    await runtime.run(runInput());
+
+    expect(fake.patch()).toContain("- id: sandbox-policy\n  config:\n    mode: workspace-write\n");
+    expect(fake.patch()).toContain("- id: approval\n  config:\n    policy: ask\n");
   });
 });

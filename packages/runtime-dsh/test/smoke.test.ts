@@ -109,9 +109,9 @@ test.skipIf(!enabled)(
       expect(result.sessionRef).toBeString();
       expect(calls).toEqual([{ body: "one" }]);
       expect(observed.calls).toContain("mcp__aoa__notify");
-      // Only aoa's bridge is registered, and none of the capabilities aoa's patch turns off is still offered.
-      expect(observed.tools.length).toBeGreaterThan(0);
-      for (const name of observed.tools) expect(name.startsWith("mcp__aoa__")).toBe(true);
+      // aoa's tools are offered next to dsh's own (which are yours to configure), and none of the
+      // capabilities aoa's patch turns off is still there.
+      expect(observed.tools).toContain("mcp__aoa__notify");
       for (const gone of ["ask_user", "schedule", "subagent", "agent_team", "goal", "workflow", "jobs", "plugin_manager"]) {
         expect(observed.tools.some((name) => name.includes(gone))).toBe(false);
       }

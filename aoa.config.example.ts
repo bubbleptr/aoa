@@ -20,7 +20,9 @@ export default {
   //   coder: { runtime: "codex", model: "your-codex-model-id" },
   //   // or on the local DeepSeek Harness (`dsh --profile sdk`): dsh's own tools, sandbox and approvals, with
   //   // aoa's tools bridged over MCP. model is a dsh model name; apiKeyEnv names the variable its key is in.
-  //   // dsh: { command: "dsh", preset: "sdk" } is optional. Local mode only; not for a review agent.
+  //   // dsh: { command: "dsh", preset: "workspace-write" } is optional: the permission preset aoa writes into
+  //   // its patch (workspace-write with approvals on ask, read-only, or danger-full-access). Local mode only;
+  //   // not for a review agent.
   //   deepseek: { runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
   // },
   // Without a github block aoa runs in local mode. Add one to take tasks from issues and open pull requests:

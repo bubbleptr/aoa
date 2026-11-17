@@ -8,7 +8,16 @@
 export const DSH_VERSION = "0.2.2-rc.3";
 
 /** The dsh profile aoa runs: stdio JSON-RPC, nothing else on stdout. */
-export const DSH_PRESET = "sdk";
+export const DSH_PROFILE = "sdk";
+
+/** dsh's own permission presets, from its `permission` row: what the sandbox allows and when it asks. */
+export const PERMISSION_PRESETS = {
+  "read-only": { sandbox: "read-only", approval: "ask" },
+  "workspace-write": { sandbox: "workspace-write", approval: "ask" },
+  "danger-full-access": { sandbox: "danger-full-access", approval: "never" },
+} as const;
+
+export type PermissionPreset = keyof typeof PERMISSION_PRESETS;
 
 /** The MCP server name aoa's tools are bridged under; dsh shows them as `mcp__aoa__<tool>`. */
 export const MCP_SERVER_NAME = "aoa";
@@ -48,14 +57,24 @@ export const DISABLED_ROWS = [
 /**
  * The patch file, as YAML. aoa's system prompt goes in through `personaSuffix` (the SDK protocol has no
  * instructions field); the value itself travels in the child's environment, so no prompt text has to be
- * escaped into YAML. The MCP row points dsh at this run's bridge, token and all.
+ * escaped into YAML. The permission preset is written as the sandbox mode and approval policy dsh's own
+ * `permission` row names, so the user's dsh settings cannot widen it. The MCP row points dsh at this
+ * run's bridge, token and all.
  */
-export function patchYaml(url: string): string {
+export function patchYaml(o: { url: string; preset: PermissionPreset }): string {
+  const permission = PERMISSION_PRESETS[o.preset];
   const lines = [
-    "# Written by aoa for one run: the capabilities aoa turns off and the bridge to aoa's own tools.",
+    "# Written by aoa for one run: the capabilities aoa turns off, the permission preset, and the bridge to aoa's own tools.",
     "- id: system-prompt",
     "  config:",
     "    personaSuffix: !!js process.env.AOA_DSH_SYSTEM_PROMPT",
+    "- id: sandbox-policy",
+    "  config:",
+    `    mode: ${permission.sandbox}`,
+    "    workspaceRoot: !!js process.cwd()",
+    "- id: approval",
+    "  config:",
+    `    policy: ${permission.approval}`,
     ...DISABLED_ROWS.flatMap((id) => [`- id: ${id}`, "  disabled: true"]),
     "- insert:",
     "    - id: aoa-mcp",
@@ -63,7 +82,7 @@ export function patchYaml(url: string): string {
     "      config:",
     `        serverName: ${MCP_SERVER_NAME}`,
     "        transport: streamable-http",
-    `        url: ${url}`,
+    `        url: ${o.url}`,
   ];
   return `${lines.join("\n")}\n`;
 }

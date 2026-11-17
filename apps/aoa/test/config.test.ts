@@ -189,9 +189,9 @@ describe("the dsh runtime", () => {
   test("a dsh agent names a dsh model and the variable its key comes from; command and preset are optional", () => {
     expect(validateConfig(dshTop)).toMatchObject({ runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" });
     expect(validateConfig(dshTop).dsh).toBeUndefined();
-    expect(validateConfig({ ...dshTop, dsh: { command: "/opt/dsh/bin/dsh", preset: "sdk-app" } }).dsh).toEqual({
+    expect(validateConfig({ ...dshTop, dsh: { command: "/opt/dsh/bin/dsh", preset: "read-only" } }).dsh).toEqual({
       command: "/opt/dsh/bin/dsh",
-      preset: "sdk-app",
+      preset: "read-only",
     });
   });
 
@@ -208,6 +208,7 @@ describe("the dsh runtime", () => {
     [{ ...rest, runtime: "dsh", model: "deepseek-flash" }, "apiKeyEnv"],
     [{ ...dshTop, model: piModel }, "model"],
     [{ ...dshTop, dsh: { sandbox: "workspace-write" } }, "dsh.sandbox"],
+    [{ ...dshTop, dsh: { preset: "sdk-app" } }, "dsh.preset"],
     [{ ...dshTop, github: valid.github }, "runtime"],
     [{ ...dshTop, agents: { reviewer: { role: "review" } } }, "agents.reviewer.role"],
     [{ ...dshTop, agents: { helper: { runtime: "pi" } } }, "agents.helper.model"],

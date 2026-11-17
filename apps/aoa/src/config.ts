@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RatePolicy, Risk } from "@aoa/kernel";
+import type { PermissionPreset } from "@aoa/runtime-dsh";
 
 export type ModelRef = {
   /** pi provider id, e.g. `anthropic`. */
@@ -14,8 +15,8 @@ export type ModelRef = {
 
 export type Role = "implement" | "review";
 
-/** Where aoa starts dsh, and which of its profiles. Both optional; see `DshRuntimeConfig`. */
-export type DshOptions = { command?: string; preset?: string };
+/** Where aoa starts dsh and which of dsh's permission presets it runs; both optional. */
+export type DshOptions = { command?: string; preset?: PermissionPreset };
 
 /**
  * What runs an agent (design §12). `pi`: aoa's own loop, every tool call decided by aoa. `codex`: a Codex app-server
@@ -146,11 +147,19 @@ function dshModel(value: unknown, field: string): string {
   return value;
 }
 
+const PERMISSION_PRESETS: readonly PermissionPreset[] = ["read-only", "workspace-write", "danger-full-access"];
+
 function dshOptions(value: unknown, field: string): DshOptions {
   const o = object(value, field, ["command", "preset"]);
   const options: DshOptions = {};
   if (o.command !== undefined) options.command = str(o, "command", `${field}.`);
-  if (o.preset !== undefined) options.preset = str(o, "preset", `${field}.`);
+  if (o.preset !== undefined) {
+    const preset = str(o, "preset", `${field}.`);
+    if (!PERMISSION_PRESETS.includes(preset as PermissionPreset)) {
+      throw new ConfigError(`${field}.preset`, `must be a dsh permission preset: ${PERMISSION_PRESETS.join(", ")}`);
+    }
+    options.preset = preset as PermissionPreset;
+  }
   return options;
 }
 

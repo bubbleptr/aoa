@@ -42,6 +42,8 @@ export class CallTable {
 export type Bridge = {
   /** `http://127.0.0.1:<port>/mcp/<token>`: loopback, and a path nothing else this process runs can guess. */
   url: string;
+  /** Whether no tool call is running and no answer is still owed to dsh. */
+  idle(): boolean;
   close(): void;
 };
 
@@ -52,7 +54,7 @@ export type BridgeOptions = {
   dshSessionId: string;
   tools: Tool[];
   table: CallTable;
-  /** Called once the reply to a deferred tool call has been written, so the run can stop dsh. */
+  /** Called once the answer to one MCP request has been written; `idle()` says whether a tool still runs. */
   replied(): void;
   /** A tool call ended deferred: the run stops on this kernel call id. */
   deferred(callId: string): void;
@@ -76,6 +78,8 @@ const STOPPING = "This run is stopping now; the call was not executed. Ask again
 export async function startBridge(o: BridgeOptions): Promise<Bridge> {
   const token = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex");
   const path = `/mcp/${token}`;
+  /** Tool calls running now: the run does not end, and dsh is not stopped, while one is in flight. */
+  let running = 0;
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -95,18 +99,25 @@ export async function startBridge(o: BridgeOptions): Promise<Bridge> {
     mcp.setRequestHandler(ListToolsRequestSchema, () => ({
       tools: o.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.schema as { type: "object" } })),
     }));
-    mcp.setRequestHandler(CallToolRequestSchema, (request) => call(request.params.name, request.params.arguments));
+    let invoked = false;
+    mcp.setRequestHandler(CallToolRequestSchema, (request) => call(request.params.name, request.params.arguments, () => (invoked = true)));
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await mcp.connect(transport);
     try {
       return await transport.handleRequest(req);
     } finally {
-      // The reply is out: a deferred call stops dsh now, not before dsh has read the answer.
+      // The answer is out. Only now does the call stop counting as running, and only then may the run end:
+      // a deferred call stops dsh after dsh has read the answer, and a slow call is never cut off by it.
+      if (invoked) running--;
       o.replied();
     }
   }
 
-  async function call(name: string, args: unknown): Promise<{ content: { type: "text"; text: string }[]; isError: boolean }> {
+  async function call(
+    name: string,
+    args: unknown,
+    started: () => void,
+  ): Promise<{ content: { type: "text"; text: string }[]; isError: boolean }> {
     const text = (body: string, isError: boolean) => ({ content: [{ type: "text" as const, text: body }], isError });
     if (o.stopping()) return text(STOPPING, true);
     const tool = o.tools.find((t) => t.name === name);
@@ -116,6 +127,8 @@ export async function startBridge(o: BridgeOptions): Promise<Bridge> {
       o.log(`dsh called the aoa tool ${name} with no matching tool/call in session ${o.dshSessionId}; refused`);
       return text("aoa cannot identify this call: no matching tool call was logged for it. It was not executed.", true);
     }
+    started();
+    running++;
     const callId = `${o.sessionId}:${claimed.callId}`;
     let result: ToolResult;
     try {
@@ -139,6 +152,7 @@ export async function startBridge(o: BridgeOptions): Promise<Bridge> {
 
   return {
     url: `http://127.0.0.1:${server.port}${path}`,
+    idle: () => running === 0,
     close: () => void server.stop(true),
   };
 }

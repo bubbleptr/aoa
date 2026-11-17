@@ -5,7 +5,7 @@ import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/runti
 import { CallTable, type Bridge, startBridge } from "./bridge.ts";
 import { Connection, RpcError, spawnDsh } from "./connection.ts";
 import type { DshProcess, DshSpawn } from "./connection.ts";
-import { DSH_PRESET, DSH_VERSION, patchYaml } from "./patch.ts";
+import { DSH_PROFILE, DSH_VERSION, type PermissionPreset, patchYaml } from "./patch.ts";
 import type {
   ApprovalRequestParams,
   ApprovalRequestResult,
@@ -24,8 +24,11 @@ import type {
 /** dsh's default model route; aoa does not offer another. */
 export const DSH_PROVIDER = "deepseek-official";
 
-/** How long dsh's `shutdown` may take before the process is killed anyway. */
+/** How long dsh has to answer `shutdown` and exit before it is signaled. */
 export const SHUTDOWN_GRACE_MS = 10_000;
+
+/** How long each signal gets before the next one, and before the run gives up waiting for the process. */
+export const KILL_WAIT_MS = 1_000;
 
 export type DshRuntimeConfig = {
   /** aoa's system prompt; dsh adds it after its own instructions (the patch's `personaSuffix`). */
@@ -42,8 +45,8 @@ export type DshRuntimeConfig = {
   cwd: string;
   /** The executable; default `dsh`. */
   command?: string;
-  /** The dsh profile; default `sdk`. */
-  preset?: string;
+  /** dsh's permission preset, written into the patch; default `workspace-write` (its sandbox, approvals on ask). */
+  preset?: PermissionPreset;
   /** How long `shutdown` may take before the process is killed; default {@link SHUTDOWN_GRACE_MS}. */
   shutdownMs?: number;
   /** The environment the child's is derived from; default `process.env`. */
@@ -102,7 +105,7 @@ export function dshRuntime(config: DshRuntimeConfig): AgentRuntime {
         throw new Error(`${config.apiKeyEnv} is not set: the dsh agent ${config.model} needs it`);
       }
       const cwd = input.session.workdir ?? config.cwd;
-      return new DshRun(config, input, ask, cwd, launcher, command, config.preset ?? DSH_PRESET).go();
+      return new DshRun(config, input, ask, cwd, launcher, command, config.preset ?? "workspace-write").go();
     },
   };
 }
@@ -119,6 +122,12 @@ class DshRun {
   private readonly table = new CallTable();
   /** Set once the run must end: its first deferred call, or a failed `ask`. */
   private stop: Stop | null = null;
+  /** How the session's last turn ended, from the `turn/end` event: a model failure must fail the run. */
+  private turnEnd: { kind: string; error?: unknown } | null = null;
+  /** Set when the run must fail even though dsh went idle, e.g. the turn ended with an error. */
+  private endError: Error | null = null;
+  /** What `shutdown` answered with an error, if it did; the run is over by then, so it is only reported. */
+  private shutdownError: Error | null = null;
   /** Whether `session/prompt` was sent: an idle before that says nothing about this run's work. */
   private prompting = false;
   private prompted = false;
@@ -139,7 +148,7 @@ class DshRun {
     private readonly cwd: string,
     private readonly launcher: DshSpawn,
     private readonly command: string,
-    private readonly preset: string,
+    private readonly preset: PermissionPreset,
   ) {
     this.sessionId = input.session.ref ?? crypto.randomUUID();
     const log = config.log ?? ((line: string) => console.error(`${new Date().toISOString()} dsh: ${line}`));
@@ -155,7 +164,7 @@ class DshRun {
         dshSessionId: this.sessionId,
         tools: this.input.tools,
         table: this.table,
-        replied: () => this.replied(),
+        replied: () => this.bridgeReplied(),
         deferred: (callId) => this.halt({ deferred: callId }),
         stopping: () => this.stop !== null,
         log: this.log,
@@ -163,11 +172,11 @@ class DshRun {
       const patchDir = join(config.home, "patches");
       mkdirSync(patchDir, { recursive: true });
       this.patch = join(patchDir, `${this.input.runId.replace(/[^A-Za-z0-9_-]/g, "_")}.cordis.patch.yml`);
-      writeFileSync(this.patch, patchYaml(this.bridge.url));
+      writeFileSync(this.patch, patchYaml({ url: this.bridge.url, preset: this.preset }));
 
       proc = await this.launcher.spawn({
         command: this.command,
-        args: ["--profile", this.preset, "--patch", this.patch],
+        args: ["--profile", DSH_PROFILE, "--patch", this.patch],
         cwd,
         env: childEnv({
           home: config.home,
@@ -213,6 +222,7 @@ class DshRun {
       const sessionRef = this.sessionId;
       if (this.stop && "failure" in this.stop) throw this.stop.failure;
       if (this.stop) return { end: { kind: "deferred", callId: this.stop.deferred }, sessionRef };
+      if (this.endError !== null) throw this.endError;
       return { end: { kind: "silent" }, sessionRef };
     } finally {
       this.finished = true;
@@ -238,7 +248,10 @@ class DshRun {
 
   /** Written synchronously, in the order dsh logged it, so an approval request that follows finds its call. */
   private event(event: SessionEventNotification["event"]): void {
-    if (event?.type === "tool/call") {
+    if (event?.type === "turn/end") {
+      const reason = (event.data as { reason?: { kind?: unknown; error?: unknown } } | undefined)?.reason;
+      if (typeof reason?.kind === "string") this.turnEnd = { kind: reason.kind, ...(reason.error === undefined ? {} : { error: reason.error }) };
+    } else if (event?.type === "tool/call") {
       const d = event.data as ToolCallData | undefined;
       if (typeof d?.callId === "string" && typeof d.name === "string") this.table.add(this.sessionId, d.callId, d.name, d.arguments);
     } else if (event?.type === "tool/ptc-dispatch-start") {
@@ -291,37 +304,94 @@ class DshRun {
     this.stopped();
   }
 
-  /** After the answer to one of aoa's MCP tool calls was written. */
+  /** After the answer to one of aoa's MCP calls was written. */
   bridgeReplied(): void {
     this.stopped();
   }
 
-  /** dsh is shut down only once nothing of this run's is still waiting on a reply from aoa. */
+  /** dsh is shut down only once nothing of this run is still waiting on an answer from aoa. */
   private stopped(): void {
-    if (this.stop !== null && this.replying === 0) this.settle();
+    if (this.stop !== null && this.replying === 0 && this.bridge?.idle() !== false) this.settle();
   }
 
   private settle(): void {
     if (this.finished) return;
-    this.settling ??= this.shutdown().then(() => this.ended());
+    this.settling ??= (async () => {
+      // A turn that ended with an error is a failed run even though the agent goes idle and the process
+      // stays up: the kernel has to hear about it, or an auth or model failure would look like a quiet run.
+      if (this.stop === null) this.endError = await this.failure();
+      await this.shutdown();
+      this.ended();
+    })();
+  }
+
+  /** Why the session's turn failed, or null: the logged `turn/end`, or a live failure `session/wait` reports. */
+  private async failure(): Promise<Error | null> {
+    if (this.turnEnd?.kind === "error") {
+      const error = this.turnEnd.error as { message?: unknown; code?: unknown } | undefined;
+      const message = typeof error?.message === "string" ? error.message : JSON.stringify(error ?? null);
+      return new Error(`dsh ended the turn with an error: ${message}`);
+    }
+    if (this.turnEnd?.kind === "completed" || this.turnEnd?.kind === "max-tokens") return null;
+    // No durable verdict (a crash before `turn/end` left it open): ask the server whether the live agent failed.
+    try {
+      await this.conn.request("session/wait", { sessionId: this.sessionId });
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err : new Error(String(err));
+    }
   }
 
   /**
-   * dsh has no interrupt: `shutdown` is the one way to stop it, and it persists the session before it
-   * exits. If it does not answer in time the process is signaled, and the session lock goes with it.
+   * dsh has no interrupt: `shutdown` is the one way to stop it, and it answers before it flushes the session
+   * and exits. So the process itself has to go before the run is over; if it does not, it is signaled.
    */
   private async shutdown(): Promise<void> {
+    const answered = this.conn.request("shutdown").then(
+      () => {},
+      (err: unknown) => (this.shutdownError = err instanceof Error ? err : new Error(String(err))),
+    );
     const grace = this.config.shutdownMs ?? SHUTDOWN_GRACE_MS;
-    const answered = await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), grace);
-      this.conn.request("shutdown").then(
+    if (await this.exitedWithin(grace)) {
+      await answered;
+      this.reportShutdown();
+      return;
+    }
+    this.proc?.kill("SIGTERM");
+    if (await this.exitedWithin(grace)) {
+      await answered;
+      this.reportShutdown();
+      this.log("dsh did not exit after shutdown on its own; it exited after SIGTERM");
+      return;
+    }
+    this.proc?.kill("SIGKILL");
+    if (await this.exitedWithin(KILL_WAIT_MS)) {
+      await answered;
+      this.reportShutdown();
+      return;
+    }
+    // Still there after SIGKILL: nothing more to wait for. The pending shutdown request settles when the
+    // process finally goes away, or with the run's connection.
+    this.log("dsh did not exit after SIGKILL; giving up on it");
+    void answered;
+  }
+
+  /** A shutdown that answered with an error is reported; the run is over by then, so it is not thrown. */
+  private reportShutdown(): void {
+    if (this.shutdownError !== null) this.log(`shutdown failed: ${this.shutdownError.message}`);
+  }
+
+  /** Waits for the process to exit, up to `ms`. */
+  private exitedWithin(ms: number): Promise<boolean> {
+    const proc = this.proc;
+    if (proc === null) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      proc.exited.then(
         () => (clearTimeout(timer), resolve(true)),
         () => (clearTimeout(timer), resolve(true)),
       );
     });
-    if (answered) return;
-    this.proc?.kill("SIGTERM");
-    this.proc?.kill("SIGKILL");
   }
 }
 

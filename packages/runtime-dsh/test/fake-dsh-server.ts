@@ -94,6 +94,12 @@ export class FakeDshServer {
   answerShutdown = true;
   /** Whether the process stays alive after answering `shutdown`, so a test can watch what comes next. */
   stayAfterShutdown = false;
+  /** Whether SIGTERM and SIGKILL are ignored, as a wedged process would ignore them. */
+  ignoreSignals = false;
+  /** What `session/wait` answers: an error, when the server holds a live failure its log does not show. */
+  waitError: string | null = null;
+  /** What `shutdown` answers: an error, when teardown fails. The process still exits. */
+  shutdownError: string | null = null;
   live = 0;
   private turns = 0;
 
@@ -225,9 +231,16 @@ export class FakeDshServer {
             void runTurn(m.params.sessionId, text);
             return;
           }
+          case "session/wait":
+            if (this.waitError !== null) return send({ jsonrpc: "2.0", id: m.id, error: { code: -32603, message: this.waitError } });
+            return reply({});
           case "shutdown":
             if (!this.answerShutdown) return;
-            reply({});
+            if (this.shutdownError !== null) {
+              send({ jsonrpc: "2.0", id: m.id, error: { code: -32603, message: this.shutdownError } });
+            } else {
+              reply({});
+            }
             if (this.stayAfterShutdown) return;
             killed = true;
             this.live--;
@@ -246,8 +259,9 @@ export class FakeDshServer {
         lines: out,
         exited,
         kill: (signal) => {
-          this.kills.push(signal);
           if (killed) return;
+          if (!this.kills.includes(signal)) this.kills.push(signal);
+          if (this.ignoreSignals) return;
           killed = true;
           this.live--;
           out.end();
