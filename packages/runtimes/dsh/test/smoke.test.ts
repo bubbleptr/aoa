@@ -69,6 +69,7 @@ function input(o: { dir: string; text: string; ref: string | null; tools: Tool[]
     resident: "",
     tools: o.tools,
     ask: o.ask,
+    signal: new AbortController().signal,
   };
 }
 

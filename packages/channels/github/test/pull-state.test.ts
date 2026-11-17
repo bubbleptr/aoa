@@ -3,7 +3,7 @@ import { githubChannel, githubTools } from "../src/index.ts";
 import { FakeGitHub, writeAppKey } from "./fake-github.ts";
 
 const key = writeAppKey();
-const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1" };
+const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1", signal: new AbortController().signal };
 
 test("pullState tells an open, a merged and a closed pull request apart", async () => {
   const gh = new FakeGitHub(key.publicKeyPem);

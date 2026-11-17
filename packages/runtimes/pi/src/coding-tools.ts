@@ -15,7 +15,7 @@ type PiTool = {
   description: string;
   parameters: unknown;
   // `any`: each built-in types its own params, and pi has already validated them against `parameters`.
-  execute(toolCallId: string, params: any): Promise<unknown>;
+  execute(toolCallId: string, params: any, signal?: AbortSignal): Promise<unknown>;
 };
 
 /** Reading and editing files is low risk: the policy's rules keep it inside the working directory. A command is medium. */
@@ -47,7 +47,7 @@ export function codingTools(): ToolDef[] {
         if (ctx.workdir === null) {
           throw new Error(`${template.name} needs a working directory, and this session has none`);
         }
-        return create(ctx.workdir).execute(ctx.callId, args);
+        return create(ctx.workdir).execute(ctx.callId, args, ctx.signal);
       },
     };
   });

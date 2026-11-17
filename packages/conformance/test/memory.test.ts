@@ -80,7 +80,7 @@ describe("memory tools", () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "aoa-memory-"));
     writeFileSync(join(root, "instructions.md"), "Be brief.");
-    const ctx = { sessionId: "s", callId: "c", workdir: null };
+    const ctx = { sessionId: "s", callId: "c", workdir: null, signal: new AbortController().signal };
     tools = new Map(
       memoryTools(dirMemory(root)).map((d) => [d.name, { ...d, invoke: async (_id: string, args: unknown) => ({ status: "ok", output: await d.execute(args, ctx) }) } as Tool]),
     );

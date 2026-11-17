@@ -1,4 +1,5 @@
 export type * from "./types.ts";
+export { UNKNOWN_OUTCOME } from "./tools.ts";
 export type {
   AgentRuntime,
   Clock,

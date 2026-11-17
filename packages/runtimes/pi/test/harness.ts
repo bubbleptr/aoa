@@ -42,6 +42,19 @@ export function scriptedRuntime() {
     requests,
     script,
     pending: () => faux.getPendingResponseCount(),
+    /** The next model request never answers; `requested` settles once it was made. It ends only by abort. */
+    hang() {
+      let made = () => {};
+      const requested = new Promise<void>((resolve) => (made = resolve));
+      faux.setResponses([
+        (_context, options) =>
+          new Promise<AssistantMessage>((_resolve, reject) => {
+            made();
+            options?.signal?.addEventListener("abort", () => reject(new Error("request aborted")));
+          }),
+      ]);
+      return requested;
+    },
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -95,6 +108,7 @@ export function runInput(over: Partial<RunInput> = {}): RunInput {
     events: [event({ text: "hello" })],
     resident: "",
     tools: [],
+    signal: new AbortController().signal,
     ...over,
   };
 }

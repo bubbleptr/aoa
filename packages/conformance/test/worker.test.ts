@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, retryDelayMs } from "@aoa/kernel";
+import { LEASE_MS, UNKNOWN_OUTCOME, retryDelayMs, type ToolDef } from "@aoa/kernel";
 import { Harness, ScriptedRuntime, gate, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {
@@ -72,6 +72,60 @@ for (const [name, factory] of storeFactories) {
 
       const [first, second] = h.runs().map((r) => r.id);
       expect(seen).toEqual([`start ${first} 1`, `end ${first} model down`, `start ${second} 1`, `end ${second} silent`]);
+    });
+
+    test("stop() aborts the run in flight; its events go back with no retry delay, and no stop makes them dead", async () => {
+      const { id } = h.append();
+      for (let i = 1; i <= 3; i++) {
+        const runtime = new ScriptedRuntime([{ hang: true }]);
+        const worker = h.worker({ runtime });
+        const draining = worker.drain();
+        await runtime.started(1);
+        worker.stop();
+        await draining;
+        expect(runtime.runs[0]!.input.signal.aborted).toBe(true);
+        expect(h.store.tx((t) => t.getEvent(id))).toMatchObject({ status: "pending", attempts: i, nextAttemptAt: h.clock.now() });
+      }
+      expect(h.runs().map((r) => r.error)).toEqual(Array(3).fill(expect.stringMatching(/stopped/)));
+      expect(h.outbox()).toEqual([]);
+    });
+
+    test("a drain that was stopped takes no further run", async () => {
+      h.append({ thread: "a" });
+      h.append({ thread: "b" });
+      const runtime = new ScriptedRuntime([{ hang: true }]);
+      const worker = h.worker({ runtime });
+      const draining = worker.drain();
+      await runtime.started(1);
+      worker.stop();
+      expect((await draining).runs).toBe(1);
+      expect(runtime.runs).toHaveLength(1);
+    });
+
+    test("a tool cut off by stop records no result, so its retry reports an unknown outcome", async () => {
+      const slow: ToolDef = {
+        name: "slow",
+        description: "waits for its signal",
+        schema: { type: "object" },
+        risk: "low",
+        execute: (_args, ctx) =>
+          new Promise((_resolve, reject) => {
+            started.open();
+            ctx.signal.addEventListener("abort", () => reject(new Error("killed")));
+          }),
+      };
+      const started = gate();
+      const call = { calls: [{ tool: "slow", callId: "call-1" }] };
+      const runtime = new ScriptedRuntime([call, call]);
+      h.append();
+      const worker = h.worker({ runtime, tools: [slow] });
+      const draining = worker.drain();
+      await started.promise;
+      worker.stop();
+      await draining;
+      await h.worker({ runtime, tools: [slow] }).drain();
+
+      expect(runtime.runs[1]!.toolResults).toEqual([UNKNOWN_OUTCOME]);
     });
   });
 }

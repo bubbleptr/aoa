@@ -23,7 +23,7 @@ function tool(name: string): ToolDef {
   return def;
 }
 
-const ctx = (dir: string | null): ToolExecContext => ({ sessionId: "s", callId: "c", workdir: dir });
+const ctx = (dir: string | null): ToolExecContext => ({ sessionId: "s", callId: "c", workdir: dir, signal: new AbortController().signal });
 
 const textOf = (out: unknown) =>
   (out as { content: Array<{ type: string; text?: string }> }).content.map((c) => c.text ?? "").join("");
@@ -45,6 +45,14 @@ describe("codingTools", () => {
     const out = await tool("bash").execute({ command: "pwd" }, ctx(dir));
 
     expect(realpathSync(textOf(out).trim())).toBe(dir);
+  });
+
+  test("bash stops its command when the run's signal fires", async () => {
+    const controller = new AbortController();
+    const running = tool("bash").execute({ command: "sleep 30" }, { ...ctx(workdir()), signal: controller.signal });
+    controller.abort(new Error("the host stopped"));
+
+    await expect(running).rejects.toThrow();
   });
 
   test("a tool fails clearly when the session has no workdir", async () => {

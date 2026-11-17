@@ -82,6 +82,10 @@ export class Worker {
   private stopped = true;
   private woken = false;
   private wakeUp: (() => void) | null = null;
+  /** How many times `stop()` was called, so a drain can tell it was stopped after it began. */
+  private stops = 0;
+  /** The signal of the run in flight. */
+  private current: AbortController | null = null;
 
   constructor(o: WorkerOptions) {
     this.store = o.store;
@@ -100,12 +104,14 @@ export class Worker {
 
   /**
    * Runs every ready group, one run at a time, then returns. Each pass re-reads the store.
-   * Returns early when another worker holds this inbox's lease.
+   * Returns early when another worker holds this inbox's lease, and after a `stop()`.
    */
   async drain(): Promise<DrainResult> {
     let runs = 0;
+    const stops = this.stops;
     for (;;) {
       this.assertAlive();
+      if (this.stops !== stops) return { runs, nextReadyAt: null };
       const selection = this.store.tx((t) => this.select(t, this.clock.now()));
       if (!selection.claim) return { runs, nextReadyAt: selection.nextReadyAt };
       await this.execute(selection.claim);
@@ -130,8 +136,11 @@ export class Worker {
     this.wakeUp?.();
   }
 
+  /** Ends `serve()` and any `drain()`, and aborts the run in flight through its signal. */
   stop(): void {
     this.stopped = true;
+    this.stops++;
+    this.current?.abort(new Error("the host stopped"));
     this.wake();
   }
 
@@ -218,6 +227,9 @@ export class Worker {
     this.crashAt("after_claim");
     this.onRunStart({ runId: claim.runId, sessionId: claim.session.id, events: claim.events.length });
     const stopRenewal = this.renewLease(claim.runId);
+    const controller = new AbortController();
+    this.current = controller;
+    const { signal } = controller;
     const c = { ...claim };
     let result: RunResult;
     try {
@@ -233,6 +245,7 @@ export class Worker {
         inboxId: this.inboxId,
         sessionId: c.session.id,
         workdir: c.session.workdir,
+        signal,
         policy: this.policy,
         crash: (p) => this.crashAt(p),
         assertAlive: () => this.assertAlive(),
@@ -248,6 +261,7 @@ export class Worker {
         resident,
         tools: wrapTools(this.tools, toolCtx),
         ...(answer ? { answer } : {}),
+        signal,
       };
       result =
         this.runtime.kind === "harness"
@@ -257,6 +271,18 @@ export class Worker {
       // A crash stands in for the process dying: write nothing on the way out.
       if (this.crashed) throw this.crashed;
       if (err instanceof SimulatedCrash) throw err;
+      if (signal.aborted) {
+        // A stop is not the run's failure: the events go back ready for the next start, and no number of stops makes
+        // them dead. The attempt still counts, so the next run knows an earlier one may have done part of the work.
+        const error = "stopped: the host stopped during the run";
+        this.store.tx((t) => {
+          const now = this.clock.now();
+          t.endRun(c.runId, { error }, now);
+          t.releaseEvents(c.runId, now, Number.MAX_SAFE_INTEGER, () => now);
+        });
+        this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
+        return;
+      }
       const error = err instanceof Error ? err.message : String(err);
       this.store.tx((t) => {
         const now = this.clock.now();
@@ -267,6 +293,7 @@ export class Worker {
       return;
     } finally {
       stopRenewal();
+      this.current = null;
     }
 
     this.assertAlive();

@@ -10,6 +10,8 @@ export type ToolContext = {
   inboxId: InboxId;
   sessionId: SessionId;
   workdir: string | null;
+  /** The run's signal, handed to each tool's `execute`. */
+  signal: AbortSignal;
   policy?: PolicyConfig;
   crash: CrashHook;
   /** Throws if this process has (simulated) crashed, so nothing more is written. */
@@ -41,6 +43,8 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
   const { store, clock, inboxId, sessionId, assertAlive } = ctx;
 
   assertAlive();
+  // After a stop no call starts.
+  ctx.signal.throwIfAborted();
   const prior = store.tx((t) => t.getJournal(sessionId, callId));
   if (prior?.result) return prior.result;
   // An intent is only ever recorded for an authorized call, so finishing it needs no second decision.
@@ -85,8 +89,8 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
 
 /** Executes a call whose intent is already journaled, then records its result. */
 export async function executeRecorded(def: ToolDef, ctx: ToolContext, callId: CallId, args: unknown): Promise<ToolResult> {
-  const { store, clock, sessionId, workdir, crash, assertAlive } = ctx;
-  const result = await execute(def, args, { sessionId, callId, workdir });
+  const { store, clock, sessionId, workdir, signal, crash, assertAlive } = ctx;
+  const result = await execute(def, args, { sessionId, callId, workdir, signal });
   crash("after_tool_exec");
   assertAlive();
   store.tx((t) => t.recordResult(sessionId, callId, result, clock.now()));
@@ -98,6 +102,8 @@ async function execute(def: ToolDef, args: unknown, ctx: ToolExecContext): Promi
   try {
     return { status: "ok", output: await def.execute(args, ctx) };
   } catch (err) {
+    // Cut off by a stop: no result is recorded, so the call's outcome is unknown (or, if idempotent, it runs again).
+    if (ctx.signal.aborted) throw err;
     return { status: "error", error: err instanceof Error ? err.message : String(err) };
   }
 }

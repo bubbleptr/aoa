@@ -17,6 +17,8 @@ export type RunScript = {
   /** The run waits on this before doing anything, so a test can hold it open. */
   gate?: Promise<void>;
   calls?: ScriptedCall[];
+  /** After the calls, the run waits for its signal and then fails with the signal's reason: a run only a stop ends. */
+  hang?: true;
   /** Thrown after the calls: an ordinary runtime failure. */
   fail?: Error;
   end?: RunEnd;
@@ -66,6 +68,13 @@ export class ScriptedRuntime {
         const tool = input.tools.find((t) => t.name === call.tool);
         if (!tool) throw new Error(`script calls unknown tool ${call.tool}`);
         observed.toolResults.push(await tool.invoke(call.callId, args));
+      }
+      if (script.hang) {
+        const { signal } = input;
+        await new Promise((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
       }
       if (script.fail) throw script.fail;
       return { end: script.end ?? { kind: "silent" }, sessionRef: script.sessionRef };

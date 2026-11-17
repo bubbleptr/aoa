@@ -4,7 +4,7 @@ import { FakeGitHub, OWNER, REPO, USER, writeAppKey } from "./fake-github.ts";
 
 const key = writeAppKey();
 const HOUR = 60 * 60_000;
-const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1" };
+const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1", signal: new AbortController().signal };
 
 let gh: FakeGitHub;
 

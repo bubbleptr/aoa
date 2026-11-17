@@ -4,7 +4,7 @@ import { type GitRunner, githubTools } from "../src/index.ts";
 import { FakeGitHub, OWNER, REPO, USER, writeAppKey } from "./fake-github.ts";
 
 const key = writeAppKey();
-const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1" };
+const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1", signal: new AbortController().signal };
 
 type GitCall = { args: string[]; cwd: string; env: Record<string, string> };
 

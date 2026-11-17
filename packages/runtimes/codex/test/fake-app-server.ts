@@ -10,6 +10,8 @@ export type FakeTurn = {
   notify(method: string, params: object): void;
   /** The process dies mid-turn: its output ends and it exits with `why`. */
   die(why: string): void;
+  /** Settles when the client asks to interrupt the turn. */
+  interrupted: Promise<void>;
 };
 
 /** A turn's script; it may end the turn as failed, otherwise the turn completes (or reports the interrupt). */
@@ -81,6 +83,8 @@ export class FakeAppServer {
     let seq = 0;
     let killed = false;
     let interrupted = false;
+    let onInterrupt = () => {};
+    const interruptAsked = new Promise<void>((resolve) => (onInterrupt = resolve));
     const send = (m: object) => out.push(JSON.stringify(m));
 
     const runTurn = async (threadId: string, turnId: string, text: string) => {
@@ -102,6 +106,7 @@ export class FakeAppServer {
           );
         },
         notify: (method, params) => send({ method, params }),
+        interrupted: interruptAsked,
         die: (why) => {
           killed = true;
           this.live--;
@@ -141,6 +146,7 @@ export class FakeAppServer {
         }
         case "turn/interrupt":
           interrupted = true;
+          onInterrupt();
           return reply({});
         default:
           send({ id: m.id, error: { code: -32601, message: `unknown method ${m.method}` } });

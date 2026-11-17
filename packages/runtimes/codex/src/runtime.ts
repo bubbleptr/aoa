@@ -73,13 +73,17 @@ export function codexRuntime(config: CodexRuntimeConfig): HarnessRuntime {
   return {
     kind: "harness",
     async run(input) {
-      const { ask } = input;
+      const { ask, signal } = input;
+      signal.throwIfAborted();
       const cwd = input.session.workdir ?? config.cwd;
       const proc = await spawn(cwd);
       const run = new CodexRun(config, input, ask, cwd);
+      const onAbort = () => run.abort(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
       try {
         return await run.go(new Connection(proc, run));
       } finally {
+        signal.removeEventListener("abort", onAbort);
         run.done();
         proc.kill();
       }
@@ -99,6 +103,10 @@ class CodexRun {
   /** Set once the run must end: its first deferred call, or a failed `ask` or `invoke`. */
   private stop: Stop | null = null;
   private interruptTurn: string | null = null;
+  /** The turn this run started, once Codex has said its id. */
+  private turnId: string | null = null;
+  /** Server requests being answered; an interrupt waits until their replies are out. */
+  private answering = 0;
   private interrupting = false;
   private finished = false;
   private grace: ReturnType<typeof setTimeout> | null = null;
@@ -139,10 +147,14 @@ class CodexRun {
     // `attempts` counts failed runs, so a non-zero one means an earlier attempt at these events stopped part way.
     const retry = this.input.events.some((e) => e.attempts > 0);
     const text = renderUserMessage(this.input, retry, renderCodexAnswer);
-    await conn.request<TurnStartResponse>("turn/start", {
+    const started = await conn.request<TurnStartResponse>("turn/start", {
       threadId: thread.id,
       input: [{ type: "text", text, text_elements: [] }],
     } satisfies TurnStartParams);
+    this.turnId = started.turn.id;
+    // A stop that came while the turn was being started interrupts it now.
+    if (this.stop) this.halt(this.turnId, this.stop);
+    this.interruptIfQuiet();
     const turn = await Promise.race([this.turnEnd, conn.closed]);
 
     const sessionRef = thread.id;
@@ -178,7 +190,23 @@ class CodexRun {
     }
   }
 
+  /** The host is stopping: the turn is interrupted and the run rejects with `reason` once Codex has saved the thread. */
+  abort(reason: unknown): void {
+    if (this.turnId === null) {
+      // Before the turn starts there is nothing to interrupt; `go` sees the stop once it has the turn's id.
+      this.stop ??= { failure: reason };
+      return;
+    }
+    this.halt(this.turnId, { failure: reason });
+    this.interruptIfQuiet();
+  }
+
   async request(method: string, params: unknown): Promise<unknown> {
+    this.answering++;
+    return this.answer(method, params);
+  }
+
+  private async answer(method: string, params: unknown): Promise<unknown> {
     switch (method) {
       case "item/commandExecution/requestApproval": {
         const p = params as CommandExecutionRequestApprovalParams;
@@ -285,6 +313,12 @@ class CodexRun {
   }
 
   replied(): void {
+    this.answering--;
+    this.interruptIfQuiet();
+  }
+
+  private interruptIfQuiet(): void {
+    if (this.answering > 0) return;
     if (this.interruptTurn === null || this.interrupting || this.finished) return;
     this.interrupting = true;
     this.conn.request("turn/interrupt", { threadId: this.threadId!, turnId: this.interruptTurn } satisfies TurnInterruptParams).catch(() => {});

@@ -94,7 +94,8 @@ export function dshRuntime(config: DshRuntimeConfig): HarnessRuntime {
   return {
     kind: "harness",
     async run(input) {
-      const { ask } = input;
+      const { ask, signal } = input;
+      signal.throwIfAborted();
       const command = config.command ?? "dsh";
       const launcher = config.spawn ?? spawnDsh;
       const version = (await launcher.version(command)).trim();
@@ -107,7 +108,17 @@ export function dshRuntime(config: DshRuntimeConfig): HarnessRuntime {
         throw new Error(`${config.apiKeyEnv} is not set: the dsh agent ${config.model} needs it`);
       }
       const cwd = input.session.workdir ?? config.cwd;
-      return new DshRun(config, input, ask, cwd, launcher, command, config.preset ?? "workspace-write").go();
+      const run = new DshRun(config, input, ask, cwd, launcher, command, config.preset ?? "workspace-write");
+      const onAbort = () => run.abort(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+      try {
+        return await run.go();
+      } catch (err) {
+        // A stop shuts dsh down, which can fail a request still on its way; the stop is the reason the run ended.
+        throw signal.aborted ? signal.reason : err;
+      } finally {
+        signal.removeEventListener("abort", onAbort);
+      }
     },
   };
 }
@@ -195,6 +206,8 @@ class DshRun {
         notification: (method, params) => this.notification(method, params),
         replied: () => this.replied(),
       });
+      // A stop that came while dsh was starting shuts it down now.
+      if (this.stop !== null) this.stopped();
 
       const init: InitializeParams = {
         cwd,
@@ -320,6 +333,13 @@ class DshRun {
     if (verdict === "allow") return { outcome: "allowed-once" };
     this.halt({ deferred: callId });
     return { outcome: "rejected" };
+  }
+
+  /** The host is stopping: dsh is shut down once nothing waits on aoa, and the run rejects with `reason`. */
+  abort(reason: unknown): void {
+    this.halt({ failure: reason });
+    // Before the connection exists there is nothing to shut down yet; `go` sees the stop once it is there.
+    if (this.proc !== null) this.stopped();
   }
 
   /** Ends the run: the reply to the request at hand goes out first, then dsh is shut down. */

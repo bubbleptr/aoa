@@ -354,6 +354,28 @@ describe("piRuntime", () => {
     expect(h.pending()).toBe(1);
   });
 
+  test("the run's signal stops a model request in flight and rejects the run with its reason", async () => {
+    const h = setup();
+    const requested = h.hang();
+    const controller = new AbortController();
+
+    const run = h.runtime.run(runInput({ signal: controller.signal }));
+    await requested;
+    controller.abort(new Error("the host stopped"));
+
+    await expect(run).rejects.toThrow("the host stopped");
+  });
+
+  test("a run whose signal already fired asks the model nothing", async () => {
+    const h = setup();
+    h.script([reply("must not be reached")]);
+    const controller = new AbortController();
+    controller.abort(new Error("the host stopped"));
+
+    await expect(h.runtime.run(runInput({ signal: controller.signal }))).rejects.toThrow("the host stopped");
+    expect(h.pending()).toBe(1);
+  });
+
   test("a model failure rejects the run instead of ending it silent, without the API key", async () => {
     const h = setup();
     h.script([fauxAssistantMessage([], { stopReason: "error", errorMessage: `invalid key ${API_KEY}` })]);

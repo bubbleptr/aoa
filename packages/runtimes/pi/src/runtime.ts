@@ -53,6 +53,7 @@ export function piRuntime(config: PiRuntimeConfig): KernelRuntime {
 }
 
 async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInput): Promise<RunResult> {
+  input.signal.throwIfAborted();
   const model = models.getModel(config.provider, config.modelId);
   if (!model) throw new Error(`pi has no model ${config.provider}/${config.modelId}`);
 
@@ -77,6 +78,10 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     customTools: input.tools.map((t) => toPiTool(t, ids, stop)),
   });
   stop.session = session;
+  // A stop ends the run like a failed invoke: pi aborts the request or tool in flight and saves the transcript.
+  const onAbort = () => stop.fail(input.signal.reason);
+  input.signal.addEventListener("abort", onAbort, { once: true });
+  if (input.signal.aborted) onAbort();
 
   try {
     await session.prompt(renderUserMessage(input, retry), { expandPromptTemplates: false });
@@ -91,6 +96,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     if (failure !== null) throw new Error(`the model request failed: ${failure}`);
     return { end: { kind: "silent" }, sessionRef };
   } finally {
+    input.signal.removeEventListener("abort", onAbort);
     session.dispose();
   }
 }

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { FakeClock, ScriptedRuntime } from "@aoa/conformance";
-import type { Store } from "@aoa/kernel";
+import { appendEvent, type Store } from "@aoa/kernel";
 import { sqliteStore } from "@aoa/store-sqlite";
 import { createHost } from "../src/index.ts";
 
@@ -28,6 +28,21 @@ test("a loop that dies stops the host, so a host with a dead worker does not kee
   agent.wake();
   await host.stopped;
   expect(lines.some((l) => /^the (worker|scheduler) stopped: disk gone$/.test(l))).toBe(true);
+});
+
+test("stop() ends a run that would otherwise never finish", async () => {
+  const store = sqliteStore(":memory:");
+  opened.push(store);
+  const clock = new FakeClock();
+  const host = createHost({ store, clock, log: () => {} });
+  const runtime = new ScriptedRuntime([{ hang: true }]);
+  host.agent({ name: "a", inbox: "in", runtime, debounceMs: 0 });
+  appendEvent({ store, clock, inboxId: "in" }, { source: "user_message", dedupeKey: "m1", payload: { text: "go" }, thread: "t", trusted: true });
+  host.start();
+  await runtime.started(1);
+
+  await host.stop();
+  expect(runtime.runs[0]!.input.signal.aborted).toBe(true);
 });
 
 test("a host runs once: starting it again is an error", async () => {

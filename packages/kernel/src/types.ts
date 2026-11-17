@@ -108,6 +108,11 @@ export type ToolExecContext = {
   callId: CallId;
   /** The session's working directory (for a coding task, its worktree), if it has one. */
   workdir: string | null;
+  /**
+   * Fires when the host stops. A long tool (a shell command) stops with it; what it throws then is not recorded as
+   * the call's result, so the call's outcome is unknown, as after a crash.
+   */
+  signal: AbortSignal;
 };
 
 /** A tool as handed to the runtime: every call goes through the kernel's journal. */
@@ -131,6 +136,11 @@ export type RunInput = {
    * `result` tells the model to make the same call again, which `ask` then allows once.
    */
   answer?: { callId: CallId; tool: string; args: unknown; verdict: "approve" | "deny"; text?: string; result?: ToolResult };
+  /**
+   * Fires when the host stops. The runtime stops its model requests and its harness (letting the harness save its
+   * session first) and throws. The kernel puts the run's events back without counting the stop as a failure's delay.
+   */
+  signal: AbortSignal;
 };
 
 /**

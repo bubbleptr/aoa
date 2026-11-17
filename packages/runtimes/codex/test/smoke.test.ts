@@ -48,6 +48,7 @@ test.skipIf(process.env.AOA_CODEX_SMOKE !== "1")(
       resident: "",
       tools: [notify],
       ask: async () => "allow",
+      signal: new AbortController().signal,
     });
     const runtime = codexRuntime({ developerInstructions: "You are a test agent. Do exactly what the user asks.", cwd: dir });
     try {

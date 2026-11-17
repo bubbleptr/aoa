@@ -32,6 +32,7 @@ function runInput(over: Partial<HarnessRunInput> = {}): HarnessRunInput {
     resident: "",
     tools: [],
     ask: async () => "allow",
+    signal: new AbortController().signal,
     ...over,
   };
 }
@@ -287,6 +288,35 @@ describe("codexRuntime", () => {
       await setup(fake).run(runInput({ tools: [notify.tool] }));
 
       expect(fake.serverRequests[0]!.reply).toEqual({ contentItems: [{ type: "inputText", text: "Blocked by policy: no." }], success: false });
+    });
+
+    test("the run's signal interrupts the turn; once Codex confirms, the run rejects with its reason", async () => {
+      let inTurn = () => {};
+      const started = new Promise<void>((resolve) => (inTurn = resolve));
+      const fake = new FakeAppServer([
+        async (t) => {
+          inTurn();
+          await t.interrupted;
+        },
+      ]);
+      const controller = new AbortController();
+
+      const run = setup(fake).run(runInput({ signal: controller.signal }));
+      await started;
+      controller.abort(new Error("the host stopped"));
+
+      await expect(run).rejects.toThrow("the host stopped");
+      expect(fake.sent("turn/interrupt")).toEqual([{ threadId: "thread-1", turnId: "turn-1" }]);
+      expect(fake.live).toBe(0);
+    });
+
+    test("a run whose signal already fired starts no Codex", async () => {
+      const fake = new FakeAppServer();
+      const controller = new AbortController();
+      controller.abort(new Error("the host stopped"));
+
+      await expect(setup(fake).run(runInput({ signal: controller.signal }))).rejects.toThrow("the host stopped");
+      expect(fake.received).toEqual([]);
     });
 
     test("a deferred call interrupts the turn and ends the run deferred", async () => {

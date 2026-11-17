@@ -179,4 +179,4 @@ describe("poll", () => {
   });
 });
 
-const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1" };
+const ctx = { sessionId: "s1", callId: "c1", workdir: "/work/s1", signal: new AbortController().signal };

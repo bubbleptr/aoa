@@ -89,5 +89,18 @@ for (const [name, factory] of storeFactories) {
       expect(runtime.runs[0]!.input.session.ref).toBeNull();
       expect(runtime.runs[1]!.input.session).toMatchObject({ id: sessionOf(runtime), resumed: true, ref: "thread-abc" });
     });
+
+    test("6: on stop the signal fires, the harness ends the run, and the events wait for the next start", async () => {
+      const runtime = harness([{ hang: true }]);
+      const { id } = start();
+      const worker = h.worker({ runtime });
+      const draining = worker.drain();
+      await runtime.started(1);
+      worker.stop();
+      await draining;
+
+      expect(runtime.runs[0]!.input.signal.aborted).toBe(true);
+      expect(h.store.tx((t) => t.getEvent(id))?.status).toBe("pending");
+    });
   });
 }

@@ -58,6 +58,7 @@ function runInput(over: Partial<HarnessRunInput> = {}): HarnessRunInput {
     resident: "",
     tools: [],
     ask: async () => "allow",
+    signal: new AbortController().signal,
     ...over,
   };
 }
@@ -622,5 +623,39 @@ describe("dshRuntime: the patch and the child", () => {
 
     expect(fake.patch()).toContain("- id: sandbox-policy\n  config:\n    mode: workspace-write\n");
     expect(fake.patch()).toContain("- id: approval\n  config:\n    policy: ask\n");
+  });
+});
+
+describe("dshRuntime: stopping", () => {
+  test("the run's signal shuts dsh down, letting it save the session, and the run rejects with its reason", async () => {
+    let inTurn = () => {};
+    const started = new Promise<void>((resolve) => (inTurn = resolve));
+    const fake = new FakeDshServer([
+      async () => {
+        inTurn();
+        await new Promise(() => {});
+      },
+    ]);
+    const { runtime } = setup(fake);
+    const controller = new AbortController();
+
+    const run = runtime.run(runInput({ signal: controller.signal }));
+    await started;
+    controller.abort(new Error("the host stopped"));
+
+    await expect(run).rejects.toThrow("the host stopped");
+    expect(fake.sent("shutdown")).toHaveLength(1);
+    expect(fake.kills).toEqual([]);
+    expect(fake.live).toBe(0);
+  });
+
+  test("a run whose signal already fired starts no dsh", async () => {
+    const fake = new FakeDshServer();
+    const { runtime } = setup(fake);
+    const controller = new AbortController();
+    controller.abort(new Error("the host stopped"));
+
+    await expect(runtime.run(runInput({ signal: controller.signal }))).rejects.toThrow("the host stopped");
+    expect(fake.launches).toEqual([]);
   });
 });
