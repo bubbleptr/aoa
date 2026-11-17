@@ -106,6 +106,28 @@ test("status, the web snapshot and serve say a dsh agent runs on dsh with its ow
   expect(line).toContain("~/.aoa");
 });
 
+test("a resumed dsh session is set back to aoa's permission preset before it is prompted", async () => {
+  const fake = new FakeDshServer([
+    async (t) => {
+      await t.toolCall("call-1", "mcp__aoa__notify", { body: "one" });
+      await t.mcp("notify", { body: "one" });
+    },
+  ]);
+  const w = await world(fake);
+  await w.cli("send", "--agent", "coder", "First.");
+  await w.drain("coder");
+  // A new session takes the preset from the patch; nothing is switched.
+  expect(fake.sent("session/query")).toEqual([]);
+
+  await w.cli("send", "--to", w.sessions("coder")[0]!.id.slice(0, 8), "Second.");
+  await w.drain("coder");
+
+  expect(w.sessions("coder")).toHaveLength(1);
+  expect(fake.sent("session/query")).toEqual([
+    { sessionId: w.sessions("coder")[0]!.runtimeRef!, contentBlocks: [{ type: "text", text: "/permission workspace-write" }] },
+  ]);
+});
+
 test("a dsh agent's model and key are the ones the harness is started with", async () => {
   const fake = new FakeDshServer();
   const w = await world(fake);

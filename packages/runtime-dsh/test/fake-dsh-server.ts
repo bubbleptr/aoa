@@ -102,6 +102,10 @@ export class FakeDshServer {
   waitError: string | null = null;
   /** What `shutdown` answers: an error, when teardown fails. The process still exits. */
   shutdownError: string | null = null;
+  /** What `/permission` answers, when it is not the usual success. */
+  permission: { kind: "success"; text?: string } | { kind: "error"; text: string } = { kind: "success" };
+  /** Whether the profile has the /permission command at all; without it dsh treats the line as a prompt. */
+  hasPermissionCommand = true;
   live = 0;
   private turns = 0;
 
@@ -232,6 +236,14 @@ export class FakeDshServer {
             reply({ messageId: `msg-${this.turns + 1}` });
             void runTurn(m.params.sessionId, text);
             return;
+          }
+          case "session/query": {
+            const line = (m.params.contentBlocks as { type: string; text?: string }[]).map((b) => b.text ?? "").join("");
+            if (!this.hasPermissionCommand || !line.startsWith("/permission")) {
+              // No such command: the line is queued as an ordinary prompt, which is not what aoa wanted.
+              return reply({ kind: "prompt", messageId: `msg-${this.turns + 1}` });
+            }
+            return reply({ kind: "command", execution: { commandId: `cmd-${++seq}`, result: this.permission } });
           }
           case "session/wait":
             if (this.waitError !== null) return send({ jsonrpc: "2.0", id: m.id, error: { code: -32603, message: this.waitError } });

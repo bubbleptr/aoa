@@ -126,11 +126,63 @@ describe("dshRuntime: sessions", () => {
     const result = await runtime.run(runInput({ session: { id: "session-1", resumed: true, ref: "sess-77", workdir: null } }));
 
     expect(fake.launches[0]!.cwd).toBe("/repo");
-    expect(fake.received.map((m) => m.method)).toEqual(["initialize", "session/resume", "session/prompt", "session/wait", "shutdown"]);
+    expect(fake.received.map((m) => m.method)).toEqual(["initialize", "session/resume", "session/query", "session/prompt", "session/wait", "shutdown"]);
     expect(fake.sent("session/resume")).toEqual([{ sessionId: "sess-77" }]);
     expect(fake.sent("session/prompt")[0].sessionId).toBe("sess-77");
     expect(fake.sent("initialize")[0].model).toBe("deepseek-pro");
     expect(result.sessionRef).toBe("sess-77");
+  });
+
+  test("a resumed session is set to the configured permission preset before it is prompted", async () => {
+    // A session started under a wider preset keeps it when it is resumed: dsh stores the sandbox and
+    // approval policy with the session and they win over the patch's defaults. aoa therefore switches the
+    // resumed session back to what the config says now, through dsh's own /permission command.
+    const fake = new FakeDshServer();
+    const wide = setup(fake, { preset: "danger-full-access" });
+    const first = await wide.runtime.run(runInput());
+
+    expect(fake.patches[0]).toContain("    mode: danger-full-access\n");
+    expect(fake.patches[0]).toContain("    policy: never\n");
+    // A new session takes the patch's defaults, so nothing has to be switched.
+    expect(fake.sent("session/query")).toEqual([]);
+
+    const narrow = setup(fake, { preset: "workspace-write" });
+    const second = await narrow.runtime.run(
+      runInput({ session: { id: "session-1", resumed: true, ref: first.sessionRef!, workdir: null } }),
+    );
+
+    expect(fake.patches[1]).toContain("    mode: workspace-write\n");
+    expect(fake.patches[1]).toContain("    policy: ask\n");
+    expect(fake.sent("session/query")).toEqual([
+      { sessionId: first.sessionRef!, contentBlocks: [{ type: "text", text: "/permission workspace-write" }] },
+    ]);
+    const methods = fake.received.map((m) => m.method);
+    expect(methods.lastIndexOf("session/resume")).toBeLessThan(methods.lastIndexOf("session/query"));
+    expect(methods.lastIndexOf("session/query")).toBeLessThan(methods.lastIndexOf("session/prompt"));
+    expect(second.sessionRef).toBe(first.sessionRef);
+    expect(second.end).toEqual({ kind: "silent" });
+  });
+
+  test("a profile without dsh's /permission command fails the resume instead of prompting on", async () => {
+    const fake = new FakeDshServer();
+    fake.hasPermissionCommand = false;
+    const { runtime } = setup(fake);
+
+    await expect(runtime.run(runInput({ session: { id: "session-1", resumed: true, ref: "sess-1", workdir: null } }))).rejects.toThrow(
+      /no \/permission command/,
+    );
+    expect(fake.sent("session/prompt")).toEqual([]);
+  });
+
+  test("dsh refusing the permission preset fails the run with its reason", async () => {
+    const fake = new FakeDshServer();
+    fake.permission = { kind: "error", text: "unknown preset \"read-only\"" };
+    const { runtime } = setup(fake);
+
+    await expect(runtime.run(runInput({ session: { id: "session-1", resumed: true, ref: "sess-1", workdir: null } }))).rejects.toThrow(
+      /unknown preset/,
+    );
+    expect(fake.sent("session/prompt")).toEqual([]);
   });
 
   test("the child environment carries what dsh needs and the key, not the rest of aoa's environment", async () => {
