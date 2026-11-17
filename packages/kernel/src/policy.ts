@@ -39,15 +39,15 @@ export async function decide(policy: PolicyConfig | undefined, call: ToolCall, c
   const risk = policy.risk[call.tool] ?? "high";
   if (risk === "low") return { decision: "allow", basis: "risk:low" };
   if (risk === "high") return { decision: "defer", basis: "risk:high" };
-  if (!policy.classify) return { decision: "defer", basis: "classifier:missing" };
+  if (!policy.classify) return { decision: "defer", basis: "reviewer:missing" };
   let verdict: string;
   try {
     verdict = await policy.classify(call, ctx);
   } catch {
-    return { decision: "defer", basis: "classifier:error" };
+    return { decision: "defer", basis: "reviewer:error" };
   }
   const decision: Decision = verdict === "allow" ? "allow" : verdict === "block" ? "block" : "defer";
-  return { decision, basis: `classifier:${verdict}` };
+  return { decision, basis: `reviewer:${verdict}` };
 }
 
 // The rules below compare text, which a determined caller can evade (design §6). They are built so that

@@ -412,7 +412,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
       return j ? { model: j.model, p: j.p, error: j.error, latencyMs: j.latencyMs } : null;
     };
     const classifierVerdict = (basis: string): "allow" | "block" | "unsure" | null => {
-      const match = /^classifier:(allow|block|unsure)$/.exec(basis);
+      const match = /^(?:reviewer|classifier):(allow|block|unsure)$/.exec(basis);
       return (match?.[1] as "allow" | "block" | "unsure" | undefined) ?? null;
     };
     const verdictOf = new Map<string, "allow" | "block" | "unsure">();
@@ -537,7 +537,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
           answered: queuedAnswer(d.callId),
         })),
         last24h,
-        recent: recentlyDecided(dayDecisions, (basis) => basis.startsWith("classifier:"))
+        recent: recentlyDecided(dayDecisions, (basis) => /^(?:reviewer|classifier):/.test(basis))
           .map((d) => ({
             ...d,
             args: argsOf.get(d.callId) ?? null,

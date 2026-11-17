@@ -49,7 +49,7 @@ describe("file tools and the worktree", () => {
 describe("risk tiers", () => {
   test("bash and git_push are medium, so without a classifier they wait; unknown tools are high", async () => {
     expect(await decision("bash", { command: "bun test" })).toBe("defer");
-    expect((await decide(policy, { tool: "bash", args: { command: "bun test" } }, ctx)).basis).toBe("classifier:missing");
+    expect((await decide(policy, { tool: "bash", args: { command: "bun test" } }, ctx)).basis).toBe("reviewer:missing");
     expect((await decide(policy, { tool: "deploy", args: {} }, ctx)).basis).toBe("risk:high");
     expect(await decision("github_open_pr", { title: "t", body: "b", head: "aoa/x" })).toBe("allow");
   });
@@ -80,7 +80,7 @@ describe("local mode: no pushing without the user", () => {
   test("other git commands go to the classifier as before", async () => {
     expect(await decide(local, { tool: "bash", args: { command: "git commit -qm 'push the button'" } }, ctx)).toEqual({
       decision: "allow",
-      basis: "classifier:allow",
+      basis: "reviewer:allow",
     });
   });
 });

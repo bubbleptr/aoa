@@ -56,7 +56,7 @@ describe("snapshot", () => {
     ]);
 
     const [waiting] = s.permissions.waiting;
-    expect(waiting).toMatchObject({ tool: "bash", basis: "classifier:unsure", sessionId: session });
+    expect(waiting).toMatchObject({ tool: "bash", basis: "reviewer:unsure", sessionId: session });
     expect(waiting!.args).toContain("echo deployed");
     expect(waiting!.answer).toBe(`aoa answer ${waiting!.callId} approve|deny`);
     expect(s.permissions.last24h).toEqual({ allow: 2, defer: 1, block: 0 });

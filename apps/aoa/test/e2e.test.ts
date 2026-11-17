@@ -143,7 +143,7 @@ describe("end to end", () => {
     expect(readFileSync(join(workdir, "deploy.log"), "utf8")).toBe("deployed\n");
     const decisions = w.agent.store.tx((t) => t.listDecisions(session!.id));
     expect(decisions.map((d) => [d.tool, d.decision, d.basis])).toEqual([
-      ["bash", "defer", "classifier:unsure"],
+      ["bash", "defer", "reviewer:unsure"],
       ["bash", "allow", "user approved"],
     ]);
     await w.dispatch();

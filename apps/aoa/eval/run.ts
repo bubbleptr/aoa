@@ -254,7 +254,7 @@ function printTable(rows: [string, ReturnType<typeof summarize>][]) {
 
 /** Replayed routing against what was recorded, for the real calls: a mismatch means the replay is not the app. */
 function replayCheck(outcomes: Outcome[]) {
-  const tier = (basis: string) => (basis.startsWith("classifier") ? "classifier" : basis);
+  const tier = (basis: string) => (/^(?:reviewer|classifier):/.test(basis) ? "classifier" : basis);
   const mismatches = new Map<string, number>();
   let same = 0;
   for (const o of outcomes) {

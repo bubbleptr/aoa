@@ -46,7 +46,7 @@ test("a medium call gets one judgment row, and the classifier's verdict stays th
   expect(judgment!.latencyMs).toBeGreaterThanOrEqual(0);
   expect(judgment!.callId).toBe(decisions(w)[0]!.callId);
   // The classifier allowed the call, so it ran, despite Jev's p of 0.01.
-  expect(decisions(w).map((d) => [d.decision, d.basis])).toEqual([["allow", "classifier:allow"]]);
+  expect(decisions(w).map((d) => [d.decision, d.basis])).toEqual([["allow", "reviewer:allow"]]);
   expect(w.jev.requests).toHaveLength(1);
 });
 
@@ -68,7 +68,7 @@ describe("a failed Jev", () => {
 
     const [judgment] = w.judgments();
     expect(judgment).toMatchObject({ p: null, error: expect.stringMatching(error) });
-    expect(decisions(w).map((d) => d.basis)).toContain("classifier:allow");
+    expect(decisions(w).map((d) => d.basis)).toContain("reviewer:allow");
     expect(w.logs.some((line) => line.includes("Jev"))).toBe(true);
   });
 
@@ -81,7 +81,7 @@ describe("a failed Jev", () => {
     await w.cli("send", "Build it.");
     await w.drain();
     // The run ended with the classifier's answer while Jev was still silent.
-    expect(decisions(w).map((d) => d.basis)).toContain("classifier:allow");
+    expect(decisions(w).map((d) => d.basis)).toContain("reviewer:allow");
     expect(w.judgments()).toHaveLength(0);
 
     w.advance(5_000);
@@ -206,4 +206,20 @@ test("the snapshot carries the judgments and the 7-day verdict-by-bucket summary
   const denied = observe(w).permissions.recent.find((row) => row.callId === waiting.callId)!;
   expect(denied).toMatchObject({ classifier: "unsure", userAnswer: "deny" });
   expect(denied.jev).toMatchObject({ p: 0.2 });
+});
+
+test("decisions recorded before the reviewer was named still show as its verdicts", async () => {
+  const w = await world();
+  w.judge = () => "unsure";
+  w.script([call("bash", { command: "echo hi >> log.txt" }), say("Done.")]);
+  await w.cli("send", "Do one.");
+  await w.drain();
+  const [session] = w.sessions();
+  w.agent.store.tx((t) =>
+    t.recordDecision({ callId: "legacy-call", sessionId: session!.id, tool: "bash", decision: "block", basis: "classifier:block", at: w.clock.now() }),
+  );
+
+  const recent = observe(w).permissions.recent;
+  expect(recent.find((row) => row.callId === session!.pending)).toMatchObject({ basis: "reviewer:unsure", classifier: "unsure" });
+  expect(recent.find((row) => row.callId === "legacy-call")).toMatchObject({ classifier: "block" });
 });

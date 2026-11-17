@@ -209,15 +209,15 @@ describe("decision order", () => {
 
   test("a medium tool goes to the classifier; unsure, throwing or missing means wait", async () => {
     const withClassifier = (classify: PolicyConfig["classify"]): PolicyConfig => ({ risk: { deploy: "medium" }, classify });
-    expect(await decide(withClassifier(async () => "allow"), call, clean)).toMatchObject({ decision: "allow", basis: "classifier:allow" });
-    expect(await decide(withClassifier(async () => "block"), call, clean)).toMatchObject({ decision: "block", basis: "classifier:block" });
-    expect(await decide(withClassifier(async () => "unsure"), call, clean)).toMatchObject({ decision: "defer", basis: "classifier:unsure" });
+    expect(await decide(withClassifier(async () => "allow"), call, clean)).toMatchObject({ decision: "allow", basis: "reviewer:allow" });
+    expect(await decide(withClassifier(async () => "block"), call, clean)).toMatchObject({ decision: "block", basis: "reviewer:block" });
+    expect(await decide(withClassifier(async () => "unsure"), call, clean)).toMatchObject({ decision: "defer", basis: "reviewer:unsure" });
     expect(
       await decide(withClassifier(async () => {
         throw new Error("model down");
       }), call, clean),
-    ).toMatchObject({ decision: "defer", basis: "classifier:error" });
-    expect(await decide(withClassifier(undefined), call, clean)).toMatchObject({ decision: "defer", basis: "classifier:missing" });
+    ).toMatchObject({ decision: "defer", basis: "reviewer:error" });
+    expect(await decide(withClassifier(undefined), call, clean)).toMatchObject({ decision: "defer", basis: "reviewer:missing" });
   });
 
   test("the classifier sees whether the session is tainted", async () => {

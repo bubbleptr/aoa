@@ -15,7 +15,7 @@ test("without a classifier, an untainted session's first ordinary command alread
   expect(session).toMatchObject({ tainted: false, status: "paused" });
   expect(w.runs().map((r) => r.end?.kind)).toEqual(["deferred"]);
   const decisions = w.agent.store.tx((t) => t.listDecisions(session!.id));
-  expect(decisions.map((d) => [d.tool, d.decision, d.basis])).toEqual([["bash", "defer", "classifier:missing"]]);
+  expect(decisions.map((d) => [d.tool, d.decision, d.basis])).toEqual([["bash", "defer", "reviewer:missing"]]);
   // The run stopped at the commit; `bun test` was never even proposed.
   expect(w.pendingSteps()).toBe(2);
 });
