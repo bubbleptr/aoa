@@ -4,12 +4,12 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.png">
-  <img alt="aoa 架构：事件进入内核的 inbox，worker 开一次 run 交给 runtime，工具调用经过权限，消息从 outbox 送回；状态存在 SQLite；runtime 分第一档 pi 和第二档 Codex、dsh" src="docs/architecture-light.png">
+  <img alt="aoa 架构：事件进入内核的 inbox，worker 开一次 run 交给 runtime，工具调用经过权限，消息从 outbox 送回；状态存在 SQLite；runtime 有内置的 pi 和外部 harness Codex、dsh" src="docs/architecture-light.png">
 </picture>
 
 - **五个原语**都在内核里：Inbox 收事件，Timers 到点唤醒，Memory 跨 run 保留指令、笔记、进度和已发消息，Permissions 决定每次工具调用能不能做，Outbox 发消息并重试送达。所有状态都在一个 SQLite 文件里，进程崩溃后能接着做。
 - **Worker** 认领一批事件，开一次 run 交给 runtime，再记下这次 run 的结局。
-- **Runtime 分两档。** 第一档 pi 只有 aoa 给的工具，每次调用都由内核裁决和记录。第二档 Codex、dsh 用它们自己的工具和沙箱，它们要问的审批会转给你；aoa 自己的工具仍然走内核。
+- **Runtime 分两类。** Built-in 的 pi 只有 aoa 给的工具，每次调用都由内核裁决和记录。外部 harness Codex、dsh 用它们自己的工具和沙箱，它们要问的审批会转给你；aoa 自己的工具仍然走内核。
 - 你通过 CLI、MCP 或 GitHub issue 交代任务；本地模式的消息写进 `messages.md` 并弹桌面通知，GitHub 模式发在 issue 和 PR 上。
 
 设计见 [docs/design.md](docs/design.md)，规范见 [docs/spec.md](docs/spec.md)。
@@ -75,7 +75,7 @@ agents: {
 
 | | pi | Codex | dsh（DeepSeek Harness） |
 |---|---|---|---|
-| 档位 | 第一档 | 第二档 | 第二档 |
+| 类型 | Built-in | 外部 harness | 外部 harness |
 | 谁决定工具调用 | aoa 决定每一次 | Codex 的审批和沙箱设置，它要问的转给你 | `dsh.preset` 定的沙箱和审批，它要问的转给你 |
 | 怎么接 | 进程内的 pi 会话 | 每次 run 起一个 `codex app-server` | 每次 run 起一个 `dsh --profile sdk` |
 | aoa 自己的工具 | 直接给 pi | 动态工具 | 只监听 127.0.0.1 的 MCP 桥 |
@@ -90,7 +90,7 @@ agents: {
 },
 ```
 
-两个第二档的共同点：
+两个外部 harness 的共同点：
 - 它们要问的审批会变成 aoa 的审批请求；你批准后，它们再做一次同样的操作，这次直接放行，许可只用一次。
 - 它们不问就能做的事，aoa 看不到，也拦不住。aoa 的推送规则、`~/.aoa` 规则和 worktree 边界对它们自己的工具不起作用；`serve` 启动时会为每个这样的 agent 提醒一次。
 
