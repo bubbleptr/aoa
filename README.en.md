@@ -60,10 +60,10 @@ With a review agent configured, the implementation agent hands its branch over w
 
 ### Picking up after a crash
 
-- The five stores and the supporting tables are all in one SQLite file, so ATOMIC in the spec is one transaction: the run's outcome, the session update and marking the events done commit together.
-- Workers are kept apart by leases in the database, not by in-process locks: a claim is one transaction that succeeds only when the inbox has no unexpired lease. A failed batch of events is retried after 30 seconds and then 2 minutes; after three attempts it stops in `dead`, where `aoa status` shows it.
-- Before a tool runs, its intent is recorded in `tool_journal`. On recovery, a call with an intent but no result is not rerun; instead "result unknown, check before deciding" is handed back to the agent as the tool result.
-- Events are deduplicated by `(inbox, source, dedupe_key)`; the GitHub polling cursor is saved in the same transaction as the events, so a crash costs at most one extra poll. Failed outbox deliveries back off at 1, 2, 4 and 8 minutes.
+- **All state is in one SQLite file, so the process can be killed at any time.** When a run ends, its result, the session and "these events are done" are written in one transaction. If `serve` crashes and restarts, unfinished events are still in the inbox and get picked up again.
+- **One inbox is handled by one worker at a time.** A worker records an expiry in the database when it takes events; if it hasn't finished by then, the attempt counts as failed. Failed events are retried after 30 seconds and 2 minutes, and after three failures they stop and show up in `aoa status`.
+- **A rerun doesn't execute a tool twice.** Before a tool runs, aoa makes a note; when a rerun meets a call that was noted but has no result, it doesn't execute it again and tells the agent "result unknown, check before deciding" instead.
+- **Events and messages aren't duplicated.** Events entering the inbox are deduplicated by source; failed outbox deliveries are retried after 1, 2, 4 and 8 minutes.
 
 ### Conformance tests
 
