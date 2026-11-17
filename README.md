@@ -208,6 +208,7 @@ Bun + TypeScript 的 monorepo。
 ```bash
 bun test               # 全部测试，不调用真实模型
 bun run typecheck
+bun scripts/diagrams/build.ts   # 从 docs/diagrams/boards 重新生成 README 里的图（需要 Chrome）
 AOA_CODEX_SMOKE=1 bun test packages/runtime-codex/test/smoke.test.ts   # 真实 Codex，会消耗额度
 AOA_DSH_SMOKE=1 bun test packages/runtime-dsh/test/smoke.test.ts       # 真实 dsh 和 DeepSeek key
 ```

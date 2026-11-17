@@ -208,6 +208,7 @@ A Bun + TypeScript monorepo.
 ```bash
 bun test               # all tests, no real models called
 bun run typecheck
+bun scripts/diagrams/build.ts   # rebuild the README diagrams from docs/diagrams/boards (needs Chrome)
 AOA_CODEX_SMOKE=1 bun test packages/runtime-codex/test/smoke.test.ts   # real Codex, uses quota
 AOA_DSH_SMOKE=1 bun test packages/runtime-dsh/test/smoke.test.ts       # real dsh and a DeepSeek key
 ```
