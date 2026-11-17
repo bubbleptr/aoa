@@ -761,7 +761,7 @@ function renderRuntime() {
     a.permissionOwner !== "harness"
       ? "aoa decides every tool call"
       : a.role === "review"
-        ? "Codex, in its read-only sandbox; it asks nothing"
+        ? "Codex decides its own tools; its auto review answers what it asks"
         : "Codex decides its own tools; aoa relays what it asks";
 }
 

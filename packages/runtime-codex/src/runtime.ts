@@ -36,10 +36,10 @@ export type CodexRuntimeConfig = {
   /** Working directory for sessions that have no workdir of their own. */
   cwd: string;
   /**
-   * Runs every thread in Codex's read-only sandbox with approvals off, for a review agent: aoa's read-only rules do
-   * not reach Codex's own tools, so Codex's sandbox enforces them, and nothing it asks for reaches the user.
+   * Routes Codex's approval requests to its own auto-review subagent instead of the user, for an agent whose work
+   * should not stop on the user (a reviewer). The sandbox and approval policy stay the user's Codex settings.
    */
-  readOnly?: boolean;
+  autoReview?: boolean;
   /** Starts the app server; tests hand in a scripted one. */
   spawn?: SpawnCodex;
 };
@@ -122,8 +122,8 @@ class CodexRun {
 
     const { ref } = this.input.session;
     const model = this.config.model === undefined ? {} : { model: this.config.model };
-    const readOnly = this.config.readOnly ? ({ sandbox: "read-only", approvalPolicy: "never" } as const) : {};
-    const common = { cwd: this.cwd, developerInstructions: this.config.developerInstructions, ...model, ...readOnly };
+    const reviewer = this.config.autoReview ? ({ approvalsReviewer: "auto_review" } as const) : {};
+    const common = { cwd: this.cwd, developerInstructions: this.config.developerInstructions, ...model, ...reviewer };
     const { thread } =
       ref === null
         ? await conn.request<ThreadResponse>("thread/start", {
@@ -221,7 +221,7 @@ class CodexRun {
 
   /** Asks the kernel's gate; anything but `allow` ends the run. Once the run is ending, nothing more is asked. */
   private async gate(turnId: string, key: string, tool: string, args: unknown, reason?: string | null): Promise<boolean> {
-    if (this.stop || this.config.readOnly) return false;
+    if (this.stop) return false;
     const callId = this.callId(turnId, key);
     let verdict: "allow" | "defer";
     try {

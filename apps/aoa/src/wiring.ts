@@ -282,7 +282,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
 
   const reviewers = s.roster.filter((a) => a.role === "review").map((a) => a.name);
   const rolePrompt = review
-    ? reviewPrompt(config.repo.base)
+    ? reviewPrompt(config.repo.base, spec.runtime === "pi")
     : reviewers.length > 0
       ? `${front.systemPrompt}\n\n${handOffPrompt(reviewers)}`
       : front.systemPrompt;
@@ -303,8 +303,8 @@ function assembleOne(spec: Spec, s: Shared): Agent {
           developerInstructions: systemPrompt,
           cwd: paths.repo,
           ...(spec.model === undefined ? {} : { model: spec.model }),
-          // aoa's read-only rules do not reach Codex's own tools, so a reviewer gets Codex's read-only sandbox instead.
-          readOnly: review,
+          // A reviewer's verdict is advice and it cannot ask the user, so Codex's own auto review answers what Codex asks.
+          autoReview: review,
           ...(seams.spawnCodex ? { spawn: seams.spawnCodex } : {}),
         });
   const permissions = permissionOwner(spec.runtime);

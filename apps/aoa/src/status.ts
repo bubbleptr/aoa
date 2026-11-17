@@ -109,7 +109,7 @@ export const branchColumns = (branchOf: ((sessionId: string) => string) | null):
 };
 
 /** What runs an agent, and whether aoa or that runtime's harness decides its own tool calls (design §12). */
-export type AgentRuntimeRow = { name: string; runtime: "pi" | "codex"; permissionOwner: "kernel" | "harness"; readOnly: boolean };
+export type AgentRuntimeRow = { name: string; runtime: "pi" | "codex"; permissionOwner: "kernel" | "harness"; autoReview: boolean };
 
 export type StatusReport = {
   agents: AgentRuntimeRow[];
@@ -245,6 +245,6 @@ export function resolveCallId(callIds: string[], prefix: string): string {
 const permissionText = (a: AgentRuntimeRow): string =>
   a.permissionOwner === "kernel"
     ? "aoa decides every tool call"
-    : a.readOnly
-      ? "Codex, in its read-only sandbox; it asks nothing"
+    : a.autoReview
+      ? "Codex decides its own tools; its auto review answers what it asks"
       : "Codex decides its own tools; aoa relays what it asks";
