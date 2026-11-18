@@ -216,6 +216,8 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 2026-11-18 起 `@aoa-dev/kernel`、`@aoa-dev/sdk`、`@aoa-dev/store-sqlite` 可以被别的仓库安装：去掉 `private`，版本 0.1.0，只支持 Bun（≥ 1.3），包里直接是 `.ts` 源码，打包时 `workspace:*` 换成真实版本。pi 的三个依赖（`pi-ai`、`pi-coding-agent`、`typebox`）改成可选的 peer 依赖，只有 `@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 要它们；`@aoa-dev/sdk/prompt` 里 pi 工具结果的类型改为自己写出，不再从 pi 引。`packages/sdk/test/install.test.ts` 把三个包打成 tarball，装进仓库外的空目录，跑通并类型检查一个只用公开入口的小程序，且确认没装进任何别的包。还没发布到 npm。
 
+2026-11-18 加了 `agent.abort(sessionId)`（应 Domo 的对接要求）：经这次 run 的 `signal` 停下正在服务这个 session 的 run，走和 `host.stop()` 一样的路径，事件回到 `pending`、不计入死信上限，worker 接着跑，下一次 run 连同期间新到的事件一起拿到。run 的 `error` 是 `interrupted: the run was aborted`，和宿主停下的区分开。没有这个 session 的 run 在跑时返回 false。调用方先追加新指令再 `abort`，新指令就在下一次 run 里。只停得了本进程里的 run。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |
