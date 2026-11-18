@@ -23,6 +23,8 @@ export type RunScript = {
   hang?: true;
   /** Thrown after the calls: an ordinary runtime failure. */
   fail?: Error;
+  /** Final plain-text reply returned on `RunResult.reply` (for `reply: "final_text"` mode). */
+  reply?: string;
   end?: RunEnd;
   sessionRef?: string;
 };
@@ -80,7 +82,11 @@ export class ScriptedRuntime {
         });
       }
       if (script.fail) throw script.fail;
-      return { end: script.end ?? { kind: "silent" }, sessionRef: script.sessionRef };
+      return {
+        end: script.end ?? { kind: "silent" },
+        sessionRef: script.sessionRef,
+        ...(script.reply === undefined ? {} : { reply: script.reply }),
+      };
     } finally {
       this.active--;
     }

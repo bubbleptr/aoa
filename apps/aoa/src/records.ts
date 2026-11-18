@@ -53,35 +53,61 @@ type JudgmentRow = {
   at: number;
 };
 
+const APP_MIGRATIONS = [
+  `
+  CREATE TABLE IF NOT EXISTS pull_states (
+    session_id TEXT PRIMARY KEY REFERENCES sessions (id),
+    number     INTEGER NOT NULL,
+    state      TEXT NOT NULL CHECK (state IN ('open', 'merged', 'closed')),
+    checked_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS declared_results (
+    session_id TEXT PRIMARY KEY REFERENCES sessions (id),
+    result     TEXT NOT NULL CHECK (result IN ('merged', 'discarded')),
+    applied    INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS judgments (
+    call_id    TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions (id),
+    model      TEXT NOT NULL,
+    p          REAL,
+    latency_ms INTEGER NOT NULL,
+    error      TEXT,
+    at         INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS judgments_at ON judgments (at);
+  `,
+];
+
 /**
- * On the store's own connection, so a write here never waits on the store's transaction; each write is a store
- * transaction, so the store's `watch` (and the observation page) sees it like any other.
+ * On the store's own connection via `store.app`, so a write here never waits on the store's transaction; each write
+ * runs inside a store transaction, so the store's `watch` (and the observation page) sees it like any other.
  */
 export function records(store: SqliteStore): Records {
-  const { db } = store;
-  const getPull = db.query<{ number: number; state: PullState["state"]; checked_at: number }, [string]>(
+  const app = store.app({ namespace: "aoa", migrations: APP_MIGRATIONS });
+  const getPull = app.db.query<{ number: number; state: PullState["state"]; checked_at: number }, [string]>(
     "SELECT number, state, checked_at FROM pull_states WHERE session_id = ?",
   );
-  const setPull = db.query(
+  const setPull = app.db.query(
     `INSERT INTO pull_states (session_id, number, state, checked_at) VALUES ($session, $number, $state, $at)
      ON CONFLICT (session_id) DO UPDATE SET number = excluded.number, state = excluded.state, checked_at = excluded.checked_at`,
   );
-  const getResult = db.query<{ result: DeclaredResult["result"]; applied: number }, [string]>(
+  const getResult = app.db.query<{ result: DeclaredResult["result"]; applied: number }, [string]>(
     "SELECT result, applied FROM declared_results WHERE session_id = ?",
   );
-  const declareResult = db.query(
+  const declareResult = app.db.query(
     `INSERT INTO declared_results (session_id, result, applied) VALUES ($session, $result, 0)
      ON CONFLICT (session_id) DO UPDATE SET result = excluded.result, applied = 0`,
   );
-  const applyResult = db.query("UPDATE declared_results SET applied = 1 WHERE session_id = ?");
-  const recordJudgment = db.query(
+  const applyResult = app.db.query("UPDATE declared_results SET applied = 1 WHERE session_id = ?");
+  const recordJudgment = app.db.query(
     `INSERT INTO judgments (call_id, session_id, model, p, latency_ms, error, at)
      VALUES ($call, $session, $model, $p, $latency, $error, $at)
      ON CONFLICT (call_id) DO UPDATE SET
        session_id = excluded.session_id, model = excluded.model, p = excluded.p,
        latency_ms = excluded.latency_ms, error = excluded.error, at = excluded.at`,
   );
-  const listJudgments = db.query<JudgmentRow, [string, number]>(
+  const listJudgments = app.db.query<JudgmentRow, [string, number]>(
     `SELECT j.* FROM judgments j JOIN sessions s ON s.id = j.session_id
      WHERE s.inbox_id = ?1 AND j.at >= ?2 ORDER BY j.at, j.rowid`,
   );
@@ -92,7 +118,7 @@ export function records(store: SqliteStore): Records {
         return r ? { number: r.number, state: r.state, checkedAt: r.checked_at } : null;
       },
       set(sessionId, p) {
-        store.tx(() => setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt }));
+        app.write(() => setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt }));
       },
     },
     results: {
@@ -101,15 +127,15 @@ export function records(store: SqliteStore): Records {
         return r ? { result: r.result, applied: r.applied === 1 } : null;
       },
       declare(sessionId, result) {
-        store.tx(() => declareResult.run({ session: sessionId, result }));
+        app.write(() => declareResult.run({ session: sessionId, result }));
       },
       markApplied(sessionId) {
-        store.tx(() => applyResult.run(sessionId));
+        app.write(() => applyResult.run(sessionId));
       },
     },
     judgments: {
       record(j) {
-        store.tx(() =>
+        app.write(() =>
           recordJudgment.run({ call: j.callId, session: j.sessionId, model: j.model, p: j.p, latency: j.latencyMs, error: j.error, at: j.at }),
         );
       },

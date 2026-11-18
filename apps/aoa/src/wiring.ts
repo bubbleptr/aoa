@@ -10,13 +10,14 @@ import {
   DEAD_NOTICE_PREFIX,
   createHost,
   dirMemory,
-  followTools,
+  followTool,
   sendToTool,
   systemClock,
   type Agent as HostAgent,
   type Channel,
   type Clock,
   type Host,
+  type Reader,
   type Rule,
   type ToolDef,
 } from "@aoa-dev/sdk";
@@ -149,7 +150,8 @@ type FrontDeps = {
   /** The branch of a session, null for an agent whose sessions work detached. */
   branchOf: ((sessionId: string) => string) | null;
   paths: Paths;
-  store: SqliteStore;
+  host: Host;
+  read: () => Reader;
   records: Records;
   clock: Clock;
   runGit: GitRunner;
@@ -169,13 +171,13 @@ function githubFront(gh: NonNullable<AgentConfig["github"]>, d: FrontDeps): Fron
   return {
     mode: "github",
     channel,
-    tools: [...followTools({ store: d.store, inboxId: d.paths.inboxId }), ...githubTools({ ...github, runGit: d.runGit })],
+    tools: [followTool(d.host), ...githubTools({ ...github, runGit: d.runGit })],
     systemPrompt: GITHUB_SYSTEM_PROMPT,
     rules: [],
     fromOrigin: true,
     openThread: (text) => channel.openThread(text.trim().split("\n")[0]!.trim().slice(0, TITLE_LIMIT), text),
     async finished(sessionId) {
-      const pr = d.store.tx((t) => pullOf(t, sessionId));
+      const pr = pullOf(d.read(), sessionId);
       if (!pr) return null;
       let state: "open" | "merged" | "closed";
       try {
@@ -293,7 +295,20 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   const review = spec.role === "review";
   const branchOf = review ? null : (id: string) => sessionBranch(named ? spec.name : null, id);
   const memory = dirMemory(paths.memory);
-  const frontDeps = { label: several ? spec.name : undefined, branchOf, paths, store, records: recorded, clock, runGit, seams, log, page: s.page };
+  let hosted!: HostAgent;
+  const frontDeps = {
+    label: several ? spec.name : undefined,
+    branchOf,
+    paths,
+    host: s.host,
+    read: () => hosted.read,
+    records: recorded,
+    clock,
+    runGit,
+    seams,
+    log,
+    page: s.page,
+  };
   const front = config.github ? githubFront(config.github, frontDeps) : localFront(frontDeps);
   const { channel } = front;
   const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit, fromOrigin: front.fromOrigin, branchOf });
@@ -367,14 +382,11 @@ function assembleOne(spec: Spec, s: Shared): Agent {
 
   /** The branch a review session was asked to look at: the first of its events that names one. */
   const reviewedBranch = (sessionId: string): string | undefined =>
-    store.tx((t) =>
-      t
-        .listEvents(inboxId)
-        .filter((e) => e.resume === sessionId)
-        .map((e) => (e.payload as { branch?: unknown } | null)?.branch)
-        .find((b): b is string => typeof b === "string"),
-    );
-  const hosted = s.host.agent({
+    hosted.read
+      .events({ sessionId })
+      .map((e) => (e.payload as { branch?: unknown } | null)?.branch)
+      .find((b): b is string => typeof b === "string");
+  hosted = s.host.agent({
     name: spec.name,
     description: spec.role,
     inbox: inboxId,
@@ -403,7 +415,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   });
 
   async function lookUp(closeFinished: boolean): Promise<void> {
-    const sessions = store.tx((t) => t.listSessions(inboxId));
+    const sessions = hosted.read.sessions();
     for (const s of sessions) {
       if (closeFinished && s.status === "closed") continue;
       const reason = await front.finished(s.id);
@@ -469,7 +481,11 @@ export function withStatusHint(channel: Channel): Channel {
   return {
     ...(channel.poll ? { poll: (cursor: string | null) => channel.poll!(cursor) } : {}),
     deliver: (m) =>
-      channel.deliver(m.dedupeKey.startsWith(DEAD_NOTICE_PREFIX) ? { ...m, body: `${m.body}\n\nRun \`aoa status\` for the details.` } : m),
+      channel.deliver(
+        m.detail?.kind === "dead_letter" || m.dedupeKey.startsWith(DEAD_NOTICE_PREFIX)
+          ? { ...m, body: `${m.body}\n\nRun \`aoa status\` for the details.` }
+          : m,
+      ),
   };
 }
 

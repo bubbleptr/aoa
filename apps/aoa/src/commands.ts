@@ -90,18 +90,18 @@ type Task = { agent: Agent; thread: string; session: Session | null };
  * id. A task sent but not yet picked up by serve has a thread and no session yet.
  */
 function resolveTask(agent: Agent, target: string): Task {
-  return agent.store.tx((t) => {
+  return agent.host.snapshot(() => {
     for (const a of agent.agents) {
-      const exact = t.sessionForThread(a.inboxId, target);
-      if (exact !== null) return { agent: a, session: t.getSession(exact)!, thread: target };
+      const exact = a.hosted.read.sessionFor(target);
+      if (exact !== null) return { agent: a, session: a.hosted.read.session(exact)!, thread: target };
     }
     const candidates: Task[] = agent.agents.flatMap((a) => {
-      const started = t
-        .listSessions(a.inboxId)
-        .map((session) => ({ agent: a, session, thread: t.primaryThread(session.id) }))
+      const started = a.hosted.read
+        .sessions()
+        .map((session) => ({ agent: a, session, thread: a.hosted.read.threads(session.id)[0] ?? null }))
         .filter((c): c is Task & { session: Session; thread: string } => c.thread !== null);
-      const waiting = [...new Set(t.listEvents(a.inboxId).map((e) => e.thread))]
-        .filter((thread): thread is string => thread !== null && t.sessionForThread(a.inboxId, thread) === null)
+      const waiting = [...new Set(a.hosted.read.events().map((e) => e.thread))]
+        .filter((thread): thread is string => thread !== null && a.hosted.read.sessionFor(thread) === null)
         .map((thread) => ({ agent: a, thread, session: null }));
       return [...started, ...waiting];
     });
@@ -123,7 +123,7 @@ function resolveTask(agent: Agent, target: string): Task {
  */
 export function answer(agent: Agent, prefix: string, verdict: string, text: string | undefined, via?: "mcp"): string {
   if (verdict !== "approve" && verdict !== "deny") throw new Error(`The answer must be approve or deny, not "${verdict}".`);
-  const pending = agent.store.tx((t) => agent.agents.flatMap((a) => t.listDeferred(a.inboxId)));
+  const pending = agent.host.snapshot(() => agent.agents.flatMap((a) => a.hosted.read.pending()));
   const callId = resolveCallId(
     pending.map((d) => d.callId),
     prefix,
@@ -137,7 +137,7 @@ export function answer(agent: Agent, prefix: string, verdict: string, text: stri
 
 export async function status(agent: Agent, o: { json: boolean; refresh: boolean }): Promise<string> {
   if (o.refresh) for (const a of agent.agents) await a.refreshPulls();
-  const reports = agent.agents.map((a) => collectStatus(a.store, a.records, a.name, a.inboxId, a.statusColumns));
+  const reports = agent.host.snapshot(() => agent.agents.map((a) => collectStatus(a.hosted.read, a.records, a.name, a.statusColumns)));
   const report: StatusReport = {
     agents: agent.agents.map((a) => ({ name: a.name, runtime: a.runtime, permissionOwner: a.permissions, autoReview: a.runtime === "codex" && a.role === "review" })),
     sessions: reports.flatMap((r) => r.sessions),

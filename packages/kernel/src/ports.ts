@@ -99,7 +99,7 @@ export interface Tx {
   consumeKey(inboxId: InboxId, source: EventSource, dedupeKey: string): void;
   insertEvent(e: EventInsert): void;
   getEvent(id: EventId): Event | null;
-  listEvents(inboxId: InboxId): Event[];
+  listEvents(inboxId: InboxId, filter?: { sessionId?: SessionId; thread?: string; status?: EventStatus }): Event[];
   /** Pending events, oldest first by insertion order; they may still be waiting out a retry delay (`nextAttemptAt`). */
   listPending(inboxId: InboxId): Event[];
 
@@ -163,7 +163,13 @@ export interface Tx {
 
   insertRun(r: { id: RunId; inboxId: InboxId; sessionId: SessionId; events: EventId[]; startedAt: number }): void;
   endRun(id: RunId, outcome: { end: RunEnd } | { error: string }, endedAt: number): void;
-  listRuns(inboxId: InboxId): RunRecord[];
+  listRuns(inboxId: InboxId, filter?: { sessionId?: SessionId }): RunRecord[];
+  /** The run currently holding an unexpired lease on `sessionId` in `inboxId`, or null if none does. */
+  activeRun(inboxId: InboxId, sessionId: SessionId, now: number): RunId | null;
+  /** Marks a running `runId` as requested to abort (for cross-process `agent.abort`); returns whether an unfinished run matched. */
+  requestAbort(runId: RunId): boolean;
+  /** True if `requestAbort` was recorded for `runId`. */
+  isAbortRequested(runId: RunId): boolean;
 
   getJournal(session: SessionId, call: CallId): JournalEntry | null;
   /** The session's journal, in the order the intents were recorded. */

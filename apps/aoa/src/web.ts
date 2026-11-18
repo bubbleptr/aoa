@@ -55,7 +55,7 @@ function answerFromPage(agent: Agent, body: unknown): Response {
     return plain(400, `text must be a string of at most ${ANSWER_TEXT_LIMIT} characters.`);
   }
   const reason = typeof text === "string" && text.trim() !== "" ? text : undefined;
-  const pending = agent.store.tx((t) => agent.agents.flatMap((a) => t.listDeferred(a.inboxId))).find((d) => d.callId === callId);
+  const pending = agent.host.snapshot(() => agent.agents.flatMap((a) => a.hosted.read.pending())).find((d) => d.callId === callId);
   if (!pending) return plain(404, `No call ${callId} is waiting for an answer.`);
   if (pending.kind === "question" && verdict === "approve" && reason === undefined) return plain(400, "A question needs its answer as text.");
   let result;

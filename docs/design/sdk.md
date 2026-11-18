@@ -216,7 +216,34 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 2026-11-18 起 `@aoa-dev/kernel`、`@aoa-dev/sdk`、`@aoa-dev/store-sqlite` 可以被别的仓库安装：去掉 `private`，版本 0.1.0，只支持 Bun（≥ 1.3），包里直接是 `.ts` 源码，打包时 `workspace:*` 换成真实版本。pi 的三个依赖（`pi-ai`、`pi-coding-agent`、`typebox`）改成可选的 peer 依赖，只有 `@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 要它们；`@aoa-dev/sdk/prompt` 里 pi 工具结果的类型改为自己写出，不再从 pi 引。`packages/sdk/test/install.test.ts` 把三个包打成 tarball，装进仓库外的空目录，跑通并类型检查一个只用公开入口的小程序，且确认没装进任何别的包。0.1.0 于当天发布到 npm；0.1.1 加上 `agent.abort`，三个包一起升版本，因为 store-sqlite 和 sdk 都把 kernel 钉在确切版本上。
 
-2026-11-18 加了 `agent.abort(sessionId)`（应 Domo 的对接要求）：经这次 run 的 `signal` 停下正在服务这个 session 的 run，走和 `host.stop()` 一样的路径，事件回到 `pending`、不计入死信上限，worker 接着跑，下一次 run 连同期间新到的事件一起拿到。run 的 `error` 是 `interrupted: the run was aborted`，和宿主停下的区分开。没有这个 session 的 run 在跑时返回 false。调用方先追加新指令再 `abort`，新指令就在下一次 run 里。只停得了本进程里的 run。
+2026-11-18 加了 `agent.abort(sessionId)`（应 Domo 的对接要求）：经这次 run 的 `signal` 停下正在服务这个 session 的 run，走和 `host.stop()` 一样的路径，事件回到 `pending`、不计入死信上限，worker 接着跑，下一次 run 连同期间新到的事件一起拿到。run 的 `error` 是 `interrupted: the run was aborted`，和宿主停下的区分开。没有这个 session 的 run 在跑时返回 false。调用方先追加新指令再 `abort`，新指令就在下一次 run 里。初版只停得了本进程里的 run，第 7 步补上跨进程中断。
+
+### 第二轮收敛：防住被单一应用牵着走
+
+第一轮拆完之后，`apps/aoa` 虽然不再引 `@aoa-dev/kernel`，但源码里仍在多处绕过 `Host`/`Agent` 直接调 `store.tx`、`store.db`、`lastBeat` 和 `followTools`；同时内核里留着「默认沉默、英文 `/approve` 斜杠命令、纯文本 `OutMsg`、第一档绑死 pi」这些来自 `apps/aoa` 的假设。按两条约束再收一轮：一是禁止 `apps/aoa/src` 再碰 `Tx` 和裸连接；二是用一个形态相反的示例（对话式、按钮审批、多通道路由、不装 pi）验证外部用法。
+
+第 7 步已完成（2026-11-18）：补齐读口、工具上下文、生命周期钩子与跨进程中断，`apps/aoa/src` 彻底断掉 `store.tx`、`Tx`、`store.db`、`lastBeat` 和 `followTools`（`apps/aoa/test/depends-on-sdk.test.ts` 守住）：
+
+- `Reader` 增加 `session(id)`、`outbox(filter)`、`recentSent(limit)`，以及 `events`/`runs` 按 `sessionId`、`thread` 的过滤（SQLite 建索引，不再全表拉进内存再筛；`send_to` 一并改走索引读）。
+- `host.snapshot(fn)` 在同一个事务里跑多次 `agent.read`（嵌套 `store.tx` 复用外层事务，只在最外层提交后触发一次 `watch`）；`host.beat()` 返回最近一次心跳（含 `seen`）。
+- `store.app({ namespace, migrations })` 在 `app_migrations` 表里按命名空间独立管理应用自建表的迁移，并返回走同一个事务与 `watch` 的 `write()`，`apps/aoa` 的 `records.ts` 改走它。
+- `agent.follow(sessionId, thread)` 和 `followTool(host)` 取代直接吃 `{ store, inboxId }` 的裸调用。
+- `ToolExecContext` 带上 `inboxId`、`runId`、`now()`、`read`；`AgentSpec.onRunEnd` 在每次 run 落库释放租约后、下一次认领前调用。`examples/digest` 上面记的三处别扭随之去掉：不再晚绑定 `agent`，时钟取自 `ctx.now()`，无状态的每日检查在 `onRunEnd` 里直接 `closeSession`。
+- `agent.abort(sessionId)` 支持跨进程：本进程没有在跑该 session 时，往 `runs.abort_requested` 写标记，持锁的宿主经 `watch` 收到提交后当场中断在途的 run。
+
+第 8 步已完成（2026-11-18）：解耦展示层文案与交互假设：
+
+- `OutMsg` 增加结构化载荷 `detail?: OutMsgDetail | null`（落库在 `outbox.detail`）：审批请求带 `{ kind: "approval", requestKind, callId, tool, args, reason?, expiresAt }`，死信通知带 `{ kind: "dead_letter", events, error }`，普通消息为 `null`。富通道（飞书/Slack 卡片、按钮、Web、多语言界面）直接读 `detail` 渲染，`body` 仍保留可读的默认文本供纯文本通道直接用。`apps/aoa` 的 `withStatusHint` 优先看 `detail?.kind === "dead_letter"`。
+- 对话回复模式 `AgentSpec.reply?: "explicit" | "final_text"`（默认 `"explicit"` 保持不变）：设为 `"final_text"` 时，若一次 run 没有延后且没有自己发过消息，worker 在完成事务里把模型的最终回复（`RunResult.reply`，`piRuntime` 和 `loopRuntime` 都填它）按 `reply:<runId>` 写进 outbox，同样享有持久化、去重、节奏控制和 `Already told the user` 防重；模型输出空串时仍是 `silent`（C18）。`"final_text"` 下常驻上下文默认去掉英文 `"Stay quiet unless..."`，没有记忆且没有历史已发消息时不注入任何英文前言（可用 `AgentSpec.resident?: { quiet?: boolean }` 显式覆盖）。
+- 显式审批模式 `AgentSpec.approvals?: { by?: "reply" | "answer"; ttlMs?: number }`：`by: "answer"` 时，审批类延后调用（`approval`、`harness`、`admit`）只认 `agent.answer(...)`，同 thread 上发来的普通 `user_message` 不再被误判为 `deny`，而是排在该 session 的队列里，等批准或拒绝落定后一并进入下一次 run；`ask_user` 的提问仍接受直接回复文字。`ttlMs` 可按应用覆盖默认的 24 小时过期时长。
+
+第 9 步已完成（2026-11-18）：`@aoa-dev/sdk/loop`：
+
+- 零第三方依赖的第一档 `KernelRuntime` 适配器：调用方只需提供一个 `complete({ systemPrompt, messages, tools, signal, emit })` 函数（接 OpenAI、Anthropic、Vercel AI SDK 或原生 `fetch`），由 `loopRuntime` 负责多轮工具调用、逐轮追加的会话记录（默认内存 `memoryTranscripts()`，跨重启落盘用 `dirTranscripts(dir)`）、重跑时的 `eventMarker` 检测与 `RETRY_NOTICE`、重复 provider `callId` 重编号、遇到 `deferred` 立即停下、流式或非流式的 `RunActivity` 推送，以及填充 `RunResult.reply`。`packages/sdk/test/install.test.ts` 的外部消费者用例改用 `@aoa-dev/sdk/loop`，验证不装 `pi` 时打包、安装、运行和类型检查全通。
+
+第 10 步已完成（2026-11-18）：`examples/assistant`（`@aoa-dev/example-assistant`）：
+
+- 一个与 `apps/aoa` 和 `examples/digest` 形态相反的双 agent 客服台示例（`desk` 中文前台 + `ops` 后台操作员），依赖里只有 `@aoa-dev/sdk` 和 `@aoa-dev/store-sqlite`，跑在 `@aoa-dev/sdk/loop` 上（附带约 70 行原生 `fetch` 的 `openaiComplete` 适配器）：单网关按规则把消息路由给不同 agent，直接用中文对话回复而不调 `notify`，高风险退款经 `OutMsg.detail` 渲染成按钮卡片，审批期间追加备注消息排进队列而不误拒审批，点击批准后执行一次退款并经 `send_to` 回传前台答复用户。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
@@ -226,6 +253,10 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 | 4 | `Store` 收口和 `lock()`；`agent.read`、`host.messages`、`host.watch`、`serving()`；定时器 id 和 `cancelTimer`；无 channel 的投递；`send_to` 进 SDK | 另一个进程写入后 1 秒内 `watch` 到；第二个 `start()` 抛错；重启后同 id 的 `schedule` 只有一条 |
 | 5 | 活动流：`RunInput.emit`，内核发工具事件，pi 发文字 | 脚本模型下按序收到 text、tool_start、tool_end；延后的调用和重放不发 `tool_start` |
 | 6 | 一个不写代码的示例 agent（每天汇总 issue，有事才找你），不传 channel，用 `step` 写测试 | 不依赖 git 就能跑通，证明 SDK 不绑在编码上 |
+| 7 | 读口补齐与 `host.snapshot`、`store.app`、`ToolExecContext`、`onRunEnd`、`agent.follow`、跨进程 `abort`；`apps/aoa` 断掉 `Tx` | `apps/aoa/src` 零 `.tx(` / `Tx` / `store.db` / `followTools`；`digest` 去掉晚绑定并自动关无状态 session；跨进程 `abort` 停下在途 run |
+| 8 | 结构化 Outbox（`OutMsg.detail`）、对话回复模式（`reply: "final_text"` 与可配常驻前言）、显式审批模式（`approvals: { by: "answer", ttlMs }`） | 通道不用解析英文 Markdown 就能渲染审批卡片和死信；对话模式下直接回复进 outbox、空回复仍静默；`by: "answer"` 时审批期间的普通消息排队而不误拒审批 |
+| 9 | `@aoa-dev/sdk/loop`：零第三方依赖的第一档 `KernelRuntime` 适配器（多轮工具循环、JSONL/内存会话存储、`eventMarker` 重试检测、调用编号、延后中断） | 不装 `pi` 也能用任意 `complete()` 函数跑通完整工具循环、崩溃重跑与延后审批；外部安装测试覆盖 |
+| 10 | 反向示例 `examples/assistant`：对话式、按钮审批、单网关多 agent 路由，跑在 `@aoa-dev/sdk/loop` 上 | 中文提示词不与常驻上下文打架，审批期间追问不误拒审批，点击批准后工具执行且追问一并送达 |
 
 ## 暂缓
 

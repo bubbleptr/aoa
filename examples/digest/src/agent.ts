@@ -33,22 +33,16 @@ export type DigestOptions = {
  */
 export function digestAgent(host: Host, o: DigestOptions): Agent {
   const everyMs = o.everyMs ?? DAY_MS;
-  let agent: Agent | null = null;
-  /** Since the start of the last run that ended without error: a check that fired late, or failed, misses nothing. */
-  const since = () => {
-    const runs = agent!.read.runs();
-    const done = runs.filter((r) => r.end !== null && r.error === null);
-    // The first check looks back one period from the start of the run making it, on the host's clock.
-    return done.at(-1)?.startedAt ?? runs.at(-1)!.startedAt - everyMs;
-  };
   const recentIssues: ToolDef = {
     name: "recent_issues",
     risk: "low",
     description: "The repository's issues updated since the last check, newest first. Bodies are cut short.",
     schema: { type: "object", properties: {}, additionalProperties: false },
     idempotent: true,
-    async execute() {
-      const from = since();
+    async execute(_args, ctx) {
+      // Since the start of the last run that ended without error: a check that fired late, or failed, misses nothing.
+      const done = (ctx.read?.runs() ?? []).filter((r) => r.end !== null && r.error === null);
+      const from = done.at(-1)?.startedAt ?? (ctx.now ? ctx.now() : Date.now()) - everyMs;
       const issues = await o.issues.updatedSince(from);
       return {
         since: new Date(from).toISOString(),
@@ -56,7 +50,7 @@ export function digestAgent(host: Host, o: DigestOptions): Agent {
       };
     },
   };
-  agent = host.agent({
+  const agent = host.agent({
     name: o.name ?? "digest",
     description: "checks issues daily",
     inbox: o.inbox,
@@ -65,6 +59,10 @@ export function digestAgent(host: Host, o: DigestOptions): Agent {
     tools: (builtins) => [recentIssues, ...builtins.filter((t) => t.name === "notify")],
     // A timer's event has nothing to wait for.
     debounceMs: 0,
+    // Each daily check is stateless: close the session once the run settles so open sessions do not pile up.
+    onRunEnd: async (r) => {
+      if (r.end && r.end.kind !== "deferred") await agent.closeSession(r.sessionId);
+    },
   });
   agent.schedule({ id: "daily", everyMs, anchor: o.anchor, payload: { job: DIGEST_JOB } });
   return agent;

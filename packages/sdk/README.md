@@ -8,7 +8,8 @@ bun add @aoa-dev/sdk @aoa-dev/store-sqlite
 
 完整能跑的例子（一个要批准才发邮件的 agent）见[仓库首页](https://github.com/bubbleptr/aoa#一个例子)。
 
-- store 是必传的；channel 可选，不传时消息写入即算送出，从 `host.messages()` 读。
-- 入口：`@aoa-dev/sdk`（宿主、agent、内核的类型和少量值）、`@aoa-dev/sdk/pi`（pi runtime）、`@aoa-dev/sdk/prompt`（第二档适配器共用的渲染）、`@aoa-dev/sdk/tools/coding`（可选的编码工具和规则）。
-- pi 是可选的 peer 依赖：用 `@aoa-dev/sdk/pi` 或 `@aoa-dev/sdk/tools/coding` 时自己装 `@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent` 和 `typebox`，其余入口不需要。
+- store 是必传的；channel 可选，不传时消息写入即算送出，从 `host.messages()` 读；`OutMsg.detail` 为审批和死信带结构化载荷，方便渲染卡片与按钮。
+- 默认是后台静默模式（只有调 `notify` 才发消息，thread 回复可答审批）；对话和卡片类应用可传 `reply: "final_text"` 和 `approvals: { by: "answer", ttlMs }`。
+- 入口：`@aoa-dev/sdk`（宿主、agent、内核的类型和少量值）、`@aoa-dev/sdk/loop`（零外部依赖的第一档 tool-loop runtime，接任意模型 SDK 或 `fetch`）、`@aoa-dev/sdk/pi`（pi runtime）、`@aoa-dev/sdk/prompt`（第二档适配器共用的渲染）、`@aoa-dev/sdk/tools/coding`（可选的编码工具和规则）。
+- pi 是可选的 peer 依赖：只有用 `@aoa-dev/sdk/pi` 或 `@aoa-dev/sdk/tools/coding` 时才装 `@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent` 和 `typebox`；用 `@aoa-dev/sdk/loop` 不需要。
 - 0.x 期间接口可能有破坏性改动。设计和每一步的取舍见仓库里的 `docs/design/sdk.md`。

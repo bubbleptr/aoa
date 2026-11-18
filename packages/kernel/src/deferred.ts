@@ -63,9 +63,19 @@ export function deferInTx(t: Tx, d: PendingCall, reason?: string): void {
     kind: "approval_request",
     body: requestBody(d, reason),
     callId: d.callId,
+    detail: {
+      kind: "approval",
+      requestKind: d.kind,
+      callId: d.callId,
+      tool: d.tool,
+      args: d.args,
+      ...(reason === undefined ? {} : { reason }),
+      expiresAt: d.expiresAt,
+    },
     dedupeKey: `approval:${d.callId}`,
     createdAt: d.requestedAt,
   });
+  const ttlMs = d.expiresAt - d.requestedAt;
   t.insertTimer({
     id: expiryTimerId(d.callId),
     inboxId: d.inboxId,
@@ -73,7 +83,7 @@ export function deferInTx(t: Tx, d: PendingCall, reason?: string): void {
     sessionId: d.sessionId,
     due: d.expiresAt,
     recurrence: null,
-    payload: { expiredCall: d.callId },
+    payload: ttlMs === DEFER_TTL_MS ? { expiredCall: d.callId } : { expiredCall: d.callId, ttlMs },
   });
 }
 
@@ -101,22 +111,29 @@ function requestBody(d: PendingCall, reason: string | undefined): string {
   ].join("\n");
 }
 
+export type ApprovalReplyMode = "reply" | "answer";
+
 /**
  * Recognises an answer on its way into the inbox (design §6, "怎么回答"): the user's next message on the
  * thread of a paused session, or the expiry of the pending call. Everything else passes through unchanged.
- * Only trusted events can answer (I-PRM-2).
+ * Only trusted events can answer (I-PRM-2). With `approvalBy = "answer"`, approvals (`approval` / `harness` / `admit`)
+ * are settled only through `answer()`, while free-text replies still answer `ask_user` questions and queue alongside
+ * pending approvals without denying them.
  */
 export function asAnswer(
   t: Tx,
   inboxId: InboxId,
   e: NewEvent,
   resume: SessionId | undefined,
+  approvalBy: ApprovalReplyMode = "reply",
 ): { event: NewEvent; resume: SessionId } | null {
   const thread = e.thread ?? null;
   if (e.source === "timer") {
-    const callId = (e.payload as { expiredCall?: unknown } | null)?.expiredCall;
+    const payload = e.payload as { expiredCall?: unknown; ttlMs?: unknown } | null;
+    const callId = payload?.expiredCall;
     if (typeof callId !== "string" || resume === undefined) return null;
-    return { event: answerEvent({ callId, verdict: "deny", text: EXPIRY_TEXT, expired: true }, thread), resume };
+    const text = typeof payload?.ttlMs === "number" ? `No answer within ${Math.round(payload.ttlMs / 1000)}s.` : EXPIRY_TEXT;
+    return { event: answerEvent({ callId, verdict: "deny", text, expired: true }, thread), resume };
   }
   if (e.source !== "user_message" || !e.trusted || thread === null) return null;
   const sessionId = resume ?? t.sessionForThread(inboxId, thread);
@@ -125,6 +142,7 @@ export function asAnswer(
   const pending = t.getDeferred(session.pending);
   const text = (e.payload as { text?: unknown } | null)?.text;
   if (!pending || typeof text !== "string") return null;
+  if (approvalBy === "answer" && pending.kind !== "question") return null;
   const reply = parseReply(text, pending.kind);
   return reply && { event: answerEvent({ callId: pending.callId, ...reply }, thread), resume: session.id };
 }

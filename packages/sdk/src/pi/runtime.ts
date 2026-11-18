@@ -103,7 +103,8 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
 
     const failure = modelFailure(session);
     if (failure !== null) throw new Error(`the model request failed: ${failure}`);
-    return { end: { kind: "silent" }, sessionRef };
+    const reply = lastAssistantReply(session);
+    return { end: { kind: "silent" }, sessionRef, ...(reply === undefined ? {} : { reply }) };
   } finally {
     input.signal.removeEventListener("abort", onAbort);
     unsubscribe();
@@ -243,4 +244,14 @@ function modelFailure(session: AgentSession): string | null {
   const last = session.messages.findLast((m) => m.role === "assistant");
   if (last?.role !== "assistant" || last.stopReason !== "error") return null;
   return last.errorMessage ?? "unknown error";
+}
+
+function lastAssistantReply(session: AgentSession): string | undefined {
+  const last = session.messages.findLast((m) => m.role === "assistant");
+  if (last?.role !== "assistant") return undefined;
+  const text = last.content
+    .map((c) => (c.type === "text" ? c.text : ""))
+    .join("")
+    .trim();
+  return text === "" ? undefined : text;
 }

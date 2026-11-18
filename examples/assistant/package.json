@@ -1,0 +1,16 @@
+{
+  "name": "@aoa-dev/example-assistant",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aoa-dev/sdk": "workspace:*",
+    "@aoa-dev/store-sqlite": "workspace:*"
+  },
+  "devDependencies": {
+    "@aoa-dev/conformance": "workspace:*"
+  }
+}

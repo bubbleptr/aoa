@@ -1,7 +1,27 @@
-import type { CallId, InboxId, MsgId, NewEvent, SessionId } from "./types.ts";
+import type { CallId, EventId, InboxId, MsgId, NewEvent, PendingCall, SessionId } from "./types.ts";
 
 export type MsgStatus = "pending" | "sending" | "sent" | "failed" | "cancelled";
 export type MsgKind = "message" | "approval_request";
+
+/**
+ * Structured payload for system-generated outbox messages, so a channel can render interactive cards, buttons or
+ * localized copy without parsing `body`. Plain `notify` / reply messages have `detail: null`.
+ */
+export type OutMsgDetail =
+  | {
+      kind: "approval";
+      requestKind: PendingCall["kind"];
+      callId: CallId;
+      tool: string;
+      args: unknown;
+      reason?: string;
+      expiresAt: number;
+    }
+  | {
+      kind: "dead_letter";
+      events: EventId[];
+      error: string | null;
+    };
 
 /** A row of the outbox (spec §7.2). */
 export type OutMsg = {
@@ -14,6 +34,8 @@ export type OutMsg = {
   body: string;
   /** The deferred call an `approval_request` asks about. */
   callId: CallId | null;
+  /** Structured metadata for approvals and dead-letter notices; null for ordinary messages. */
+  detail?: OutMsgDetail | null;
   dedupeKey: string;
   createdAt: number;
   status: MsgStatus;

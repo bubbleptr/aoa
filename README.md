@@ -90,7 +90,7 @@ host.start();
 DEEPSEEK_API_KEY=... bun main.ts
 ```
 
-会先看到一条 `[approval_request]`，然后 `sending { ... }`。进程常驻，用 Ctrl-C 退出。agent 只有调用 `notify` 时才给你发消息，模型最后说的话不会自动发出来，所以有时候做完了也没有消息。
+会先看到一条 `[approval_request]`，然后 `sending { ... }`。进程常驻，用 Ctrl-C 退出。默认是后台静默模式，agent 只有调用 `notify` 时才发消息；做对话类助手时传 `reply: "final_text"`，模型的最终文字回复就会自动进 outbox（按钮/卡片审批可再配 `approvals: { by: "answer" }`，并从 `OutMsg.detail` 读结构化审批信息）。
 
 ## 原语
 
@@ -135,7 +135,7 @@ host.agent({
 
 ## Runtime
 
-- **第一档：pi**，内置在 `@aoa-dev/sdk/pi`。pi 只有 aoa 给的工具，每次调用都由内核裁决和记录。
+- **第一档（内核管每次工具调用）**：`@aoa-dev/sdk/loop` 零第三方依赖，传一个 `complete()` 函数就能接 OpenAI、Anthropic、Vercel AI SDK 或原生 `fetch`（见 [`examples/assistant`](examples/assistant)）；`@aoa-dev/sdk/pi` 内置 pi 的多模型接入与会话管理。
 - **第二档：外部 harness**，用它们自己的工具和沙箱，它们要问的审批转成 aoa 的审批请求。SDK 只给接口，不内置实现；[`examples/codex`](examples/codex) 和 [`examples/dsh`](examples/dsh) 是两种写法。
 
 ## 多个 agent
@@ -165,7 +165,8 @@ host.agent({ name: "checker", description: "checks drafts", inbox: "checker", ru
 
 | | |
 |---|---|
-| [`examples/digest`](examples/digest) | 不写代码的 agent：每天看一次 issue，有事才说 |
+| [`examples/assistant`](examples/assistant) | 对话式双 agent 客服台：按钮审批卡片、单网关路由、跑在 `@aoa-dev/sdk/loop` 上（不装 pi） |
+| [`examples/digest`](examples/digest) | 不写代码的后台 agent：每天看一次 issue，有事才说 |
 | [`examples/codex`](examples/codex) · [`examples/dsh`](examples/dsh) | 第二档 harness 适配器 |
 | [`apps/aoa`](apps/aoa/README.md) | `aoa` 命令：写代码的 agent，CLI、MCP、GitHub、观察页 |
 

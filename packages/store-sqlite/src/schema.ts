@@ -213,6 +213,21 @@ const migrations: string[] = [
     seen  INTEGER NOT NULL
   );
   `,
+  `
+  -- Per-session/thread read indexes, cross-process run abort, and application-owned migration streams (design §15).
+  CREATE INDEX IF NOT EXISTS events_session ON events (inbox_id, resume, seq);
+  CREATE INDEX IF NOT EXISTS events_thread ON events (inbox_id, thread, seq);
+  CREATE INDEX IF NOT EXISTS runs_session ON runs (inbox_id, session_id, started_at);
+  ALTER TABLE runs ADD COLUMN abort_requested INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE IF NOT EXISTS app_migrations (
+    namespace TEXT PRIMARY KEY,
+    version   INTEGER NOT NULL
+  );
+  `,
+  `
+  -- Structured metadata on outbox messages (approvals and dead-letter notices, design §15).
+  ALTER TABLE outbox ADD COLUMN detail TEXT;
+  `,
 ];
 
 /**

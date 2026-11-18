@@ -1,5 +1,5 @@
 import type { CrashHook } from "./crash.ts";
-import { answerEvent, asAnswer } from "./deferred.ts";
+import { answerEvent, asAnswer, type ApprovalReplyMode } from "./deferred.ts";
 import type { Clock, Store, Tx } from "./ports.ts";
 import type { CallId, EventId, InboxId, NewEvent, SessionId } from "./types.ts";
 
@@ -24,9 +24,16 @@ export function appendEvent(deps: AppendDeps, e: NewEvent): AppendResult {
  * decides which session it continues. An answer to a deferred call is stored as `approval_answer`
  * under one key per call, so only the first answer counts (I-PRM-5), whether it is a reply or the expiry.
  */
-export function appendInTx(t: Tx, inboxId: InboxId, now: number, incoming: NewEvent, resumeHint?: SessionId): AppendResult {
+export function appendInTx(
+  t: Tx,
+  inboxId: InboxId,
+  now: number,
+  incoming: NewEvent,
+  resumeHint?: SessionId,
+  approvalBy: ApprovalReplyMode = "reply",
+): AppendResult {
   const seen = t.isAccepted(inboxId, incoming.source, incoming.dedupeKey);
-  const answer = seen ? null : asAnswer(t, inboxId, incoming, resumeHint);
+  const answer = seen ? null : asAnswer(t, inboxId, incoming, resumeHint, approvalBy);
   // The answer is stored under its own key; the incoming key is kept too, so a redelivered reply cannot answer a later call.
   if (answer) t.consumeKey(inboxId, incoming.source, incoming.dedupeKey);
   const e = answer?.event ?? incoming;

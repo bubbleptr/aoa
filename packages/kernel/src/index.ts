@@ -31,7 +31,7 @@ export {
   type RunOutcome,
   type WorkerOptions,
 } from "./worker.ts";
-export type { Channel, MsgKind, MsgStatus, OutMsg } from "./channel.ts";
+export type { Channel, MsgKind, MsgStatus, OutMsg, OutMsgDetail } from "./channel.ts";
 export {
   SCHEDULER_MAX_SLEEP_MS,
   Scheduler,
@@ -68,7 +68,7 @@ export {
   type ToolCall,
   type Verdict,
 } from "./policy.ts";
-export { DEFER_TTL_MS, askUserTools, type AnswerPayload } from "./deferred.ts";
+export { DEFER_TTL_MS, askUserTools, type AnswerPayload, type ApprovalReplyMode } from "./deferred.ts";
 export { dirMemory, memoryTools, type Memory } from "./memory.ts";
 export { RESIDENT_FILE_LIMIT, RESIDENT_PREAMBLE, RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 export { policyReader, reader, type PolicyReader, type Reader } from "./read.ts";

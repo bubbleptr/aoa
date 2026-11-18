@@ -4,7 +4,7 @@ import type { Memory } from "./memory.ts";
 import { reportDead } from "./outbox.ts";
 import { askPermission, holdUntrusted, resolveAdmit } from "./permission.ts";
 import type { PolicyConfig } from "./policy.ts";
-import { policyReader } from "./read.ts";
+import { policyReader, reader } from "./read.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
@@ -46,10 +46,19 @@ export type WorkerOptions = {
   policy?: PolicyConfig;
   /** The inbox's memory directory, read into every run's resident context (spec §5). */
   memory?: Memory;
+  /**
+   * How the agent's replies reach the outbox: `"explicit"` (default) requires calling `notify`; `"final_text"` also
+   * queues `RunResult.reply` when the run ends without deferring or sending a message of its own.
+   */
+  reply?: "explicit" | "final_text";
+  /** Controls the resident preamble; `quiet` defaults to `true` under `"explicit"` and `false` under `"final_text"`. */
+  resident?: { quiet?: boolean };
+  /** How long a deferred call waits before expiring; defaults to `DEFER_TTL_MS` (24 hours). */
+  deferTtlMs?: number;
   /** Called when a run starts, with how many events it took. */
   onRunStart?: (run: { runId: RunId; sessionId: SessionId; events: number }) => void;
   /** Called once a run's outcome is stored: its end, or the error that sent its events back. */
-  onRunEnd?: (run: RunOutcome) => void;
+  onRunEnd?: (run: RunOutcome) => unknown;
   /**
    * The activity of each run as it happens (design §15「活动流」). An error it throws is dropped: watching a run must
    * not change it. Nothing reaches it once the run has settled.
@@ -80,6 +89,9 @@ export class Worker {
   private readonly prepareSession: WorkerOptions["prepareSession"];
   private readonly policy: PolicyConfig | undefined;
   private readonly memory: Memory | undefined;
+  private readonly reply: "explicit" | "final_text";
+  private readonly resident: { quiet?: boolean } | undefined;
+  private readonly deferTtlMs: number | undefined;
   private readonly onRunStart: NonNullable<WorkerOptions["onRunStart"]>;
   private readonly onRunEnd: NonNullable<WorkerOptions["onRunEnd"]>;
   private readonly onActivity: WorkerOptions["onActivity"];
@@ -95,6 +107,8 @@ export class Worker {
   private current: AbortController | null = null;
   /** The session of the run in flight. */
   private currentSession: SessionId | null = null;
+  /** The id of the run in flight. */
+  private currentRun: RunId | null = null;
 
   constructor(o: WorkerOptions) {
     this.store = o.store;
@@ -107,6 +121,9 @@ export class Worker {
     this.prepareSession = o.prepareSession;
     this.policy = o.policy;
     this.memory = o.memory;
+    this.reply = o.reply ?? "explicit";
+    this.resident = o.resident;
+    this.deferTtlMs = o.deferTtlMs;
     this.onRunStart = o.onRunStart ?? (() => {});
     this.onRunEnd = o.onRunEnd ?? (() => {});
     this.onActivity = o.onActivity;
@@ -165,6 +182,14 @@ export class Worker {
     return true;
   }
 
+  /** Applies an abort recorded in the store by another process to the run in flight, if any. */
+  checkAbort(): boolean {
+    if (this.current === null || this.currentRun === null || this.current.signal.aborted) return false;
+    if (!this.store.tx((t) => t.isAbortRequested(this.currentRun!))) return false;
+    this.current.abort(new Interrupted());
+    return true;
+  }
+
   private sleep(until: number | null): Promise<void> {
     return new Promise((resolve) => {
       let cancel = () => {};
@@ -213,7 +238,7 @@ export class Worker {
           if (answer && group.includes(answer)) group = group.filter((e) => !unadmitted.includes(e));
           else {
             const session = existing ?? this.openSession(t, head.thread, now);
-            holdUntrusted(t, this.inboxId, session.id, group, unadmitted, now);
+            holdUntrusted(t, this.inboxId, session.id, group, unadmitted, now, this.deferTtlMs);
             continue;
           }
         }
@@ -251,6 +276,8 @@ export class Worker {
     const controller = new AbortController();
     this.current = controller;
     this.currentSession = claim.session.id;
+    this.currentRun = claim.runId;
+    this.checkAbort();
     const { signal } = controller;
     const c = { ...claim };
     let settled = false;
@@ -276,17 +303,21 @@ export class Worker {
         clock: this.clock,
         inboxId: this.inboxId,
         sessionId: c.session.id,
+        runId: c.runId,
         workdir: c.session.workdir,
         signal,
         policy: this.policy,
+        ...(this.deferTtlMs === undefined ? {} : { deferTtlMs: this.deferTtlMs }),
         emit,
         read: policyReader(this.store, this.inboxId),
+        fullRead: reader(this.store, this.inboxId),
         crash: (p) => this.crashAt(p),
         assertAlive: () => this.assertAlive(),
       };
       const answer = await resolveAnswer(c.events, this.tools, toolCtx);
       const sent = this.store.tx((t) => t.listRecentSent(this.inboxId, RESIDENT_RECENT_MESSAGES));
-      const resident = await buildResident(this.memory, c.session.id, sent);
+      const quiet = this.resident?.quiet ?? this.reply !== "final_text";
+      const resident = await buildResident(this.memory, c.session.id, sent, { quiet });
       this.assertAlive();
       const input: RunInput = {
         runId: c.runId,
@@ -306,6 +337,11 @@ export class Worker {
       // A crash stands in for the process dying: write nothing on the way out.
       if (this.crashed) throw this.crashed;
       if (err instanceof SimulatedCrash) throw err;
+      settled = true;
+      stopRenewal();
+      this.current = null;
+      this.currentSession = null;
+      this.currentRun = null;
       if (signal.aborted) {
         // A stop or an abort is not the run's failure: the events go back ready for the next pass, and no number of them makes
         // them dead. The attempt still counts, so the next run knows an earlier one may have done part of the work.
@@ -315,7 +351,7 @@ export class Worker {
           t.endRun(c.runId, { error }, now);
           t.releaseEvents(c.runId, now, Number.MAX_SAFE_INTEGER, () => now);
         });
-        this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
+        await this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
         return;
       }
       const error = err instanceof Error ? err.message : String(err);
@@ -324,13 +360,14 @@ export class Worker {
         t.endRun(c.runId, { error }, now);
         reportDead(t, this.inboxId, t.releaseEvents(c.runId, now, MAX_ATTEMPTS, retryAt), error, now);
       });
-      this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
+      await this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
       return;
     } finally {
       settled = true;
       stopRenewal();
       this.current = null;
       this.currentSession = null;
+      this.currentRun = null;
     }
 
     this.assertAlive();
@@ -342,8 +379,27 @@ export class Worker {
         t.endRun(c.runId, { error }, now);
         return { runId: c.runId, sessionId: c.session.id, end: null, error };
       }
-      const msgs = t.claimRunMessages(c.session.id, c.runId);
+      let msgs = t.claimRunMessages(c.session.id, c.runId);
       const pending = t.getSession(c.session.id)!.pending;
+      if (pending === null && msgs.length === 0 && this.reply === "final_text") {
+        const text = result.reply?.trim() ?? "";
+        if (text !== "") {
+          const msgId = t.insertOutMsg({
+            id: crypto.randomUUID(),
+            inboxId: this.inboxId,
+            sessionId: c.session.id,
+            thread: t.primaryThread(c.session.id),
+            kind: "message",
+            body: text,
+            callId: null,
+            detail: null,
+            dedupeKey: `reply:${c.runId}`,
+            createdAt: now,
+            runId: c.runId,
+          });
+          msgs = [msgId];
+        }
+      }
       // The store, not the runtime, knows whether the session waits on a call; a run that wrote to the outbox has sent (design §3).
       const end: RunEnd =
         pending !== null
@@ -355,7 +411,7 @@ export class Worker {
       t.recordSessionRun(c.session.id, c.runId, result.sessionRef ?? c.session.runtimeRef);
       return { runId: c.runId, sessionId: c.session.id, end, error: null };
     });
-    this.onRunEnd(outcome);
+    await this.onRunEnd(outcome);
   }
 
   private renewLease(runId: RunId): () => void {

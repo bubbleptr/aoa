@@ -4,6 +4,7 @@ import type {
   Beat,
   DecisionRecord,
   OutMsg,
+  OutMsgDetail,
   PendingCall,
   Event,
   EventInsert,
@@ -24,12 +25,25 @@ import type {
 } from "@aoa-dev/kernel";
 import { migrate } from "./schema.ts";
 
+/** An application's own schema in the store's database file, versioned independently in `app_migrations`. */
+export type AppSchema = {
+  namespace: string;
+  migrations: readonly string[];
+};
+
+/** An application's own handle on the store's SQLite connection, writing inside the store's transactions. */
+export type SqliteApp = {
+  readonly db: Database;
+  write<T>(fn: () => T): T;
+};
+
 /**
- * The SQLite store. `db` is the same connection the store writes with, for an application that keeps its own tables
- * in the same file; the kernel never reads them.
+ * The SQLite store. `app` opens an application's own tables on the same connection; `db` remains for compatibility,
+ * and the kernel never reads application tables.
  */
 export type SqliteStore = HostStore & {
   readonly db: Database;
+  app(schema: AppSchema): SqliteApp;
 };
 
 export type SqliteStoreOptions = {
@@ -105,15 +119,52 @@ export function sqliteStore(path: string, o: SqliteStoreOptions = {}): SqliteSto
     };
   };
 
-  return {
-    tx(fn) {
+  let depth = 0;
+  const runTx = <T>(fn: (t: Tx) => T): T => {
+    if (depth > 0) {
+      depth++;
+      try {
+        return db.transaction(() => fn(t)).immediate();
+      } finally {
+        depth--;
+      }
+    }
+    depth++;
+    try {
       if (watchers.size === 0) return db.transaction(() => fn(t)).immediate();
       const before = totalChanges.get()!.n;
       const result = db.transaction(() => fn(t)).immediate();
       if (totalChanges.get()!.n !== before) notify("own");
       return result;
-    },
+    } finally {
+      depth--;
+    }
+  };
+  const getAppVersion = db.query<{ version: number }, [string]>("SELECT version FROM app_migrations WHERE namespace = ?");
+  const putAppVersion = db.query(
+    `INSERT INTO app_migrations (namespace, version) VALUES ($ns, $v)
+     ON CONFLICT (namespace) DO UPDATE SET version = excluded.version`,
+  );
+
+  return {
+    tx: runTx,
     db,
+    app(schema) {
+      runTx(() => {
+        const current = getAppVersion.get(schema.namespace)?.version ?? 0;
+        if (current > schema.migrations.length) {
+          throw new Error(
+            `This database was written by a newer ${schema.namespace} (app schema version ${current}); this version knows up to ${schema.migrations.length}.`,
+          );
+        }
+        for (let v = current; v < schema.migrations.length; v++) db.exec(schema.migrations[v]!);
+        if (current !== schema.migrations.length) putAppVersion.run({ ns: schema.namespace, v: schema.migrations.length });
+      });
+      return {
+        db,
+        write: (fn) => runTx(() => fn()),
+      };
+    },
     lock() {
       if (memory) return null;
       const held = new Database(`${path}-host`, { create: true });
@@ -297,6 +348,7 @@ type OutboxRow = {
   kind: OutMsg["kind"];
   body: string;
   call_id: string | null;
+  detail: string | null;
   dedupe_key: string;
   created_at: number;
   status: OutMsg["status"];
@@ -313,6 +365,7 @@ const toOutMsg = (r: OutboxRow): OutMsg => ({
   kind: r.kind,
   body: r.body,
   callId: r.call_id,
+  detail: r.detail === null ? null : (JSON.parse(r.detail) as OutMsgDetail),
   dedupeKey: r.dedupe_key,
   createdAt: r.created_at,
   status: r.status,
@@ -374,6 +427,15 @@ function createTx(db: Database): Tx {
     ),
     getEvent: db.query<EventRow, [string]>("SELECT * FROM events WHERE id = ?"),
     listEvents: db.query<EventRow, [string]>("SELECT * FROM events WHERE inbox_id = ? ORDER BY seq"),
+    listEventsBySession: db.query<EventRow, [string, string]>(
+      "SELECT * FROM events WHERE inbox_id = ? AND resume = ? ORDER BY seq",
+    ),
+    listEventsByThread: db.query<EventRow, [string, string]>(
+      "SELECT * FROM events WHERE inbox_id = ? AND thread = ? ORDER BY seq",
+    ),
+    listEventsByStatus: db.query<EventRow, [string, string]>(
+      "SELECT * FROM events WHERE inbox_id = ? AND status = ? ORDER BY seq",
+    ),
     listPending: db.query<EventRow, [string]>(
       "SELECT * FROM events WHERE inbox_id = ? AND status = 'pending' ORDER BY seq",
     ),
@@ -428,6 +490,14 @@ function createTx(db: Database): Tx {
     ),
     endRun: db.query('UPDATE runs SET ended_at = $at, "end" = $end, error = $error WHERE id = $id'),
     listRuns: db.query<RunRow, [string]>("SELECT * FROM runs WHERE inbox_id = ? ORDER BY started_at, rowid"),
+    listRunsBySession: db.query<RunRow, [string, string]>(
+      "SELECT * FROM runs WHERE inbox_id = ? AND session_id = ? ORDER BY started_at, rowid",
+    ),
+    activeRun: db.query<{ run: string | null }, [string, string, number]>(
+      "SELECT run FROM events WHERE inbox_id = ?1 AND resume = ?2 AND status = 'in_run' AND lease_until > ?3 LIMIT 1",
+    ),
+    requestAbort: db.query("UPDATE runs SET abort_requested = 1 WHERE id = ? AND ended_at IS NULL"),
+    isAbortRequested: db.query<{ abort_requested: number }, [string]>("SELECT abort_requested FROM runs WHERE id = ?"),
     getJournal: db.query<JournalRow, [string, string]>(
       "SELECT * FROM tool_journal WHERE session_id = ? AND call_id = ?",
     ),
@@ -467,8 +537,8 @@ function createTx(db: Database): Tx {
     ),
     cancelTimersForSession: db.query("UPDATE timers SET status = 'cancelled' WHERE session_id = $session AND status = 'armed'"),
     insertOutMsg: db.query(
-      `INSERT OR IGNORE INTO outbox (id, inbox_id, session_id, thread, kind, body, call_id, dedupe_key, created_at, next_attempt_at, run_id)
-       VALUES ($id, $inbox, $session, $thread, $kind, $body, $call, $dedupe, $at, $at, $run)`,
+      `INSERT OR IGNORE INTO outbox (id, inbox_id, session_id, thread, kind, body, call_id, detail, dedupe_key, created_at, next_attempt_at, run_id)
+       VALUES ($id, $inbox, $session, $thread, $kind, $body, $call, $detail, $dedupe, $at, $at, $run)`,
     ),
     outMsgByKey: db.query<{ id: string }, [string, string]>("SELECT id FROM outbox WHERE inbox_id = ? AND dedupe_key = ?"),
     listOutbox: db.query<OutboxRow, [string]>("SELECT * FROM outbox WHERE inbox_id = ? ORDER BY seq"),
@@ -573,7 +643,24 @@ function createTx(db: Database): Tx {
       const r = q.getEvent.get(id);
       return r ? toEvent(r) : null;
     },
-    listEvents: (inboxId) => q.listEvents.all(inboxId).map(toEvent),
+    listEvents(inboxId, filter) {
+      const raw =
+        filter?.sessionId !== undefined
+          ? q.listEventsBySession.all(inboxId, filter.sessionId)
+          : filter?.thread !== undefined
+            ? q.listEventsByThread.all(inboxId, filter.thread)
+            : filter?.status !== undefined
+              ? q.listEventsByStatus.all(inboxId, filter.status)
+              : q.listEvents.all(inboxId);
+      return raw
+        .filter(
+          (r) =>
+            (filter?.sessionId === undefined || r.resume === filter.sessionId) &&
+            (filter?.thread === undefined || r.thread === filter.thread) &&
+            (filter?.status === undefined || r.status === filter.status),
+        )
+        .map(toEvent);
+    },
     listPending: (inboxId) => q.listPending.all(inboxId).map(toEvent),
     expireLeases: (inboxId, now, maxAttempts, retryAt) =>
       // A lease that ran out failed when it ended, not when a worker noticed (design §9).
@@ -630,8 +717,9 @@ function createTx(db: Database): Tx {
         error: "error" in outcome ? outcome.error : null,
       });
     },
-    listRuns: (inboxId): RunRecord[] =>
-      q.listRuns.all(inboxId).map((r) => ({
+    listRuns: (inboxId, filter): RunRecord[] => {
+      const raw = filter?.sessionId !== undefined ? q.listRunsBySession.all(inboxId, filter.sessionId) : q.listRuns.all(inboxId);
+      return raw.map((r) => ({
         id: r.id,
         inboxId: r.inbox_id,
         sessionId: r.session_id,
@@ -640,7 +728,11 @@ function createTx(db: Database): Tx {
         endedAt: r.ended_at,
         end: r.end === null ? null : (JSON.parse(r.end) as RunEnd),
         error: r.error,
-      })),
+      }));
+    },
+    activeRun: (inboxId, sessionId, now) => q.activeRun.get(inboxId, sessionId, now)?.run ?? null,
+    requestAbort: (runId) => q.requestAbort.run(runId).changes > 0,
+    isAbortRequested: (runId) => q.isAbortRequested.get(runId)?.abort_requested === 1,
     getJournal(session, call): JournalEntry | null {
       const r = q.getJournal.get(session, call);
       return r ? toJournal(r) : null;
@@ -698,6 +790,7 @@ function createTx(db: Database): Tx {
         kind: m.kind,
         body: m.body,
         call: m.callId,
+        detail: m.detail === undefined || m.detail === null ? null : json(m.detail),
         dedupe: m.dedupeKey,
         at: m.createdAt,
         run: m.runId ?? null,

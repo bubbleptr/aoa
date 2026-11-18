@@ -91,7 +91,7 @@ host.start();
 DEEPSEEK_API_KEY=... bun main.ts
 ```
 
-You first see an `[approval_request]`, then `sending { ... }`. The process stays running; exit with Ctrl-C. The agent only messages you when it calls `notify`; the model's last words are not sent on their own, so sometimes a finished task has no message.
+You first see an `[approval_request]`, then `sending { ... }`. The process stays running; exit with Ctrl-C. By default an agent runs in quiet background mode and only messages you when it calls `notify`; for chat assistants pass `reply: "final_text"` so the model's final reply enters the outbox automatically (pair with `approvals: { by: "answer" }` and `OutMsg.detail` for interactive approval cards and buttons).
 
 ## Primitives
 
@@ -136,7 +136,7 @@ The kernel's own tools (timers, notify, memory, `send_to`) mark themselves `low`
 
 ## Runtimes
 
-- **Tier 1: pi**, built in at `@aoa-dev/sdk/pi`. pi only has the tools aoa gives it, and the kernel decides and logs every call.
+- **Tier 1 (the kernel decides and journals every tool call)**: `@aoa-dev/sdk/loop` has zero third-party dependencies — pass a single `complete()` function to plug in OpenAI, Anthropic, Vercel AI SDK or plain `fetch` (see [`examples/assistant`](examples/assistant)); `@aoa-dev/sdk/pi` ships the built-in pi multi-provider runtime.
 - **Tier 2: external harnesses**, which use their own tools and sandboxes; what they would ask about becomes an aoa approval request. The SDK only defines the interface and ships no implementation; [`examples/codex`](examples/codex) and [`examples/dsh`](examples/dsh) show two ways to write one.
 
 ## Multiple agents
@@ -166,7 +166,8 @@ Each of C1–C20 in §9 of the [spec](docs/spec.md) was written as a failing tes
 
 | | |
 |---|---|
-| [`examples/digest`](examples/digest) | An agent that doesn't write code: it checks issues once a day and speaks only when needed |
+| [`examples/assistant`](examples/assistant) | A conversational two-agent service desk: interactive approval cards, gateway routing, built on `@aoa-dev/sdk/loop` without pi |
+| [`examples/digest`](examples/digest) | A background agent that doesn't write code: it checks issues once a day and speaks only when needed |
 | [`examples/codex`](examples/codex) · [`examples/dsh`](examples/dsh) | Tier-2 harness adapters |
 | [`apps/aoa`](apps/aoa/README.en.md) | The `aoa` command: a coding agent with a CLI, MCP, GitHub and an observation page |
 

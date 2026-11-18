@@ -1,3 +1,5 @@
+import type { Reader } from "./read.ts";
+
 export type InboxId = string;
 export type EventId = string;
 export type SessionId = string;
@@ -109,10 +111,17 @@ export type ToolExecContext = {
   /** The session's working directory (for a coding task, its worktree), if it has one. */
   workdir: string | null;
   /**
-   * Fires when the host stops. A long tool (a shell command) stops with it; what it throws then is not recorded as
-   * the call's result, so the call's outcome is unknown, as after a crash.
+   * Fires when the host stops or aborts the run. A long tool (a shell command) stops with it; what it throws then is
+   * not recorded as the call's result, so the call's outcome is unknown, as after a crash.
    */
   signal: AbortSignal;
+  /** The inbox and run serving this execution; present whenever the kernel executes the tool, absent in standalone unit tests. */
+  inboxId?: InboxId;
+  runId?: RunId;
+  /** Current time on the host's clock; present whenever the kernel executes the tool. */
+  now?: () => number;
+  /** Read-only view of this agent's inbox; present whenever the kernel executes the tool. */
+  read?: Reader;
 };
 
 /** A tool as handed to the runtime: every call goes through the kernel's journal. */
@@ -173,7 +182,15 @@ export type HarnessRunInput = RunInput & { ask: Ask };
 /** A harness's request for permission to make one of its own calls. */
 export type PermissionAsk = { callId: CallId; tool: string; args: unknown; reason?: string };
 
-export type RunResult = { end: RunEnd; sessionRef?: string };
+export type RunResult = {
+  end: RunEnd;
+  sessionRef?: string;
+  /**
+   * The assistant's final plain-text reply in this run, if any. Ignored under `"explicit"` reply mode (where only
+   * `notify` speaks); queued to the outbox under `"final_text"` when the run sent no message of its own.
+   */
+  reply?: string;
+};
 
 export type TimerKind = "follow_up" | "schedule";
 

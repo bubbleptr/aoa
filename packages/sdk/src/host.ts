@@ -17,6 +17,8 @@ import {
   POLL_INTERVAL_MS,
   type AgentRuntime,
   type AppendResult,
+  type ApprovalReplyMode,
+  type Beat,
   type CallId,
   type Channel,
   type Clock,
@@ -77,6 +79,24 @@ export type AgentSpec = {
   rate?: RatePolicy;
   /** How old a group's newest event must be before it runs (D-EVT-3). Default 2000. */
   debounceMs?: number;
+  /**
+   * How the agent's replies reach the outbox: `"explicit"` (default) sends only when `notify` is called; `"final_text"`
+   * also sends the assistant's final text when a run ends without deferring or calling `notify`, and omits the default
+   * "Stay quiet" directive from the resident context.
+   */
+  reply?: "explicit" | "final_text";
+  /** Overrides the resident context preamble (`quiet` defaults to `true` under `"explicit"` and `false` under `"final_text"`). */
+  resident?: { quiet?: boolean };
+  /**
+   * How deferred approvals are settled and how long they wait before expiring.
+   * - `by: "reply"` (default): `/approve`, `/deny` or free text on the thread settles an approval.
+   * - `by: "answer"`: approvals are settled only through `agent.answer()`; free-text messages on the thread queue
+   *   alongside a pending approval without denying it, while `ask_user` questions still accept text replies.
+   */
+  approvals?: {
+    by?: ApprovalReplyMode;
+    ttlMs?: number;
+  };
   session?: {
     /**
      * Gives a session without a working directory its directory before its run. Called again for the same
@@ -89,6 +109,11 @@ export type AgentSpec = {
      */
     cleanup?(session: Session, workdir: string): Promise<void>;
   };
+  /**
+   * Called after each run of this agent in this process has recorded its outcome and released its lease, before the
+   * worker claims another batch. An error it throws is logged, never failing the run.
+   */
+  onRunEnd?(run: RunOutcome): unknown;
 };
 
 /**
@@ -129,6 +154,8 @@ export interface Agent {
   schedule(t: ScheduleInput & { id: string }): TimerId;
   /** Cancels an armed timer of this agent's; false if there is none with that id. */
   cancelTimer(id: TimerId): boolean;
+  /** Registers another thread on one of this agent's sessions so events on that thread resume it; refuses if another session owns it. */
+  follow(sessionId: SessionId, thread: string): void;
   /** What the agent's inbox holds, read-only. */
   readonly read: Reader;
   /**
@@ -145,10 +172,10 @@ export interface Agent {
    */
   closeSession(id: SessionId, o?: { afterClose?: () => void }): Promise<"closed" | "busy">;
   /**
-   * Aborts the run in flight on session `id`, if there is one, through the run's signal: the runtime and its tools stop
-   * as on `host.stop()`, the run's events go back ready without counting toward dead letters, and the worker runs them
-   * again with whatever reached the session meanwhile. Append the new instruction before aborting so it comes along.
-   * False if no run of that session is in flight in this process.
+   * Aborts the run in flight on session `id`, in this process or in another process serving this store: the runtime and
+   * its tools stop as on `host.stop()`, the run's events go back ready without counting toward dead letters, and the
+   * worker runs them again with whatever reached the session meanwhile. Append the new instruction before aborting so
+   * it comes along. False if no run of that session holds a lease right now.
    */
   abort(id: SessionId): boolean;
   /** One pass of each loop, for tests and for hosts that do not run the loops. */
@@ -181,6 +208,10 @@ export interface Host {
   messages(o?: { since?: MsgId; limit?: number }): QueuedOutMsg[];
   /** The host that runs the loops on this store, this one or another process's; null if none has beaten lately. */
   serving(): { pid: number; since: number } | null;
+  /** The last heartbeat recorded on this store, stale or current; null if no host has ever started on it. */
+  beat(): Beat | null;
+  /** Runs `fn` inside one store transaction, so several `agent.read` calls see one consistent point-in-time snapshot. */
+  snapshot<T>(fn: () => T): T;
   /**
    * Calls `fn` after the store changes: this process's writes at once, another process's within about a second. It
    * does not say what changed; read again.
@@ -221,6 +252,10 @@ export function createHost(o: HostOptions): Host {
   const watches = new Set<() => void>();
 
   function agent(spec: AgentSpec): Agent {
+    if (spec.approvals?.ttlMs !== undefined && !(Number.isFinite(spec.approvals.ttlMs) && spec.approvals.ttlMs > 0)) {
+      throw new Error(`approvals.ttlMs must be a positive number, got ${spec.approvals.ttlMs}`);
+    }
+    const approvalBy: ApprovalReplyMode = spec.approvals?.by ?? "reply";
     // Without a channel nothing would ever deliver a message, and what the user was told would stay empty (D-MEM-3).
     const deps = { store: spec.channel ? store : sentOnWrite(store, clock), clock, inboxId: spec.inbox };
     const builtins = [...timerTools(deps), ...outboxTools(deps), ...(spec.memory ? memoryTools(spec.memory) : []), ...askUserTools()];
@@ -249,6 +284,9 @@ export function createHost(o: HostOptions): Host {
       tools,
       ...(spec.memory ? { memory: spec.memory } : {}),
       ...(spec.policy ? { policy: spec.policy } : {}),
+      ...(spec.reply ? { reply: spec.reply } : {}),
+      ...(spec.resident ? { resident: spec.resident } : {}),
+      ...(spec.approvals?.ttlMs !== undefined ? { deferTtlMs: spec.approvals.ttlMs } : {}),
       debounceMs: spec.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       ...(spec.session?.prepare
         ? {
@@ -268,16 +306,23 @@ export function createHost(o: HostOptions): Host {
         }
       },
       onRunStart: (r) => runLine(`run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
-      onRunEnd: (r) => {
+      onRunEnd: async (r) => {
         runLine(runEndLine(r));
         dispatcher?.wake();
+        if (spec.onRunEnd) {
+          try {
+            await spec.onRunEnd(r);
+          } catch (err) {
+            log(`onRunEnd of ${spec.name} failed: ${errorText(err)}`);
+          }
+        }
       },
     });
     const scheduler = new Scheduler({ ...deps, onFire: () => worker.wake() });
     const poll = spec.channel?.poll?.bind(spec.channel);
     const poller = poll ? new ChannelPoller({ ...deps, channel: { poll }, onEvents: () => worker.wake() }) : null;
 
-    const inRun = (id: SessionId) => store.tx((t) => t.listEvents(spec.inbox)).some((e) => e.status === "in_run" && e.resume === id);
+    const inRun = (id: SessionId) => store.tx((t) => t.activeRun(spec.inbox, id, clock.now()) !== null || t.listEvents(spec.inbox, { sessionId: id, status: "in_run" }).length > 0);
 
     async function close(id: SessionId, o: { afterClose?: () => void } = {}): Promise<"closed" | "busy"> {
       const owned = store.tx((t) => t.getSession(id));
@@ -319,7 +364,7 @@ export function createHost(o: HostOptions): Host {
       append(e, o = {}) {
         const result = store.tx((t) => {
           if (o.refuseWhileAwaitingApproval) awaitingApproval(t, e);
-          return appendInTx(t, spec.inbox, clock.now(), e);
+          return appendInTx(t, spec.inbox, clock.now(), e, undefined, approvalBy);
         });
         worker.wake();
         return result;
@@ -350,13 +395,29 @@ export function createHost(o: HostOptions): Host {
         if (timer === null || timer.inboxId !== spec.inbox) return false;
         return store.tx((t) => t.cancelTimer(id));
       },
+      follow(sessionId, thread) {
+        if (typeof thread !== "string" || thread.trim() === "") throw new Error("thread must be a non-empty string");
+        store.tx((t) => {
+          const s = t.getSession(sessionId);
+          if (s === null || s.inboxId !== spec.inbox) throw new Error(`Agent ${spec.name} has no session ${sessionId}.`);
+          const owner = t.sessionForThread(spec.inbox, thread);
+          if (owner !== null && owner !== sessionId) throw new Error(`${thread} belongs to another session`);
+          if (owner === null) t.registerThread(spec.inbox, thread, sessionId);
+        });
+      },
       read,
       activity(fn) {
         watchers.add(fn);
         return () => watchers.delete(fn);
       },
       closeSession: close,
-      abort: (id) => worker.abort(id),
+      abort(id) {
+        if (worker.abort(id)) return true;
+        return store.tx((t) => {
+          const runId = t.activeRun(spec.inbox, id, clock.now());
+          return runId !== null && t.requestAbort(runId);
+        });
+      },
       step: {
         worker: () => worker.drain(),
         scheduler: () => scheduler.pass(),
@@ -389,10 +450,11 @@ export function createHost(o: HostOptions): Host {
       ),
       ...(lock ? [every(clock, BEAT_MS, async () => lock.beat(clock.now()), (err) => log(`recording the heartbeat failed: ${errorText(err)}`), { first: false })] : []),
     ];
-    // Another process's append or answer; this process's own writes wake what they concern themselves.
+    // Another process's append, answer or abort; this process's own writes wake what they concern themselves.
     const unwatch = store.watch(
       () => {
         for (const a of all) {
+          a.worker.checkAbort();
           a.worker.wake();
           a.scheduler.wake();
           a.dispatcher?.wake();
@@ -428,6 +490,8 @@ export function createHost(o: HostOptions): Host {
       const b = store.lastBeat();
       return b === null || clock.now() - b.seen > SERVING_STALE_MS ? null : { pid: b.pid, since: b.since };
     },
+    beat: () => store.lastBeat(),
+    snapshot: (fn) => store.tx(() => fn()),
     watch(fn) {
       const stop = store.watch(fn);
       watches.add(stop);
@@ -522,4 +586,32 @@ function runEndLine(r: RunOutcome): string {
     default:
       return `run ${r.runId} ended: silent`;
   }
+}
+
+/** `follow`: the agent binds another thread (e.g. a pull request or ticket it opened) onto its calling session. */
+export function followTool(host: Pick<Host, "agents">): ToolDef {
+  return {
+    name: "follow",
+    risk: "low",
+    description:
+      "Follow another thread for this task, e.g. the pull request you opened: later comments there come back to " +
+      "this session. Pass the thread key a tool returned, such as github:owner/repo#12.",
+    schema: {
+      type: "object",
+      properties: { thread: { type: "string", description: "The thread key to follow." } },
+      required: ["thread"],
+      additionalProperties: false,
+    },
+    idempotent: true,
+    async execute(raw, ctx) {
+      const { thread } = raw as { thread: unknown };
+      if (typeof thread !== "string" || thread.trim() === "") throw new Error("thread must be a non-empty string");
+      const owner =
+        (ctx.inboxId !== undefined ? host.agents.find((a) => a.inbox === ctx.inboxId) : undefined) ??
+        host.agents.find((a) => a.read.session(ctx.sessionId) !== null);
+      if (!owner) throw new Error(`No agent of this host has session ${ctx.sessionId}.`);
+      owner.follow(ctx.sessionId, thread);
+      return { thread, following: true };
+    },
+  };
 }

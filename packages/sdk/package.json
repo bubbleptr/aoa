@@ -17,6 +17,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./loop": "./src/loop/index.ts",
     "./tools/coding": "./src/tools/coding/index.ts",
     "./pi": "./src/pi/index.ts",
     "./prompt": "./src/prompt.ts"

@@ -2,22 +2,27 @@ import type { CrashHook } from "./crash.ts";
 import { DEFER_TTL_MS, deferInTx, isQuestionTool } from "./deferred.ts";
 import { decide, type PolicyConfig, type Verdict } from "./policy.ts";
 import type { Clock, Store } from "./ports.ts";
-import type { PolicyReader } from "./read.ts";
-import type { CallId, InboxId, RunActivity, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
+import { type PolicyReader, type Reader, reader } from "./read.ts";
+import type { CallId, InboxId, RunActivity, RunId, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
 
 export type ToolContext = {
   store: Store;
   clock: Clock;
   inboxId: InboxId;
   sessionId: SessionId;
+  runId?: RunId;
   workdir: string | null;
   /** The run's signal, handed to each tool's `execute`. */
   signal: AbortSignal;
   policy?: PolicyConfig;
   /** The run's activity stream; `executeRecorded` reports each execution on it. */
   emit?: (a: RunActivity) => void;
+  /** Overrides `DEFER_TTL_MS` for deferred calls opened in this run. */
+  deferTtlMs?: number;
   /** What the policy may read of the inbox. */
   read?: PolicyReader;
+  /** What an executing tool may read of the inbox. */
+  fullRead?: Reader;
   crash: CrashHook;
   /** Throws if this process has (simulated) crashed, so nothing more is written. */
   assertAlive: () => void;
@@ -79,7 +84,7 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
         args,
         kind: question ? "question" : "approval",
         requestedAt: now,
-        expiresAt: now + DEFER_TTL_MS,
+        expiresAt: now + (ctx.deferTtlMs ?? DEFER_TTL_MS),
       });
       return DEFERRED;
     }
@@ -97,9 +102,19 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
  * activity stream reports executions here: `tool_end` only once the result is recorded.
  */
 export async function executeRecorded(def: ToolDef, ctx: ToolContext, callId: CallId, args: unknown): Promise<ToolResult> {
-  const { store, clock, sessionId, workdir, signal, crash, assertAlive } = ctx;
+  const { store, clock, inboxId, sessionId, runId, workdir, signal, crash, assertAlive } = ctx;
   ctx.emit?.({ kind: "tool_start", callId, tool: def.name, args });
-  const result = await execute(def, args, { sessionId, callId, workdir, signal });
+  const execCtx: ToolExecContext = {
+    inboxId,
+    sessionId,
+    callId,
+    workdir,
+    signal,
+    now: () => clock.now(),
+    read: ctx.fullRead ?? reader(store, inboxId),
+    ...(runId === undefined ? {} : { runId }),
+  };
+  const result = await execute(def, args, execCtx);
   crash("after_tool_exec");
   assertAlive();
   store.tx((t) => t.recordResult(sessionId, callId, result, clock.now()));

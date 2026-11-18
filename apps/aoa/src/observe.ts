@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type Event, type JournalRecord, type OutMsg, type OutboxRow as QueuedRow, type PendingCall, RESIDENT_RECENT_MESSAGES, SERVING_STALE_MS, type Tx } from "@aoa-dev/sdk";
+import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type Event, type JournalRecord, type OutMsg, type OutboxRow as QueuedRow, type PendingCall, RESIDENT_RECENT_MESSAGES, SERVING_STALE_MS } from "@aoa-dev/sdk";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
 
@@ -294,8 +294,9 @@ function fullAsk(d: PendingCall, events: Event[]): string {
   return `${d.tool} ${JSON.stringify(d.args, null, 2)}`;
 }
 
-export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
+export function snapshot(agent: Pick<Agent, "host" | "hosted" | "records" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
   const { inboxId } = agent;
+  const read = agent.hosted.read;
   const now = agent.clock.now();
   const since = now - DAY_MS;
   const recent = (at: number | null) => at !== null && at >= since;
@@ -303,8 +304,8 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
   const later: number[] = [];
 
   const files = listFiles(agent.paths.memory);
-  const s = agent.store.tx((t: Tx): Snapshot => {
-    const beat = agent.store.lastBeat();
+  const s = agent.host.snapshot((): Snapshot => {
+    const beat = agent.host.beat();
     const seen = beat?.seen ?? null;
     if (seen !== null && seen + SERVE_STALE_MS >= now) later.push(seen + SERVE_STALE_MS + 1);
     const serve: Snapshot["serve"] = {
@@ -313,7 +314,7 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
       seenAt: seen,
     };
 
-    const events = t.listEvents(inboxId);
+    const events = read.events();
     const rowOf = (e: (typeof events)[number]): InboxRow => {
       const retrying = e.status === "pending" && e.nextAttemptAt > now;
       if (retrying) later.push(e.nextAttemptAt);
@@ -339,7 +340,7 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
       ...inboxRows.filter(settled).slice(-LATEST).reverse(),
     ];
 
-    const runs = t.listRuns(inboxId);
+    const runs = read.runs();
     const held = inboxRows.filter((r) => r.status === "in_run" && r.leaseUntil !== null && r.leaseUntil > now);
     let worker: Snapshot["worker"] = null;
     if (held.length > 0) {
@@ -356,7 +357,7 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
       };
     }
 
-    const timers = t.listTimers(inboxId);
+    const timers = read.timers();
     const armed = timers.filter((x) => x.status === "armed");
     const expiresCallOf = (x: (typeof timers)[number]): string | null => {
       const { expiredCall } = (x.payload ?? {}) as { expiredCall?: unknown };
@@ -369,7 +370,7 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
         id: x.id,
         kind: x.kind,
         sessionId: x.sessionId,
-        thread: x.sessionId === null ? null : t.primaryThread(x.sessionId),
+        thread: x.sessionId === null ? null : (read.threads(x.sessionId)[0] ?? null),
         status: x.status,
         due: x.due,
         everyMs: x.recurrence?.everyMs ?? null,
@@ -392,11 +393,11 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
     const ended = [...fired, ...cancelled].slice(0, LATEST);
     const nextTimer = armed[0] ? { id: armed[0].id, kind: armed[0].kind, due: armed[0].due } : null;
 
-    const sessions = t.listSessions(inboxId);
+    const sessions = read.sessions();
     // Both are read per session; "latest" below means latest across all of them.
-    const journal: JournalRecord[] = sessions.flatMap((x) => t.listJournal(x.id)).sort((a, b) => a.intentAt - b.intentAt);
-    const decisions = sessions.flatMap((x) => t.listDecisions(x.id)).sort((a, b) => a.at - b.at);
-    const deferred = t.listDeferred(inboxId);
+    const journal: JournalRecord[] = sessions.flatMap((x) => read.journal(x.id)).sort((a, b) => a.intentAt - b.intentAt);
+    const decisions = sessions.flatMap((x) => read.decisions(x.id)).sort((a, b) => a.at - b.at);
+    const deferred = read.pending();
     // The deferred row lasts until the run that takes the answer has settled the call, approved calls included.
     const queuedAnswer = (callId: string): "approve" | "deny" | null => {
       const e = events.find((x) => x.source === "approval_answer" && (x.status === "pending" || x.status === "in_run") && (x.payload as { callId?: unknown }).callId === callId);
@@ -447,7 +448,7 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
       if (sessionId !== undefined) f.task = { sessionId, state: stateOf.get(sessionId) ?? "unknown" };
     }
     // The same read the worker makes for a run's "Already told the user".
-    const told = t.listRecentSent(inboxId, RESIDENT_RECENT_MESSAGES).map((m) => ({ id: m.id, thread: m.thread, body: m.body, createdAt: m.createdAt }));
+    const told = read.recentSent(RESIDENT_RECENT_MESSAGES).map((m) => ({ id: m.id, thread: m.thread, body: m.body, createdAt: m.createdAt }));
     const today = startOfDay(now);
     const writesToday = new Map<string, number>();
     for (const j of writes) if (j.intentAt >= today) writesToday.set(j.sessionId, (writesToday.get(j.sessionId) ?? 0) + 1);
@@ -460,7 +461,7 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
       if (d.decision === "allow") allowsByBasis.set(d.basis, (allowsByBasis.get(d.basis) ?? 0) + 1);
     }
 
-    const outbox = t.listOutbox(inboxId);
+    const outbox = read.outbox();
     const waitingIds = new Set(deferred.map((d) => d.callId));
     const outRow = (m: QueuedRow): OutboxRow => ({
       id: m.id,

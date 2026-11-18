@@ -1,11 +1,11 @@
-import type { Event, PendingCall, Session, Store, Tx } from "@aoa-dev/sdk";
+import type { Event, PendingCall, Reader, Session } from "@aoa-dev/sdk";
 import type { Records } from "./records.ts";
 
 export type PullRef = { number: number; url: string; thread: string; openedAt: number };
 
 /** The session's pull request: the first successful `github_open_pr` in its journal. */
-export function pullOf(t: Tx, sessionId: string): PullRef | null {
-  for (const j of t.listJournal(sessionId)) {
+export function pullOf(read: Pick<Reader, "journal">, sessionId: string): PullRef | null {
+  for (const j of read.journal(sessionId)) {
     if (j.tool !== "github_open_pr" || j.result?.status !== "ok" || j.resultAt === null) continue;
     const out = j.result.output as { number: number; url: string; thread: string };
     return { number: out.number, url: out.url, thread: out.thread, openedAt: j.resultAt };
@@ -56,7 +56,7 @@ export type SessionStatus = {
 
 /** The mode's part of a session's status: what its work led to, and the outcome that follows from it. */
 export type ModeColumns = (
-  t: Tx,
+  read: Reader,
   records: Records,
   session: Session,
   events: Event[],
@@ -76,8 +76,8 @@ const firstEventAt = (events: Event[]): number | null => {
   return Number.isFinite(first) ? first : null;
 };
 
-export const pullColumns: ModeColumns = (t, records, s, events) => {
-  const pr = pullOf(t, s.id);
+export const pullColumns: ModeColumns = (read, records, s, events) => {
+  const pr = pullOf(read, s.id);
   const stored = records.pulls.get(s.id);
   const first = firstEventAt(events);
   return {
@@ -94,11 +94,11 @@ export const pullColumns: ModeColumns = (t, records, s, events) => {
 };
 
 /** Local mode; `branchOf` names a session's branch, null for an agent whose sessions have none. */
-export const branchColumns = (branchOf: ((sessionId: string) => string) | null): ModeColumns => (t, records, s, events) => {
+export const branchColumns = (branchOf: ((sessionId: string) => string) | null): ModeColumns => (read, records, s, events) => {
   const declared = records.results.get(s.id)?.result;
-  const sent = t
-    .listOutbox(s.inboxId)
-    .filter((m) => m.sessionId === s.id && m.kind === "message" && m.sentAt !== null)
+  const sent = read
+    .outbox({ sessionId: s.id, kind: "message" })
+    .filter((m) => m.sentAt !== null)
     .map((m) => m.sentAt!);
   const firstMessage = sent.length > 0 ? Math.min(...sent) : null;
   const first = firstEventAt(events);
@@ -131,39 +131,38 @@ export function asks(tool: string, kind: PendingCall["kind"], args: unknown): st
   return line.length > ASK_LIMIT ? `${line.slice(0, ASK_LIMIT - 1)}…` : line;
 }
 
-/** Everything `aoa status` shows of one agent's inbox, read from the store alone. */
-export function collectStatus(store: Store, records: Records, agent: string, inboxId: string, mode: ModeColumns): Omit<StatusReport, "agents"> {
-  return store.tx((t) => {
-    const events = t.listEvents(inboxId);
-    const sessions = t.listSessions(inboxId).map((s): SessionStatus => {
-      const mine = events.filter((e) => e.resume === s.id && e.status !== "dropped");
-      const { outcome, columns } = mode(t, records, s, mine);
-      return {
-        agent,
-        session: s.id,
-        thread: t.primaryThread(s.id),
-        state: s.status === "paused" ? "waiting for you" : s.status,
-        outcome,
-        asked: t.listDecisions(s.id).filter((d) => d.decision === "defer").length,
-        ...columns,
-      };
-    });
+/** Everything `aoa status` shows of one agent's inbox, read through `agent.read` inside a host snapshot. */
+export function collectStatus(read: Reader, records: Records, agent: string, mode: ModeColumns): Omit<StatusReport, "agents"> {
+  const events = read.events();
+  const primaryThread = (sessionId: string) => read.threads(sessionId)[0] ?? null;
+  const sessions = read.sessions().map((s): SessionStatus => {
+    const mine = events.filter((e) => e.resume === s.id && e.status !== "dropped");
+    const { outcome, columns } = mode(read, records, s, mine);
     return {
-      sessions,
-      pending: t.listDeferred(inboxId).map((d) => ({
-        agent,
-        callId: d.callId,
-        session: d.sessionId,
-        thread: t.primaryThread(d.sessionId),
-        tool: d.tool,
-        asks: asks(d.tool, d.kind, d.args),
-      })),
-      dead: events
-        .filter((e) => e.status === "dead")
-        .map((e) => ({ agent, id: e.id, source: e.source, thread: e.thread, attempts: e.attempts })),
-      failed: t.listFailed(inboxId).map((m) => ({ agent, id: m.id, kind: m.kind, thread: m.thread, attempts: m.attempts })),
+      agent,
+      session: s.id,
+      thread: primaryThread(s.id),
+      state: s.status === "paused" ? "waiting for you" : s.status,
+      outcome,
+      asked: read.decisions(s.id).filter((d) => d.decision === "defer").length,
+      ...columns,
     };
   });
+  return {
+    sessions,
+    pending: read.pending().map((d) => ({
+      agent,
+      callId: d.callId,
+      session: d.sessionId,
+      thread: primaryThread(d.sessionId),
+      tool: d.tool,
+      asks: asks(d.tool, d.kind, d.args),
+    })),
+    dead: events
+      .filter((e) => e.status === "dead")
+      .map((e) => ({ agent, id: e.id, source: e.source, thread: e.thread, attempts: e.attempts })),
+    failed: read.outbox({ status: "failed" }).map((m) => ({ agent, id: m.id, kind: m.kind, thread: m.thread, attempts: m.attempts })),
+  };
 }
 
 export function formatDuration(ms: number): string {

@@ -101,6 +101,7 @@ export function reportDead(t: Tx, inboxId: InboxId, dead: Event[], error: string
       kind: "message",
       body: lines.join("\n"),
       callId: null,
+      detail: { kind: "dead_letter", events: events.map((e) => e.id), error },
       dedupeKey: `${DEAD_NOTICE_PREFIX}${sessionId}:${oldest.id}`,
       createdAt: now,
       // Owned by the run that died, so the session's next run does not count it as its own message.

@@ -1,19 +1,19 @@
 // A program in another repository: it knows the published packages and nothing else of aoa.
-import { createHost, systemClock, type KernelRuntime } from "@aoa-dev/sdk";
+import { createHost, systemClock } from "@aoa-dev/sdk";
+import { loopRuntime } from "@aoa-dev/sdk/loop";
 import { renderAnswer } from "@aoa-dev/sdk/prompt";
 import { sqliteStore } from "@aoa-dev/store-sqlite";
 
-const runtime: KernelRuntime = {
-  kind: "kernel",
-  async run(input) {
-    const notify = input.tools.find((t) => t.name === "notify")!;
-    await notify.invoke("c1", { body: `got ${input.events.length} event(s)` });
-    return { end: { kind: "silent" } };
+const runtime = loopRuntime({
+  systemPrompt: "Say how many events arrived.",
+  async complete({ messages }) {
+    const events = messages.filter((m) => m.role === "user").length;
+    return { text: `got ${events} event(s)` };
   },
-};
+});
 
 const host = createHost({ store: sqliteStore(":memory:"), clock: systemClock, log: () => {} });
-const agent = host.agent({ name: "hello", inbox: "hello", runtime, debounceMs: 0 });
+const agent = host.agent({ name: "hello", inbox: "hello", runtime, reply: "final_text", debounceMs: 0 });
 agent.append({ source: "user_message", dedupeKey: "m1", payload: { text: "hi" }, thread: "t", trusted: true });
 await agent.step.worker();
 console.log(JSON.stringify(host.messages().map((m) => [m.status, m.body])));

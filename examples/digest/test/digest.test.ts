@@ -62,6 +62,7 @@ test("a quiet day: the job reaches the model, the issues come back cut short, an
   expect(listed.output.issues[0]!.body).toHaveLength(1_000);
   expect(host.messages()).toEqual([]);
   expect(agent.read.runs()[0]!.end).toEqual({ kind: "silent" });
+  expect(agent.read.sessions()[0]!.status).toBe("closed");
 });
 
 test("a day with something for the user: one message, already sent, with no channel", async () => {

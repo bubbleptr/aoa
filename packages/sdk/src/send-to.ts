@@ -39,7 +39,9 @@ const asMessage = (payload: unknown) => payload as AgentMessage;
  */
 export function sendToTool(host: Pick<Host, "agents">, o: SendToOptions = {}): ToolDef {
   const params = o.params ?? {};
-  const senderOf = (sessionId: string) => host.agents.find((a) => a.read.sessions().some((s) => s.id === sessionId));
+  const senderOf = (sessionId: string, inboxId?: string) =>
+    (inboxId !== undefined ? host.agents.find((a) => a.inbox === inboxId) : undefined) ??
+    host.agents.find((a) => a.read.session(sessionId) !== null);
   return {
     name: "send_to",
     risk: "low",
@@ -67,7 +69,7 @@ export function sendToTool(host: Pick<Host, "agents">, o: SendToOptions = {}): T
     async execute(raw, ctx) {
       const { agent: name, text, ...rest } = raw as { agent: unknown; text: unknown; [k: string]: unknown };
       if (typeof text !== "string" || text.trim() === "") throw new Error("text must be a non-empty string");
-      const sender = senderOf(ctx.sessionId);
+      const sender = senderOf(ctx.sessionId, ctx.inboxId);
       if (!sender) throw new Error(`No agent of this host has session ${ctx.sessionId}.`);
       const others = host.agents.filter((a) => a !== sender);
       if (name === sender.name) throw new Error(`You are ${sender.name}; send to one of the others: ${others.map((a) => a.name).join(", ")}.`);
@@ -76,7 +78,7 @@ export function sendToTool(host: Pick<Host, "agents">, o: SendToOptions = {}): T
       const extra = Object.fromEntries(Object.entries(rest).filter(([k, v]) => k in params && v !== undefined));
       const args: SendToArgs = { text, ...extra };
 
-      const mine = sender.read.events().filter((e) => e.resume === ctx.sessionId && e.status !== "dropped");
+      const mine = sender.read.events({ sessionId: ctx.sessionId }).filter((e) => e.status !== "dropped");
       const incoming = mine.filter((e) => e.source === "agent_message").map((e) => asMessage(e.payload));
       const hop = Math.max(0, ...incoming.map((m) => m.hop)) + 1;
       if (hop > MAX_HOPS) {
@@ -90,7 +92,7 @@ export function sendToTool(host: Pick<Host, "agents">, o: SendToOptions = {}): T
       const opener = mine[0]?.source === "agent_message" ? asMessage(mine[0].payload) : null;
       // Only a session the target opened answers into the target's thread; any other send starts a new one.
       const replyThread = opener?.from === target.name ? (opener.replyThread ?? null) : null;
-      const session = sender.read.sessions().find((s) => s.id === ctx.sessionId)!;
+      const session = sender.read.session(ctx.sessionId)!;
       const ownThread = sender.read.threads(ctx.sessionId)[0] ?? null;
       const thread =
         replyThread ??

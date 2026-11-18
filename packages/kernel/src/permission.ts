@@ -30,7 +30,16 @@ export async function askPermission(ctx: ToolContext, a: PermissionAsk): Promise
     t.recordDecision({ callId: a.callId, sessionId, tool: a.tool, decision: "defer", basis: "harness asked", at: now });
     deferInTx(
       t,
-      { callId: a.callId, sessionId, inboxId, tool: a.tool, args, kind: "harness", requestedAt: now, expiresAt: now + DEFER_TTL_MS },
+      {
+        callId: a.callId,
+        sessionId,
+        inboxId,
+        tool: a.tool,
+        args,
+        kind: "harness",
+        requestedAt: now,
+        expiresAt: now + (ctx.deferTtlMs ?? DEFER_TTL_MS),
+      },
       a.reason,
     );
     return "defer";
@@ -46,12 +55,20 @@ type AdmitArgs = { events: EventId[]; from: string; preview: string };
  * Holds an untrusted batch in harness mode (design §12): the session pauses on an `admit` call covering `held`,
  * and the whole group stays pending, pinned to the session so the answer that releases it joins the same group.
  */
-export function holdUntrusted(t: Tx, inboxId: InboxId, sessionId: SessionId, group: Event[], held: Event[], now: number): void {
+export function holdUntrusted(
+  t: Tx,
+  inboxId: InboxId,
+  sessionId: SessionId,
+  group: Event[],
+  held: Event[],
+  now: number,
+  ttlMs: number = DEFER_TTL_MS,
+): void {
   t.pinEvents(group.map((e) => e.id), sessionId);
   const callId = crypto.randomUUID();
   const args: AdmitArgs = { events: held.map((e) => e.id), from: sourcesOf(held), preview: previewOf(held) };
   t.recordDecision({ callId, sessionId, tool: ADMIT, decision: "defer", basis: "untrusted input", at: now });
-  deferInTx(t, { callId, sessionId, inboxId, tool: ADMIT, args, kind: "admit", requestedAt: now, expiresAt: now + DEFER_TTL_MS });
+  deferInTx(t, { callId, sessionId, inboxId, tool: ADMIT, args, kind: "admit", requestedAt: now, expiresAt: now + ttlMs });
 }
 
 /**

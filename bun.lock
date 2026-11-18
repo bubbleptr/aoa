@@ -32,6 +32,17 @@
         "@aoa-dev/conformance": "workspace:*",
       },
     },
+    "examples/assistant": {
+      "name": "@aoa-dev/example-assistant",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa-dev/sdk": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
+      },
+      "devDependencies": {
+        "@aoa-dev/conformance": "workspace:*",
+      },
+    },
     "examples/codex": {
       "name": "@aoa-dev/example-codex",
       "version": "0.0.0",
@@ -137,6 +148,8 @@
     "@aoa-dev/cli": ["@aoa-dev/cli@workspace:apps/aoa"],
 
     "@aoa-dev/conformance": ["@aoa-dev/conformance@workspace:packages/conformance"],
+
+    "@aoa-dev/example-assistant": ["@aoa-dev/example-assistant@workspace:examples/assistant"],
 
     "@aoa-dev/example-codex": ["@aoa-dev/example-codex@workspace:examples/codex"],
 
