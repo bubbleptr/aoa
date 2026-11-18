@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { MAX_ATTEMPTS, SimulatedCrash, retryDelayMs, type Worker } from "@aoa/kernel";
-import { FakeChannel, Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
+import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const failing = (n: number, message: string) => Array.from({ length: n }, () => ({ fail: new Error(message) }));
 
@@ -74,6 +74,50 @@ for (const [name, factory] of storeFactories) {
       h.append();
       await drainThroughRetries(h.worker({ runtime: new ScriptedRuntime(failing(MAX_ATTEMPTS, "boom")) }));
       expect(deadMessages().map((m) => m.thread)).toEqual([null]);
+    });
+
+    test("an approval_answer that goes dead clears the pending deferral and reopens the session", async () => {
+      const deploy = countingTool("deploy");
+      const policy = { risk: {} };
+      const runtime = new ScriptedRuntime([{ calls: [{ tool: "deploy", callId: "call-1", args: { env: "prod" } }] }]);
+      h.append({ thread: "issue-1" });
+      await h.worker({ runtime, tools: [deploy], policy }).drain();
+
+      const session = runtime.runs[0]!.input.session.id;
+      const reply = h.append({ thread: "issue-1", payload: { text: "/approve" } });
+      expect(h.store.tx((t) => t.getEvent(reply.id))).toMatchObject({
+        source: "approval_answer",
+        dedupeKey: "answer:call-1",
+        resume: session,
+      });
+
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        await expect(
+          h.worker({ runtime, tools: [deploy], policy, crash: crashAt("after_claim") }).drain(),
+        ).rejects.toBeInstanceOf(SimulatedCrash);
+        h.waitOutLease(i + 1);
+      }
+      await h.worker({ runtime, tools: [deploy], policy }).drain();
+
+      expect(h.store.tx((t) => t.getEvent(reply.id))?.status).toBe("dead");
+      expect(deadMessages().map((m) => [m.dedupeKey, m.thread])).toEqual([[`dead:${session}:${reply.id}`, "issue-1"]]);
+      expect(h.store.tx((t) => t.getSession(session))).toMatchObject({ status: "open", pending: null });
+      expect(h.store.tx((t) => t.getDeferred("call-1"))).toBeNull();
+      expect(h.store.tx((t) => t.listDeferred(h.inboxId))).toEqual([]);
+      expect(h.store.tx((t) => t.getTimer("expire:call-1"))?.status).toBe("cancelled");
+
+      const followUp = h.append({ thread: "issue-1", payload: { text: "continue" } });
+      expect(followUp.status).toBe("pending");
+      expect(h.store.tx((t) => t.getEvent(followUp.id))).toMatchObject({
+        source: "user_message",
+        resume: session,
+      });
+      await h.worker({ runtime, tools: [deploy], policy }).drain();
+      expect(h.store.tx((t) => t.getEvent(followUp.id))).toMatchObject({
+        status: "done",
+        resume: session,
+      });
+      expect(runtime.runs.at(-1)!.input.session.id).toBe(session);
     });
   });
 }

@@ -1,5 +1,6 @@
 import type { Channel, OutMsg } from "./channel.ts";
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
+import { answerCallId, expiryTimerId } from "./deferred.ts";
 import { DEFAULT_RATE_POLICY, pace, type RatePolicy } from "./pace.ts";
 import type { Clock, Store } from "./ports.ts";
 import type { Tx } from "./ports.ts";
@@ -68,6 +69,16 @@ export function reportDead(t: Tx, inboxId: InboxId, dead: Event[], error: string
   const bySession = new Map<string, Event[]>();
   for (const e of dead) {
     if (e.resume === null) continue;
+    if (e.source === "approval_answer") {
+      const callId = answerCallId(e.payload);
+      if (callId !== null && t.getSession(e.resume)?.pending === callId) {
+        // The answer died before resolveAnswer settled the call; release the deferral so the session does not stay paused.
+        t.deleteDeferred(callId);
+        t.cancelApprovalRequest(callId);
+        t.setSessionPending(e.resume, null);
+        t.cancelFollowUp(expiryTimerId(callId), e.resume);
+      }
+    }
     bySession.set(e.resume, [...(bySession.get(e.resume) ?? []), e]);
   }
   for (const [sessionId, events] of bySession) {
