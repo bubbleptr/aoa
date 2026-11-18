@@ -6,10 +6,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type Message } from "@earendil-works/pi-ai";
-import { FakeClock } from "@aoa/conformance";
-import { createHost } from "@aoa/sdk";
-import { piRuntime } from "@aoa/sdk/pi";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { FakeClock } from "@aoa-dev/conformance";
+import { createHost } from "@aoa-dev/sdk";
+import { piRuntime } from "@aoa-dev/sdk/pi";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 import { DIGEST_JOB, digestAgent } from "../../src/index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "aoa-digest-pi-"));

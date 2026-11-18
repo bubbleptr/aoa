@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { ToolDef } from "@aoa/kernel";
+import type { ToolDef } from "@aoa-dev/kernel";
 import { type GitRunner, githubTools } from "../src/index.ts";
 import { FakeGitHub, OWNER, REPO, USER, writeAppKey } from "./fake-github.ts";
 

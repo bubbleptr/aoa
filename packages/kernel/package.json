@@ -1,5 +1,5 @@
 {
-  "name": "@aoa/kernel",
+  "name": "@aoa-dev/kernel",
   "version": "0.1.0",
   "description": "aoa's kernel: inboxes, sessions, events, deferred calls, timers, outbox, memory, and the ports a store, channel and runtime implement.",
   "license": "MIT",

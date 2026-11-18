@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { FakeClock, ScriptedRuntime, type RunScript } from "@aoa/conformance";
-import { sqliteStore } from "@aoa/store-sqlite";
-import { createHost } from "@aoa/sdk";
+import { FakeClock, ScriptedRuntime, type RunScript } from "@aoa-dev/conformance";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { createHost } from "@aoa-dev/sdk";
 import { DAY_MS, DIGEST_JOB, digestAgent, type Issue, type IssueSource } from "../src/index.ts";
 
 const opened: { close(): void }[] = [];

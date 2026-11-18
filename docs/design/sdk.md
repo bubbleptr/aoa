@@ -95,7 +95,7 @@ store 只有 SQLite 一个实现，但 SDK 的公开类型里不出现 `SqliteSt
 - 默认安全：不传 `policy` 时不再全部放行，而是按每个工具的风险等级走，未知工具延后。现在内核 `!policy` 就放行，使用者容易以为有默认保护。
 - 风险等级跟着工具走：`ToolDef` 多一个 `risk?: Risk`。内核自带的工具（timers、notify、memory、`send_to`、`follow`）自己标 `low`，`ask_user` 不经风险；编码工具包里的工具自己标等级。`policy.risk` 只用来覆盖。现在 `low` 的名单写死在 `apps/aoa/src/policy.ts`，SDK 用户一开 `policy`，连 `notify` 都会停下来等审批。
 - 规则只有一张有序的表，SDK 不往里拼任何东西。`apps/aoa` 现在分 `ahead` 和 `rules` 两段，是因为审查的只读拦截要排在凭据路径的延后之前，本地 `git push` 的延后要排在禁止强推之后；这种顺序由调用方自己拼表决定。
-- 编码相关的规则跟着编码工具走：原来内核的 `defaultRules`（sudo、强推、git 配置、`curl | sh`、凭据路径、tainted 时联网、只读命令）改名 `codingRules`，和 `apps/aoa` 的 `outsideWorktree` 一起搬进 `@aoa/sdk/tools/coding`，分开导出，由调用方放进自己的规则表。规则名不变，库里记的 `rule:<名字>` 照旧能对上。内核本身不带规则。`codingTools` 第 3 步也搬了过来。
+- 编码相关的规则跟着编码工具走：原来内核的 `defaultRules`（sudo、强推、git 配置、`curl | sh`、凭据路径、tainted 时联网、只读命令）改名 `codingRules`，和 `apps/aoa` 的 `outsideWorktree` 一起搬进 `@aoa-dev/sdk/tools/coding`，分开导出，由调用方放进自己的规则表。规则名不变，库里记的 `rule:<名字>` 照旧能对上。内核本身不带规则。`codingTools` 第 3 步也搬了过来。
 - 分类器能读 session（第 4 步，随 `agent.read`）：`Classify` 的上下文多一个只读的 `read`（同 `Agent.read`，但先前调用只有参数、没有结果），审核模型（§12「审核模型」）不用再绕过 agent 直接扫 store。它仍然只拿得到库里的东西，拿不到调用结果，§6.2 的要害不变。
 
 ## 两档 runtime
@@ -123,7 +123,7 @@ type RunActivity =
   | { kind: "tool_end"; callId: CallId; result: ToolResult };
 ```
 
-- SDK 只内置 pi（第一档）：pi 的 agent loop 和模型接入，放在子路径 `@aoa/sdk/pi`，只用第二档的人不用装 pi 的依赖。编码工具（bash、read、edit、write）和编码规则是可选的 `@aoa/sdk/tools/coding`，不默认装上，内核层不假设 agent 在写代码。
+- SDK 只内置 pi（第一档）：pi 的 agent loop 和模型接入，放在子路径 `@aoa-dev/sdk/pi`，只用第二档的人不用装 pi 的依赖。编码工具（bash、read、edit、write）和编码规则是可选的 `@aoa-dev/sdk/tools/coding`，不默认装上，内核层不假设 agent 在写代码。
 - 第二档 SDK 只给接口，不实现任何 harness。Codex 和 dsh 的适配器搬到 `examples/`，是 workspace 里的包，测试照跑、不发布；`apps/aoa` 从那里引用，继续支持 `runtime: "codex" | "dsh"`。Codex 示例里的 `autoReview` 是为 `apps/aoa` 的审查角色加的选项，在示例的说明里写明。
 - `ToolExecContext` 也带 `signal`，长时间的工具（bash 的子进程）跟着停。
 
@@ -169,17 +169,17 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 ## 步骤
 
-每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段已随第 3、4 步去掉：`AgentSpec.permissions`、只在给了时才轮询的 `pollMs`、`agent.wake()`，以及 `apps/aoa` 里 `serve` 的心跳和每 5 秒的唤醒。第 2 步已完成（2026-11-18）：工具自带风险等级，不传 `policy` 按等级走，内核不再带规则，编码规则在 `@aoa/sdk/tools/coding`。
+每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段已随第 3、4 步去掉：`AgentSpec.permissions`、只在给了时才轮询的 `pollMs`、`agent.wake()`，以及 `apps/aoa` 里 `serve` 的心跳和每 5 秒的唤醒。第 2 步已完成（2026-11-18）：工具自带风险等级，不传 `policy` 按等级走，内核不再带规则，编码规则在 `@aoa-dev/sdk/tools/coding`。
 
-第 3 步已完成（2026-11-18）：`AgentRuntime` 是 `KernelRuntime | HarnessRuntime`，worker 看 `runtime.kind`，`ask` 只在 `HarnessRunInput` 上；`RunInput.signal` 和 `ToolExecContext.signal` 在 `stop()` 时触发。pi 在 `@aoa/sdk/pi`，`codingTools` 在 `@aoa/sdk/tools/coding`，Codex 和 dsh 在 `examples/`（`@aoa/example-codex`、`@aoa/example-dsh`）。和上文不同或上文没写的地方：
+第 3 步已完成（2026-11-18）：`AgentRuntime` 是 `KernelRuntime | HarnessRuntime`，worker 看 `runtime.kind`，`ask` 只在 `HarnessRunInput` 上；`RunInput.signal` 和 `ToolExecContext.signal` 在 `stop()` 时触发。pi 在 `@aoa-dev/sdk/pi`，`codingTools` 在 `@aoa-dev/sdk/tools/coding`，Codex 和 dsh 在 `examples/`（`@aoa-dev/example-codex`、`@aoa-dev/example-dsh`）。和上文不同或上文没写的地方：
 
 - 被停下的 run 不算失败：它的事件回到 `pending`，不等重试间隔，停多少次都不会进死信；但次数照样加一，下一次 run 才知道上一次可能做了一半（Codex、dsh 靠它加重试提示）。一直停在同一组事件上，会比正常失败更快用完三次，这在真的失败时才显出来。
 - 停下时正在跑的工具不记结果，下一次 run 再调同一个 id 得到「结果未知」，和崩溃一样；可重入的工具照常重跑。停下之后 `invoke` 不再开始新的调用。
-- 运行时之间共用的渲染（事件块、答复、`encode`、`resultText`）放在 `@aoa/sdk/prompt`，第二档适配器从这里取，不用装 pi。
-- pi 的依赖现在是 `@aoa/sdk` 的普通依赖：仓库没发布，分不出可选依赖。发布时改成可选的 peer 依赖，`@aoa/sdk/pi` 以外的子路径不引用它们。
+- 运行时之间共用的渲染（事件块、答复、`encode`、`resultText`）放在 `@aoa-dev/sdk/prompt`，第二档适配器从这里取，不用装 pi。
+- pi 的依赖现在是 `@aoa-dev/sdk` 的普通依赖：仓库没发布，分不出可选依赖。发布时改成可选的 peer 依赖，`@aoa-dev/sdk/pi` 以外的子路径不引用它们。
 - 第六条约定的写法：Codex 等手上的回复都发出去再 `turn/interrupt`，等 Codex 回 `turn/completed` 再结束；dsh 走和 `idle` 一样的 `shutdown`。
 
-第 4 步已完成（2026-11-18）：`agent.append`、`answer`、`read`、`followUp`、`schedule`、`cancelTimer`，`host.messages`、`serving`、`watch`、`close`，`sendToTool` 都在 `@aoa/sdk`；`agent.wake()` 和 `serve` 每 5 秒的唤醒去掉了。和上文不同或上文没写的地方：
+第 4 步已完成（2026-11-18）：`agent.append`、`answer`、`read`、`followUp`、`schedule`、`cancelTimer`，`host.messages`、`serving`、`watch`、`close`，`sendToTool` 都在 `@aoa-dev/sdk`；`agent.wake()` 和 `serve` 每 5 秒的唤醒去掉了。和上文不同或上文没写的地方：
 
 - 锁、心跳和 `watch` 不在内核的 `Store` 上，在 `HostStore extends Store` 上（`lock()`、`lastBeat()`、`watch()`、`close()`），`createHost` 要的是它：内核的 worker、scheduler 这些只用 `tx`。SQLite 的锁是在旁边的 `<db>-host` 文件上开着一个排他事务：持有的进程死了由系统放掉，同一个进程里第二个连接也拿不到。`lock()` 拿不到时抛错，`:memory:` 返回 null。
 - `watch(fn, { othersOnly })`：宿主的循环只因别的进程的提交被叫醒，否则自己的每次写入都会把所有循环叫醒一遍。本进程的写事务按 SQLite 的 `total_changes()` 判断，只读的事务不触发。
@@ -202,7 +202,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - pi 在同一次 `prompt` 里自己重试模型请求时，重试前已经发出的文字会再来一遍。
 - Codex 和 dsh 示例还不发自己的文字和自带工具的调用；它们经 `input.tools` 的调用由内核发。
 
-第 6 步已完成（2026-11-18）：`examples/digest`（`@aoa/example-digest`），说明见它的 README。一个子进程在 `PATH` 里没有 git、不在任何仓库里，经 pi 跑完一天，pi 本身也不碰 git。顺带做了「内核里残留的编码假设」一节：没有 `memory` 时常驻上下文只剩「保持安静」一段；有 `memory` 时「只存指针」不再点名 issue、PR、提交；死信通知不再提 `aoa status`，`apps/aoa` 在自己的 channel 里按去重键前缀（`DEAD_NOTICE_PREFIX`）补上这一行。
+第 6 步已完成（2026-11-18）：`examples/digest`（`@aoa-dev/example-digest`），说明见它的 README。一个子进程在 `PATH` 里没有 git、不在任何仓库里，经 pi 跑完一天，pi 本身也不碰 git。顺带做了「内核里残留的编码假设」一节：没有 `memory` 时常驻上下文只剩「保持安静」一段；有 `memory` 时「只存指针」不再点名 issue、PR、提交；死信通知不再提 `aoa status`，`apps/aoa` 在自己的 channel 里按去重键前缀（`DEAD_NOTICE_PREFIX`）补上这一行。
 
 这个示例碰到的、SDK 还不顺手的地方：
 
@@ -210,11 +210,11 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - 工具要知道「上一次成功检查是什么时候」，只能在工具里经 `agent.read.runs()` 推，工具定义时 agent 还没注册，得晚绑定。
 - 宿主的时钟不交给工具：工具里的「现在」只能借当前 run 的开始时间。
 
-2026-11-18 起 `apps/aoa` 只经 `@aoa/sdk` 用内核，`package.json` 里不再有 `@aoa/kernel`，`apps/aoa/test/depends-on-sdk.test.ts` 守着这一点。`@aoa/sdk` 重新导出内核的全部类型，值只导出不属于宿主的几样（`systemClock`、`dirMemory`、`followTools`、单独跑策略的 `decide`、`DEAD_NOTICE_PREFIX`、`RESIDENT_RECENT_MESSAGES`），另加 `builtinToolRisk()`：按名字查内置工具、`follow` 和 `send_to` 的风险等级，给只知道工具名的重放和测试用。store 和 channel 仍是应用直接依赖、传进 SDK 的包，SDK 不依赖它们。
+2026-11-18 起 `apps/aoa` 只经 `@aoa-dev/sdk` 用内核，`package.json` 里不再有 `@aoa-dev/kernel`，`apps/aoa/test/depends-on-sdk.test.ts` 守着这一点。`@aoa-dev/sdk` 重新导出内核的全部类型，值只导出不属于宿主的几样（`systemClock`、`dirMemory`、`followTools`、单独跑策略的 `decide`、`DEAD_NOTICE_PREFIX`、`RESIDENT_RECENT_MESSAGES`），另加 `builtinToolRisk()`：按名字查内置工具、`follow` 和 `send_to` 的风险等级，给只知道工具名的重放和测试用。store 和 channel 仍是应用直接依赖、传进 SDK 的包，SDK 不依赖它们。
 
-三个示例（`codex`、`dsh`、`digest`）也一样：依赖里没有 `@aoa/kernel`，源码和测试都从 `@aoa/sdk` 取，`examples/depends-on-sdk.test.ts` 守着。Codex 和 dsh 原来直接驱动内核 worker 的测试（`kernel.test.ts`）改成经 `createHost` 和 `agent.step`、`answer`、`read`，和 SDK 使用者的写法一样。测试工具 `@aoa/conformance` 仍是开发依赖。
+三个示例（`codex`、`dsh`、`digest`）也一样：依赖里没有 `@aoa-dev/kernel`，源码和测试都从 `@aoa-dev/sdk` 取，`examples/depends-on-sdk.test.ts` 守着。Codex 和 dsh 原来直接驱动内核 worker 的测试（`kernel.test.ts`）改成经 `createHost` 和 `agent.step`、`answer`、`read`，和 SDK 使用者的写法一样。测试工具 `@aoa-dev/conformance` 仍是开发依赖。
 
-2026-11-18 起 `@aoa/kernel`、`@aoa/sdk`、`@aoa/store-sqlite` 可以被别的仓库安装：去掉 `private`，版本 0.1.0，只支持 Bun（≥ 1.3），包里直接是 `.ts` 源码，打包时 `workspace:*` 换成真实版本。pi 的三个依赖（`pi-ai`、`pi-coding-agent`、`typebox`）改成可选的 peer 依赖，只有 `@aoa/sdk/pi` 和 `@aoa/sdk/tools/coding` 要它们；`@aoa/sdk/prompt` 里 pi 工具结果的类型改为自己写出，不再从 pi 引。`packages/sdk/test/install.test.ts` 把三个包打成 tarball，装进仓库外的空目录，跑通并类型检查一个只用公开入口的小程序，且确认没装进任何别的包。还没发布到 npm。
+2026-11-18 起 `@aoa-dev/kernel`、`@aoa-dev/sdk`、`@aoa-dev/store-sqlite` 可以被别的仓库安装：去掉 `private`，版本 0.1.0，只支持 Bun（≥ 1.3），包里直接是 `.ts` 源码，打包时 `workspace:*` 换成真实版本。pi 的三个依赖（`pi-ai`、`pi-coding-agent`、`typebox`）改成可选的 peer 依赖，只有 `@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 要它们；`@aoa-dev/sdk/prompt` 里 pi 工具结果的类型改为自己写出，不再从 pi 引。`packages/sdk/test/install.test.ts` 把三个包打成 tarball，装进仓库外的空目录，跑通并类型检查一个只用公开入口的小程序，且确认没装进任何别的包。还没发布到 npm。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |

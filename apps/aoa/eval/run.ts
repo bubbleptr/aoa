@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { type PolicyConfig, type Rule, decide } from "@aoa/sdk";
+import { type PolicyConfig, type Rule, decide } from "@aoa-dev/sdk";
 import { createModelRuntime, redact } from "../../../packages/sdk/src/pi/models.ts";
 import { agentPolicy, deferPush, reviewReadOnly, toolRisk } from "../src/policy.ts";
 import { REVIEWER_PROMPT, type ReviewToggles, reviewMessage } from "../src/reviewer.ts";

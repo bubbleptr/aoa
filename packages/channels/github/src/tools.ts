@@ -1,4 +1,4 @@
-import type { ToolDef } from "@aoa/kernel";
+import type { ToolDef } from "@aoa-dev/kernel";
 import { type GitHubConfig, GitHubClient, resolve } from "./client.ts";
 import { threadKey, threadNumber } from "./thread.ts";
 

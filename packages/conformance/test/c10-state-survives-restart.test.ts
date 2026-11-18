@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { dirMemory, memoryTools, outboxTools, type ToolDef } from "@aoa/kernel";
+import { dirMemory, memoryTools, outboxTools, type ToolDef } from "@aoa-dev/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {

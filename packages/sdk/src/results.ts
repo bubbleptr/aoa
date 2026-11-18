@@ -1,6 +1,6 @@
 /**
  * The result shape pi's own tools return; `codingTools()` outputs carry it through the kernel journal. Written out
- * rather than imported from pi, so `@aoa/sdk/prompt` needs no pi installed.
+ * rather than imported from pi, so `@aoa-dev/sdk/prompt` needs no pi installed.
  */
 export type PiToolResult = {
   content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];

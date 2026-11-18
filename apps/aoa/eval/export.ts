@@ -6,7 +6,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Risk } from "@aoa/sdk";
+import type { Risk } from "@aoa-dev/sdk";
 import { DEFAULT_AGENT, type Role, derivePaths, loadConfig } from "../src/config.ts";
 import type { ReviewInput } from "../src/reviewer.ts";
 

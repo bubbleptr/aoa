@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { FakeClock } from "@aoa/conformance";
-import { createHost } from "@aoa/sdk";
-import { RETRY_NOTICE } from "@aoa/sdk/prompt";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { FakeClock } from "@aoa-dev/conformance";
+import { createHost } from "@aoa-dev/sdk";
+import { RETRY_NOTICE } from "@aoa-dev/sdk/prompt";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 import { codexRuntime } from "../src/index.ts";
 import { FakeAppServer, type FakeTurn, type TurnScript } from "./fake-app-server.ts";
 

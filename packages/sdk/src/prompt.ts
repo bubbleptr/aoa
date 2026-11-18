@@ -1,4 +1,4 @@
-import type { Event, RunInput, ToolResult } from "@aoa/kernel";
+import type { Event, RunInput, ToolResult } from "@aoa-dev/kernel";
 import { resultText } from "./results.ts";
 
 // For harness adapters: how a tool output reads as text.

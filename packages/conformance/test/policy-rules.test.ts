@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decide, type PolicyConfig, type PolicyContext } from "@aoa/kernel";
+import { decide, type PolicyConfig, type PolicyContext } from "@aoa-dev/kernel";
 
 const clean: PolicyContext = { tainted: false, workdir: null };
 

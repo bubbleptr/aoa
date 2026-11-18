@@ -21,7 +21,7 @@ import type {
   Timer,
   ToolResult,
   Tx,
-} from "@aoa/kernel";
+} from "@aoa-dev/kernel";
 import { migrate } from "./schema.ts";
 
 /**

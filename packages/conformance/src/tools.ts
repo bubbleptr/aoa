@@ -1,4 +1,4 @@
-import type { ToolDef } from "@aoa/kernel";
+import type { ToolDef } from "@aoa-dev/kernel";
 
 export type CountingTool = ToolDef & { effects: unknown[] };
 

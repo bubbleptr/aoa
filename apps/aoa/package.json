@@ -1,5 +1,5 @@
 {
-  "name": "@aoa/cli",
+  "name": "@aoa-dev/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,12 +10,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@aoa/channel-github": "workspace:*",
-    "@aoa/channel-local": "workspace:*",
-    "@aoa/example-codex": "workspace:*",
-    "@aoa/example-dsh": "workspace:*",
-    "@aoa/sdk": "workspace:*",
-    "@aoa/store-sqlite": "workspace:*",
+    "@aoa-dev/channel-github": "workspace:*",
+    "@aoa-dev/channel-local": "workspace:*",
+    "@aoa-dev/example-codex": "workspace:*",
+    "@aoa-dev/example-dsh": "workspace:*",
+    "@aoa-dev/sdk": "workspace:*",
+    "@aoa-dev/store-sqlite": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -23,6 +23,6 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@aoa/conformance": "workspace:*"
+    "@aoa-dev/conformance": "workspace:*"
   }
 }

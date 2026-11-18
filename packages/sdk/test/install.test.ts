@@ -22,8 +22,8 @@ test("a program outside the workspace installs the packed SDK, runs, and typeche
   for (const name of PUBLISHED) {
     const packed = run([process.execPath, "pm", "pack", "--destination", dir, "--quiet"], join(repo, "packages", name));
     expect(packed.err).toBe("");
-    const file = readdirSync(dir).find((f) => f.startsWith(`aoa-${name}-`) && f.endsWith(".tgz"))!;
-    tarballs[`@aoa/${name}`] = `file:./${file}`;
+    const file = readdirSync(dir).find((f) => f.startsWith(`aoa-dev-${name}-`) && f.endsWith(".tgz"))!;
+    tarballs[`@aoa-dev/${name}`] = `file:./${file}`;
   }
   writeFileSync(
     join(dir, "package.json"),
@@ -40,7 +40,7 @@ test("a program outside the workspace installs the packed SDK, runs, and typeche
 
   const installed = run([process.execPath, "install"], dir);
   expect(installed.code).toBe(0);
-  expect(readdirSync(join(dir, "node_modules")).filter((d) => d !== "@aoa" && d !== ".bin" && !d.startsWith("."))).toEqual([]);
+  expect(readdirSync(join(dir, "node_modules")).filter((d) => d !== "@aoa-dev" && d !== ".bin" && !d.startsWith("."))).toEqual([]);
 
   const ran = run([process.execPath, "main.ts"], dir);
   expect(ran.err).toBe("");

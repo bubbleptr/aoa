@@ -1,5 +1,5 @@
 {
-  "name": "@aoa/example-dsh",
+  "name": "@aoa-dev/example-dsh",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,10 +8,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "@aoa/sdk": "workspace:*"
+    "@aoa-dev/sdk": "workspace:*"
   },
   "devDependencies": {
-    "@aoa/conformance": "workspace:*",
-    "@aoa/store-sqlite": "workspace:*"
+    "@aoa-dev/conformance": "workspace:*",
+    "@aoa-dev/store-sqlite": "workspace:*"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "@aoa/sdk",
+  "name": "@aoa-dev/sdk",
   "version": "0.1.0",
   "description": "Build long-running agents on aoa's kernel: hosts, agents, timers, approvals, send_to; pi as the built-in runtime.",
   "license": "MIT",
@@ -22,11 +22,11 @@
     "./prompt": "./src/prompt.ts"
   },
   "dependencies": {
-    "@aoa/kernel": "workspace:*"
+    "@aoa-dev/kernel": "workspace:*"
   },
   "devDependencies": {
-    "@aoa/conformance": "workspace:*",
-    "@aoa/store-sqlite": "workspace:*",
+    "@aoa-dev/conformance": "workspace:*",
+    "@aoa-dev/store-sqlite": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "typebox": "1.3.27"

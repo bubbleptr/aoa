@@ -32,7 +32,7 @@ test("the example uses neither the coding tools nor a channel", () => {
   const src = join(import.meta.dir, "..", "src");
   for (const file of readdirSync(src)) {
     const text = readFileSync(join(src, file), "utf8");
-    expect(text).not.toContain("@aoa/sdk/tools/coding");
-    expect(text).not.toContain("@aoa/channel-");
+    expect(text).not.toContain("@aoa-dev/sdk/tools/coding");
+    expect(text).not.toContain("@aoa-dev/channel-");
   }
 });

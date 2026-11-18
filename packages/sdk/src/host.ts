@@ -43,7 +43,7 @@ import {
   type TimerId,
   type ToolDef,
   type Tx,
-} from "@aoa/kernel";
+} from "@aoa-dev/kernel";
 
 export type HostOptions = {
   store: HostStore;

@@ -1,4 +1,4 @@
-# @aoa/example-digest
+# @aoa-dev/example-digest
 
 一个不写代码的 agent：每天看一次仓库的 issue，有需要你知道或决定的才发消息，否则不出声。它只用 SDK 的原语，用来证明 SDK 不绑在编码上（设计 §15 第 6 步）。
 

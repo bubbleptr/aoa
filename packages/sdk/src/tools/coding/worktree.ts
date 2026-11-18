@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { Rule } from "@aoa/kernel";
+import type { Rule } from "@aoa-dev/kernel";
 
 const FILE_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 

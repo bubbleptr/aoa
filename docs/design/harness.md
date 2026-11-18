@@ -1,6 +1,6 @@
 # 权限归 harness 的 agent（§12）
 
-runtime 分两档。第一档（内置的 pi，`@aoa/sdk/pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，见下一节）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一节讲内核这边；一致性测试用一个扮演 harness 的脚本 runtime。
+runtime 分两档。第一档（内置的 pi，`@aoa-dev/sdk/pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，见下一节）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一节讲内核这边；一致性测试用一个扮演 harness 的脚本 runtime。
 
 - 模式：runtime 的类型说了算（§15「两档 runtime」）。`kind: "kernel"` 是第一档；`kind: "harness"` 是第二档，它同时改两处：`select()` 怎么挑事件，以及 run 拿到什么（`HarnessRunInput` 多一个 `ask`）。原先是 `WorkerOptions.permissions`，第 3 步换成了类型。
 - 转达询问：harness 要为一次调用征求同意时，runtime 调 `ask({ callId, tool, args, reason? })`，只会得到 `allow` 或 `defer`。内核对 harness 的调用没有规则，所以不会当场拒绝；用户的拒绝和以前一样，在之后的 run 里通过 `RunInput.answer` 到达。`defer` 时内核建一个新种类 `harness` 的延后调用：审批请求进 outbox、24 小时到期、session 停下、run 以 `deferred` 结束。session 已经在等别的调用时只返回 `defer`，什么都不建也不记，和 `invoke` 的规则一样。新建的询问记一行 `defer`，用掉许可记一行 `allow`（依据写明是哪次批准的许可）；重试时按调用 id 重放的 `allow` 不再记。

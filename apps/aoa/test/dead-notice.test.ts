@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Channel, OutMsg } from "@aoa/sdk";
+import type { Channel, OutMsg } from "@aoa-dev/sdk";
 import { withStatusHint } from "../src/wiring.ts";
 
 const msg = (dedupeKey: string): OutMsg => ({

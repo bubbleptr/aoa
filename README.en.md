@@ -193,7 +193,7 @@ A Bun + TypeScript monorepo.
 |---|---|
 | `packages/kernel` | The five primitives, worker, policy and scheduling, independent of storage and models |
 | `packages/store-sqlite` | SQLite storage and migrations |
-| `packages/sdk` | The host that assembles agents, the built-in pi runtime (`@aoa/sdk/pi`), and the optional coding tools and rules (`@aoa/sdk/tools/coding`) |
+| `packages/sdk` | The host that assembles agents, the built-in pi runtime (`@aoa-dev/sdk/pi`), and the optional coding tools and rules (`@aoa-dev/sdk/tools/coding`) |
 | `examples/`: `codex` · `dsh` | Two example tier-2 harness adapters; `aoa` uses them from here |
 | `packages/channels/`: `local` · `github` | Local and GitHub channels |
 | `packages/conformance` | The C1–C20 conformance tests from §9 of the spec |

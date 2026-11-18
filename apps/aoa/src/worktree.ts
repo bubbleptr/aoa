@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { GitRunner } from "@aoa/channel-github";
-import type { Session } from "@aoa/sdk";
+import type { GitRunner } from "@aoa-dev/channel-github";
+import type { Session } from "@aoa-dev/sdk";
 
 /**
  * The branch of an implementing agent's session: `aoa/<first 8 of its id>` for the default agent, so existing

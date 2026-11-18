@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runGitWithBun } from "@aoa/channel-github";
+import { runGitWithBun } from "@aoa-dev/channel-github";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentInput } from "../src/config.ts";
 import type { Snapshot } from "../src/observe.ts";

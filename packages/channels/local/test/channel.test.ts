@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OutMsg } from "@aoa/kernel";
+import type { OutMsg } from "@aoa-dev/kernel";
 import { darwinNotifyArgv, localChannel } from "../src/index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "aoa-local-"));

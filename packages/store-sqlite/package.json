@@ -1,5 +1,5 @@
 {
-  "name": "@aoa/store-sqlite",
+  "name": "@aoa-dev/store-sqlite",
   "version": "0.1.0",
   "description": "The SQLite store for aoa's kernel (Bun only: bun:sqlite).",
   "license": "MIT",
@@ -19,6 +19,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@aoa/kernel": "workspace:*"
+    "@aoa-dev/kernel": "workspace:*"
   }
 }

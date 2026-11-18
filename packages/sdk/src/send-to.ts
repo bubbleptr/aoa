@@ -1,4 +1,4 @@
-import type { ToolDef } from "@aoa/kernel";
+import type { ToolDef } from "@aoa-dev/kernel";
 import type { Agent, Host } from "./host.ts";
 
 /** How many agent messages one chain may carry; the next one is refused, so two agents cannot talk forever. */

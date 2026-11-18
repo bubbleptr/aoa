@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS } from "@aoa/kernel";
+import { LEASE_MS } from "@aoa-dev/kernel";
 import { Harness, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {

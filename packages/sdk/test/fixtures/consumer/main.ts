@@ -1,7 +1,7 @@
 // A program in another repository: it knows the published packages and nothing else of aoa.
-import { createHost, systemClock, type KernelRuntime } from "@aoa/sdk";
-import { renderAnswer } from "@aoa/sdk/prompt";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { createHost, systemClock, type KernelRuntime } from "@aoa-dev/sdk";
+import { renderAnswer } from "@aoa-dev/sdk/prompt";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 
 const runtime: KernelRuntime = {
   kind: "kernel",

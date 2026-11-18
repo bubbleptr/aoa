@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { Decision, PolicyContext, Rule, ToolCall } from "@aoa/kernel";
+import type { Decision, PolicyContext, Rule, ToolCall } from "@aoa-dev/kernel";
 
 // The rules below compare text, which a determined caller can evade (design §6). They are built so that
 // evasion lands in the risk tier, never in an allow: only the read-only rule allows, and it accepts nothing

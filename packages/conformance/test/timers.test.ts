@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { addFollowUp, timerTools } from "@aoa/kernel";
+import { addFollowUp, timerTools } from "@aoa-dev/kernel";
 import { Harness, ScriptedRuntime, storeFactories } from "../src/index.ts";
 
 const MINUTE = 60_000;

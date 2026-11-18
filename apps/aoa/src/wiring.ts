@@ -1,11 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa/channel-github";
-import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local";
-import { type SpawnCodex, codexRuntime } from "@aoa/example-codex";
-import { type DshSpawn, dshRuntime } from "@aoa/example-dsh";
-import { piCompletion, piRuntime } from "@aoa/sdk/pi";
-import { codingTools } from "@aoa/sdk/tools/coding";
+import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa-dev/channel-github";
+import { type Notifier, defaultNotifier, localChannel } from "@aoa-dev/channel-local";
+import { type SpawnCodex, codexRuntime } from "@aoa-dev/example-codex";
+import { type DshSpawn, dshRuntime } from "@aoa-dev/example-dsh";
+import { piCompletion, piRuntime } from "@aoa-dev/sdk/pi";
+import { codingTools } from "@aoa-dev/sdk/tools/coding";
 import {
   DEAD_NOTICE_PREFIX,
   createHost,
@@ -19,8 +19,8 @@ import {
   type Host,
   type Rule,
   type ToolDef,
-} from "@aoa/sdk";
-import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
+} from "@aoa-dev/sdk";
+import { type SqliteStore, sqliteStore } from "@aoa-dev/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   type AgentConfig,

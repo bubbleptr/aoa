@@ -1,4 +1,4 @@
-import type { Risk, ToolDef } from "@aoa/kernel";
+import type { Risk, ToolDef } from "@aoa-dev/kernel";
 import {
   createBashTool,
   createEditTool,

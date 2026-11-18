@@ -3,9 +3,9 @@
  *   AOA_DIGEST_REPO=owner/repo ANTHROPIC_API_KEY=... bun examples/digest/src/main.ts
  * GITHUB_TOKEN is optional (public repositories). Messages are printed as they are written.
  */
-import { createHost } from "@aoa/sdk";
-import { piRuntime } from "@aoa/sdk/pi";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { createHost } from "@aoa-dev/sdk";
+import { piRuntime } from "@aoa-dev/sdk/pi";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

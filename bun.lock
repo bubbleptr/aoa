@@ -10,18 +10,18 @@
       },
     },
     "apps/aoa": {
-      "name": "@aoa/cli",
+      "name": "@aoa-dev/cli",
       "version": "0.0.0",
       "bin": {
         "aoa": "./src/main.ts",
       },
       "dependencies": {
-        "@aoa/channel-github": "workspace:*",
-        "@aoa/channel-local": "workspace:*",
-        "@aoa/example-codex": "workspace:*",
-        "@aoa/example-dsh": "workspace:*",
-        "@aoa/sdk": "workspace:*",
-        "@aoa/store-sqlite": "workspace:*",
+        "@aoa-dev/channel-github": "workspace:*",
+        "@aoa-dev/channel-local": "workspace:*",
+        "@aoa-dev/example-codex": "workspace:*",
+        "@aoa-dev/example-dsh": "workspace:*",
+        "@aoa-dev/sdk": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
         "@earendil-works/pi-coding-agent": "1.5.2",
         "@modelcontextprotocol/sdk": "1.32.2",
@@ -29,81 +29,81 @@
         "zod": "4.6.7",
       },
       "devDependencies": {
-        "@aoa/conformance": "workspace:*",
+        "@aoa-dev/conformance": "workspace:*",
       },
     },
     "examples/codex": {
-      "name": "@aoa/example-codex",
+      "name": "@aoa-dev/example-codex",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/sdk": "workspace:*",
+        "@aoa-dev/sdk": "workspace:*",
       },
       "devDependencies": {
-        "@aoa/conformance": "workspace:*",
-        "@aoa/store-sqlite": "workspace:*",
+        "@aoa-dev/conformance": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
       },
     },
     "examples/digest": {
-      "name": "@aoa/example-digest",
+      "name": "@aoa-dev/example-digest",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/sdk": "workspace:*",
-        "@aoa/store-sqlite": "workspace:*",
+        "@aoa-dev/sdk": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
         "@earendil-works/pi-coding-agent": "1.5.2",
         "typebox": "1.3.27",
       },
       "devDependencies": {
-        "@aoa/conformance": "workspace:*",
+        "@aoa-dev/conformance": "workspace:*",
       },
     },
     "examples/dsh": {
-      "name": "@aoa/example-dsh",
+      "name": "@aoa-dev/example-dsh",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/sdk": "workspace:*",
+        "@aoa-dev/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "1.32.2",
       },
       "devDependencies": {
-        "@aoa/conformance": "workspace:*",
-        "@aoa/store-sqlite": "workspace:*",
+        "@aoa-dev/conformance": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
       },
     },
     "packages/channels/github": {
-      "name": "@aoa/channel-github",
+      "name": "@aoa-dev/channel-github",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
+        "@aoa-dev/kernel": "workspace:*",
       },
     },
     "packages/channels/local": {
-      "name": "@aoa/channel-local",
+      "name": "@aoa-dev/channel-local",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
+        "@aoa-dev/kernel": "workspace:*",
       },
     },
     "packages/conformance": {
-      "name": "@aoa/conformance",
+      "name": "@aoa-dev/conformance",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
-        "@aoa/store-sqlite": "workspace:*",
+        "@aoa-dev/kernel": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
       },
     },
     "packages/kernel": {
-      "name": "@aoa/kernel",
+      "name": "@aoa-dev/kernel",
       "version": "0.1.0",
     },
     "packages/sdk": {
-      "name": "@aoa/sdk",
+      "name": "@aoa-dev/sdk",
       "version": "0.1.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
+        "@aoa-dev/kernel": "workspace:*",
       },
       "devDependencies": {
-        "@aoa/conformance": "workspace:*",
-        "@aoa/store-sqlite": "workspace:*",
+        "@aoa-dev/conformance": "workspace:*",
+        "@aoa-dev/store-sqlite": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
         "@earendil-works/pi-coding-agent": "1.5.2",
         "typebox": "1.3.27",
@@ -120,35 +120,35 @@
       ],
     },
     "packages/store-sqlite": {
-      "name": "@aoa/store-sqlite",
+      "name": "@aoa-dev/store-sqlite",
       "version": "0.1.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
+        "@aoa-dev/kernel": "workspace:*",
       },
     },
   },
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.129.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw=="],
 
-    "@aoa/channel-github": ["@aoa/channel-github@workspace:packages/channels/github"],
+    "@aoa-dev/channel-github": ["@aoa-dev/channel-github@workspace:packages/channels/github"],
 
-    "@aoa/channel-local": ["@aoa/channel-local@workspace:packages/channels/local"],
+    "@aoa-dev/channel-local": ["@aoa-dev/channel-local@workspace:packages/channels/local"],
 
-    "@aoa/cli": ["@aoa/cli@workspace:apps/aoa"],
+    "@aoa-dev/cli": ["@aoa-dev/cli@workspace:apps/aoa"],
 
-    "@aoa/conformance": ["@aoa/conformance@workspace:packages/conformance"],
+    "@aoa-dev/conformance": ["@aoa-dev/conformance@workspace:packages/conformance"],
 
-    "@aoa/example-codex": ["@aoa/example-codex@workspace:examples/codex"],
+    "@aoa-dev/example-codex": ["@aoa-dev/example-codex@workspace:examples/codex"],
 
-    "@aoa/example-digest": ["@aoa/example-digest@workspace:examples/digest"],
+    "@aoa-dev/example-digest": ["@aoa-dev/example-digest@workspace:examples/digest"],
 
-    "@aoa/example-dsh": ["@aoa/example-dsh@workspace:examples/dsh"],
+    "@aoa-dev/example-dsh": ["@aoa-dev/example-dsh@workspace:examples/dsh"],
 
-    "@aoa/kernel": ["@aoa/kernel@workspace:packages/kernel"],
+    "@aoa-dev/kernel": ["@aoa-dev/kernel@workspace:packages/kernel"],
 
-    "@aoa/sdk": ["@aoa/sdk@workspace:packages/sdk"],
+    "@aoa-dev/sdk": ["@aoa-dev/sdk@workspace:packages/sdk"],
 
-    "@aoa/store-sqlite": ["@aoa/store-sqlite@workspace:packages/store-sqlite"],
+    "@aoa-dev/store-sqlite": ["@aoa-dev/store-sqlite@workspace:packages/store-sqlite"],
 
     "@aws-sdk/client-bedrock-runtime": ["@aws-sdk/client-bedrock-runtime@3.1127.0", "", { "dependencies": { "@aws-sdk/core": "^3.977.9", "@aws-sdk/credential-provider-node": "^3.972.82", "@aws-sdk/eventstream-handler-node": "^3.972.34", "@aws-sdk/middleware-eventstream": "^3.972.29", "@aws-sdk/middleware-websocket": "^3.972.52", "@aws-sdk/token-providers": "3.1127.0", "@aws-sdk/types": "^3.974.5", "@smithy/core": "^3.33.3", "@smithy/fetch-http-handler": "^5.7.2", "@smithy/node-http-handler": "^4.11.3", "@smithy/types": "^4.17.2", "tslib": "^2.6.2" } }, "sha512-IDl/lrPb90aH+pZFHGNDmgH9nAUQj5PlZH1sJ3w7RikctyjHSnY3oNjZhrLoaBoQn/rNK0zsP6OHEqEhj2tdLA=="],
 

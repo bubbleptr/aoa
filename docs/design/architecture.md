@@ -39,7 +39,7 @@ interface Channel {
 | 包 | 内容 |
 | --- | --- |
 | `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
-| `packages/sdk` | `createHost`：把每个 agent 的循环、内置工具、session 的关闭和清理组装起来；`@aoa/sdk/pi` 是内置的 pi runtime，`@aoa/sdk/prompt` 是 runtime 共用的渲染，`@aoa/sdk/tools/coding` 是编码工具和规则（§15） |
+| `packages/sdk` | `createHost`：把每个 agent 的循环、内置工具、session 的关闭和清理组装起来；`@aoa-dev/sdk/pi` 是内置的 pi runtime，`@aoa-dev/sdk/prompt` 是 runtime 共用的渲染，`@aoa-dev/sdk/tools/coding` 是编码工具和规则（§15） |
 | `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
 | `examples/codex` | 示例：Codex app-server 适配器，Codex 用自己的工具，aoa 转达它的询问（§12） |
 | `examples/dsh` | 示例：DeepSeek Harness（dsh）SDK 适配器，dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
@@ -48,7 +48,7 @@ interface Channel {
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
 | `apps/aoa` | CLI、`serve`、worktree 管理；经 `packages/sdk` 组装 agent |
 
-写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`@aoa/sdk/tools/coding` 的 `codingTools` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
+写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`@aoa-dev/sdk/tools/coding` 的 `codingTools` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
 
 runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消息时，内核把结局记成 `sent`。
 

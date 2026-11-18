@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SimulatedCrash, answerDeferred } from "@aoa/kernel";
+import { SimulatedCrash, answerDeferred } from "@aoa-dev/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type RunScript } from "../src/index.ts";
 
 const THREAD = "github:o/r#1";

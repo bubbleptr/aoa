@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RESIDENT_FILE_LIMIT, RESIDENT_PREAMBLE, dirMemory, memoryTools, type Memory, type Tool } from "@aoa/kernel";
+import { RESIDENT_FILE_LIMIT, RESIDENT_PREAMBLE, dirMemory, memoryTools, type Memory, type Tool } from "@aoa-dev/kernel";
 import { Harness, ScriptedRuntime, storeFactories } from "../src/index.ts";
 
 describe("dirMemory", () => {

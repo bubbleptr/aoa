@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SimulatedCrash, type ToolDef } from "@aoa/kernel";
+import { SimulatedCrash, type ToolDef } from "@aoa-dev/kernel";
 import { Harness, ScriptedRuntime, crashAt, storeFactories, type RunScript } from "../src/index.ts";
 
 /** A tool whose external effect the test can count. */

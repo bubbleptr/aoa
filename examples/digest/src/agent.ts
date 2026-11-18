@@ -1,5 +1,5 @@
-import type { AgentRuntime, ToolDef } from "@aoa/sdk";
-import type { Agent, Host } from "@aoa/sdk";
+import type { AgentRuntime, ToolDef } from "@aoa-dev/sdk";
+import type { Agent, Host } from "@aoa-dev/sdk";
 import type { IssueSource } from "./issues.ts";
 
 /** What each daily run is asked to do. It travels in the timer's payload, so it reaches the model whatever the runtime. */

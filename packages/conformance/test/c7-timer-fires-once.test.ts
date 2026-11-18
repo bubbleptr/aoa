@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SimulatedCrash, addFollowUp, addSchedule } from "@aoa/kernel";
+import { SimulatedCrash, addFollowUp, addSchedule } from "@aoa-dev/kernel";
 import { Harness, crashAt, storeFactories } from "../src/index.ts";
 
 const MINUTE = 60_000;

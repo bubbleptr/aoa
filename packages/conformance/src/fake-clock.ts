@@ -1,4 +1,4 @@
-import type { Clock } from "@aoa/kernel";
+import type { Clock } from "@aoa-dev/kernel";
 
 type Timer = { due: number; seq: number; fn: () => void };
 

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { FakeChannel, FakeClock, ScriptedRuntime } from "@aoa/conformance";
-import type { Channel } from "@aoa/kernel";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { FakeChannel, FakeClock, ScriptedRuntime } from "@aoa-dev/conformance";
+import type { Channel } from "@aoa-dev/kernel";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 import { createHost } from "../src/index.ts";
 
 const opened: { close(): void }[] = [];

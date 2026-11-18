@@ -1,5 +1,5 @@
-import type { DecisionRecord, Event, PolicyConfig, PolicyReader, ToolCall } from "@aoa/sdk";
-import { encode } from "@aoa/sdk/prompt";
+import type { DecisionRecord, Event, PolicyConfig, PolicyReader, ToolCall } from "@aoa-dev/sdk";
+import { encode } from "@aoa-dev/sdk/prompt";
 import type { Role } from "./config.ts";
 
 /**

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import { FakeClock, ScriptedRuntime, type RunScript } from "@aoa/conformance";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { FakeClock, ScriptedRuntime, type RunScript } from "@aoa-dev/conformance";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 import { type AgentMessage, MAX_HOPS, createHost, sendToTool } from "../src/index.ts";
 
 const opened: { close(): void }[] = [];

@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { RatePolicy, Risk } from "@aoa/sdk";
-import type { PermissionPreset } from "@aoa/example-dsh";
+import type { RatePolicy, Risk } from "@aoa-dev/sdk";
+import type { PermissionPreset } from "@aoa-dev/example-dsh";
 
 export type ModelRef = {
   /** pi provider id, e.g. `anthropic`. */

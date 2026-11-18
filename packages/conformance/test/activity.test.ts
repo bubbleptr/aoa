@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { RunActivity } from "@aoa/kernel";
+import type { RunActivity } from "@aoa-dev/kernel";
 import { Harness, ScriptedRuntime, countingTool, storeFactories } from "../src/index.ts";
 
 /** The activity stream (design §15「活动流」): what the kernel emits for `input.tools`, and what it leaves out. */

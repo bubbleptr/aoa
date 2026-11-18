@@ -10,7 +10,7 @@ import type {
   TimerId,
   Tool,
   ToolDef,
-} from "@aoa/kernel";
+} from "@aoa-dev/kernel";
 import { Prng } from "./prng.ts";
 
 export type EffectLog = {

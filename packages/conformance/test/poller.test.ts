@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { POLL_INTERVAL_MS, SimulatedCrash, type NewEvent } from "@aoa/kernel";
+import { POLL_INTERVAL_MS, SimulatedCrash, type NewEvent } from "@aoa-dev/kernel";
 import { FakeChannel, Harness, crashAt, storeFactories } from "../src/index.ts";
 
 const comment = (n: number): NewEvent => ({

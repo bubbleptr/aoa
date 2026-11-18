@@ -2,9 +2,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FakeClock } from "@aoa/conformance";
-import { createHost, type ToolDef } from "@aoa/sdk";
-import { sqliteStore } from "@aoa/store-sqlite";
+import { FakeClock } from "@aoa-dev/conformance";
+import { createHost, type ToolDef } from "@aoa-dev/sdk";
+import { sqliteStore } from "@aoa-dev/store-sqlite";
 import { dshRuntime } from "../src/index.ts";
 import { FakeDshServer, type FakeTurn, type TurnScript } from "./fake-dsh-server.ts";
 

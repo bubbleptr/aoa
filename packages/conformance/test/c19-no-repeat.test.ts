@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { dirMemory, outboxTools } from "@aoa/kernel";
+import { dirMemory, outboxTools } from "@aoa-dev/kernel";
 import { FakeChannel, Harness, ScriptedRuntime, storeFactories, type RunScript } from "../src/index.ts";
 
 const notify = (callId: string, body: string): RunScript => ({ calls: [{ tool: "notify", callId, args: { body } }] });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFER_TTL_MS, askUserTools, type PolicyConfig } from "@aoa/kernel";
+import { DEFER_TTL_MS, askUserTools, type PolicyConfig } from "@aoa-dev/kernel";
 import { testRules } from "./rules.ts";
 import { Harness, ScriptedRuntime, countingTool, storeFactories, type CountingTool, type RunScript } from "../src/index.ts";
 

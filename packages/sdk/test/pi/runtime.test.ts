@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { RETRY_NOTICE } from "../../src/prompt.ts";
 import { fauxAssistantMessage, fauxToolCall, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
-import type { Tool, ToolResult } from "@aoa/kernel";
+import type { Tool, ToolResult } from "@aoa-dev/kernel";
 import {
   API_KEY,
   event,

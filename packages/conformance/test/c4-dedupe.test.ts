@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { appendEvent } from "@aoa/kernel";
+import { appendEvent } from "@aoa-dev/kernel";
 import { Harness, ScriptedRuntime, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {

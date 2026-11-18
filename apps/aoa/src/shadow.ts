@@ -1,7 +1,7 @@
-import type { FetchFn } from "@aoa/channel-github";
-import { type Clock, type PolicyContext, type ToolCall } from "@aoa/sdk";
+import type { FetchFn } from "@aoa-dev/channel-github";
+import { type Clock, type PolicyContext, type ToolCall } from "@aoa-dev/sdk";
 import type { Judgment } from "./records.ts";
-import { ownWorktreeRelative } from "@aoa/sdk/tools/coding";
+import { ownWorktreeRelative } from "@aoa-dev/sdk/tools/coding";
 
 /** TypeSafe's single-call endpoint; there is no streaming (design §12). */
 export const JEV_URL = "https://api.typesafe.ai/v1/systemone";
