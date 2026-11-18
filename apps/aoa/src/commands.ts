@@ -1,4 +1,5 @@
-import { type OutMsg, type Session, type Tx, answerDeferred, appendInTx } from "@aoa/kernel";
+import type { OutMsg, Session } from "@aoa/kernel";
+import { AwaitingApproval } from "@aoa/sdk";
 import { type StatusReport, asks, collectStatus, renderStatus, resolveCallId } from "./status.ts";
 import type { Agent } from "./wiring.ts";
 
@@ -6,30 +7,28 @@ const nonEmpty = (text: string) => {
   if (text.trim() === "") throw new Error("Nothing to send: the text is empty.");
 };
 
-const appendUserText = (agent: Agent, thread: string, text: string, o: { branch?: string; refuseApproval?: boolean } = {}) =>
-  agent.store.tx((t) => {
-    // Checked in the append's transaction, so serve cannot pause the session in between.
-    if (o.refuseApproval) refuseApproval(t, agent.inboxId, thread);
-    return appendInTx(t, agent.inboxId, agent.clock.now(), {
-      source: "user_message",
-      dedupeKey: `send:${crypto.randomUUID()}`,
-      payload: { kind: "send", text, ...(o.branch === undefined ? {} : { branch: o.branch }) },
-      thread,
-      trusted: true,
-    });
-  });
-
-/** Throws when the thread's session waits on an approval, which the kernel would take this text as answering. */
-function refuseApproval(t: Tx, inboxId: string, thread: string): void {
-  const sessionId = t.sessionForThread(inboxId, thread);
-  const session = sessionId === null ? null : t.getSession(sessionId);
-  if (!session || session.status !== "paused" || session.pending === null) return;
-  const pending = t.getDeferred(session.pending);
-  if (!pending || pending.kind === "question") return;
-  throw new Error(
-    `The task on ${thread} waits for an approval of call ${pending.callId} (${asks(pending.tool, pending.kind, pending.args)}). ` +
-      "Answer it with answer once the user has said yes or no; send does not answer approvals.",
-  );
+/**
+ * With `refuseApproval`, a session that waits on an approval, which the kernel would take this text as answering,
+ * refuses it; checked in the append's transaction, so serve cannot pause the session in between.
+ */
+function appendUserText(agent: Agent, thread: string, text: string, o: { branch?: string; refuseApproval?: boolean } = {}) {
+  const event = {
+    source: "user_message" as const,
+    dedupeKey: `send:${crypto.randomUUID()}`,
+    payload: { kind: "send", text, ...(o.branch === undefined ? {} : { branch: o.branch }) },
+    thread,
+    trusted: true,
+  };
+  try {
+    return agent.hosted.append(event, { refuseWhileAwaitingApproval: o.refuseApproval ?? false });
+  } catch (err) {
+    if (!(err instanceof AwaitingApproval)) throw err;
+    const { pending } = err;
+    throw new Error(
+      `The task on ${thread} waits for an approval of call ${pending.callId} (${asks(pending.tool, pending.kind, pending.args)}). ` +
+        "Answer it with answer once the user has said yes or no; send does not answer approvals.",
+    );
+  }
 }
 
 /** The agent of this config with that name. */
@@ -131,7 +130,9 @@ export function answer(agent: Agent, prefix: string, verdict: string, text: stri
     prefix,
   );
   const { inboxId } = pending.find((d) => d.callId === callId)!;
-  answerDeferred(agent.store, agent.clock, inboxId, callId, verdict, text, via);
+  agent.agents
+    .find((a) => a.inboxId === inboxId)!
+    .hosted.answer(callId, { verdict, ...(text === undefined ? {} : { text }), ...(via === undefined ? {} : { via }) });
   return callId;
 }
 
@@ -169,13 +170,8 @@ const WAIT_STEP_MS = 1000;
 export async function messages(agent: Agent, o: { since: string | null; waitMs: number }): Promise<Listing> {
   const deadline = agent.clock.now() + o.waitMs;
   for (;;) {
-    const { all, waiting } = agent.store.tx((t) => {
-      const queued = agent.agents.flatMap((a) => t.listOutbox(a.inboxId).map((m) => ({ ...m, agent: a.name })));
-      return {
-        all: queued.sort((x, y) => x.seq - y.seq),
-        waiting: new Set(agent.agents.flatMap((a) => t.listDeferred(a.inboxId)).map((d) => d.callId)),
-      };
-    });
+    const all = agent.host.messages();
+    const waiting = new Set(agent.agents.flatMap((a) => a.hosted.read.pending()).map((d) => d.callId));
     const at = o.since === null ? -1 : all.findIndex((m) => m.id === o.since);
     if (o.since !== null && at < 0) throw new Error(`No message has the id "${o.since}"; run aoa messages without --since for all of them.`);
     const found = all.slice(at + 1).filter((m) => m.status !== "cancelled");

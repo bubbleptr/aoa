@@ -115,6 +115,8 @@ export interface Tx {
   setSessionStatus(id: SessionId, status: Extract<SessionStatus, "open" | "closed">): void;
   /** The first thread registered for the session: where its messages go. Null if it has none. */
   primaryThread(session: SessionId): string | null;
+  /** Every thread of the session, in the order registered: the primary one first. */
+  listThreads(session: SessionId): string[];
   markTainted(id: SessionId): void;
   /** Pauses the session on `callId`, or reopens it with nothing pending when `callId` is null. */
   setSessionPending(id: SessionId, callId: CallId | null): void;
@@ -155,6 +157,10 @@ export interface Tx {
    * or `due ← nextDue`. Applies only while the timer is armed with `due = occurrence`; returns whether it did.
    */
   fireTimer(id: TimerId, occurrence: number, nextDue: number | null): boolean;
+  /** Replaces a timer's schedule and payload and arms it again, whatever its status was. */
+  updateTimer(id: TimerId, t: Pick<Timer, "due" | "recurrence" | "payload" | "sessionId">): void;
+  /** Cancels an armed timer of any kind; returns whether one was cancelled. */
+  cancelTimer(id: TimerId): boolean;
   /** Cancels an armed follow-up that belongs to `session`; returns whether one was cancelled. */
   cancelFollowUp(id: TimerId, session: SessionId): boolean;
   /** Cancels every armed timer of the session (D-TMR-6); returns how many. */

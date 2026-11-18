@@ -310,6 +310,7 @@ function createTx(db: Database): Tx {
     primaryThread: db.query<{ thread_key: string }, [string]>(
       "SELECT thread_key FROM threads WHERE session_id = ? ORDER BY rowid LIMIT 1",
     ),
+    listThreads: db.query<{ thread_key: string }, [string]>("SELECT thread_key FROM threads WHERE session_id = ? ORDER BY rowid"),
     insertRun: db.query(
       "INSERT INTO runs (id, inbox_id, session_id, events, started_at) VALUES ($id, $inbox, $session, $events, $at)",
     ),
@@ -345,6 +346,10 @@ function createTx(db: Database): Tx {
            due = coalesce($next, due)
        WHERE id = $id AND status = 'armed' AND due = $occurrence`,
     ),
+    updateTimer: db.query(
+      "UPDATE timers SET due = $due, recurrence = $recurrence, payload = $payload, session_id = $session, status = 'armed' WHERE id = $id",
+    ),
+    cancelTimer: db.query("UPDATE timers SET status = 'cancelled' WHERE id = $id AND status = 'armed'"),
     cancelFollowUp: db.query(
       "UPDATE timers SET status = 'cancelled' WHERE id = $id AND session_id = $session AND kind = 'follow_up' AND status = 'armed'",
     ),
@@ -501,6 +506,7 @@ function createTx(db: Database): Tx {
       q.setSessionStatus.run({ id, status });
     },
     primaryThread: (session) => q.primaryThread.get(session)?.thread_key ?? null,
+    listThreads: (session) => q.listThreads.all(session).map((r) => r.thread_key),
     insertRun(r) {
       q.insertRun.run({ id: r.id, inbox: r.inboxId, session: r.sessionId, events: json(r.events), at: r.startedAt });
     },
@@ -559,6 +565,16 @@ function createTx(db: Database): Tx {
     listDueTimers: (inboxId, now) => q.listDueTimers.all(inboxId, now).map(toTimer),
     nextTimerDue: (inboxId) => q.nextTimerDue.get(inboxId)?.due ?? null,
     fireTimer: (id, occurrence, nextDue) => q.fireTimer.run({ id, occurrence, next: nextDue }).changes > 0,
+    updateTimer(id, tm) {
+      q.updateTimer.run({
+        id,
+        due: tm.due,
+        recurrence: tm.recurrence === null ? null : json(tm.recurrence),
+        payload: json(tm.payload),
+        session: tm.sessionId,
+      });
+    },
+    cancelTimer: (id) => q.cancelTimer.run({ id }).changes > 0,
     cancelFollowUp: (id, session) => q.cancelFollowUp.run({ id, session }).changes > 0,
     cancelTimersForSession: (session) => q.cancelTimersForSession.run({ session }).changes,
     insertOutMsg(m) {

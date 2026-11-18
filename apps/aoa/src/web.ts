@@ -1,6 +1,5 @@
 import { watch as watchFile } from "node:fs";
 import { join } from "node:path";
-import { answerDeferred } from "@aoa/kernel";
 import type { Role } from "./config.ts";
 import { type Edge, type Snapshot, changed, flows, snapshot } from "./observe.ts";
 import type { Agent } from "./wiring.ts";
@@ -76,13 +75,14 @@ function answerFromPage(agent: Agent, body: unknown): Response {
   if (pending.kind === "question" && verdict === "approve" && reason === undefined) return plain(400, "A question needs its answer as text.");
   let result;
   try {
-    result = answerDeferred(agent.store, agent.clock, pending.inboxId, callId, verdict, reason, "web");
+    result = agent.agents
+      .find((a) => a.inboxId === pending.inboxId)!
+      .hosted.answer(callId, { verdict, ...(reason === undefined ? {} : { text: reason }), via: "web" });
   } catch (err) {
     // The call was answered and taken between the read above and this write.
     return plain(409, err instanceof Error ? err.message : String(err));
   }
   if (result.status === "dropped") return plain(409, `Call ${callId} already has an answer waiting for the agent.`);
-  for (const a of agent.agents) if (a.inboxId === pending.inboxId) a.wake();
   return Response.json({ callId, verdict });
 }
 

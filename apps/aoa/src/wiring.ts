@@ -98,6 +98,8 @@ export type Agent = {
   statusColumns: ModeColumns;
   /** Wakes the agent's worker and dispatcher, for writes this process made outside a run. */
   wake: HostAgent["wake"];
+  /** The agent as the host knows it: appends, answers and reads go through it. */
+  hosted: HostAgent;
   /** One pass of each of the agent's loops. */
   step: HostAgent["step"];
   /** The host that runs every agent's loops. */
@@ -338,8 +340,6 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   const classify = spec.classifier
     ? withShadowJudge(
         reviewer({
-          store,
-          inboxId,
           role: spec.role,
           complete: piCompletion({
             provider: spec.classifier.provider,
@@ -430,6 +430,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     schedule: { finishCheckMs: front.finishCheckMs },
     statusColumns: front.statusColumns,
     wake: hosted.wake,
+    hosted,
     step: hosted.step,
     host: s.host,
     worktrees: trees,

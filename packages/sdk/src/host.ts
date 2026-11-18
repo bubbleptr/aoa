@@ -3,27 +3,43 @@ import {
   Dispatcher,
   Scheduler,
   Worker,
+  addFollowUp,
+  answerDeferred,
+  appendInTx,
   askUserTools,
   closeSession,
   memoryTools,
   outboxTools,
+  putSchedule,
+  reader,
   systemClock,
   timerTools,
   type AgentRuntime,
+  type AppendResult,
+  type CallId,
   type Channel,
   type Clock,
   type DispatchResult,
   type DrainResult,
+  type FollowUpInput,
   type InboxId,
   type Memory,
+  type MsgId,
+  type NewEvent,
+  type OutboxRow,
+  type PendingCall,
   type PassResult,
   type PolicyConfig,
   type RatePolicy,
+  type Reader,
   type RunOutcome,
+  type ScheduleInput,
   type Session,
   type SessionId,
   type Store,
+  type TimerId,
   type ToolDef,
+  type Tx,
 } from "@aoa/kernel";
 
 export type HostOptions = {
@@ -66,9 +82,45 @@ export type AgentSpec = {
   };
 };
 
+/**
+ * Thrown by `append` with `refuseWhileAwaitingApproval` when the event's session waits on an approval: the kernel
+ * would take the text as the user's word on that call (design §12).
+ */
+export class AwaitingApproval extends Error {
+  constructor(readonly pending: PendingCall) {
+    super(`Session ${pending.sessionId} waits for an approval of call ${pending.callId}; answer it with answer().`);
+    this.name = "AwaitingApproval";
+  }
+}
+
+/** A message from any agent's outbox: `seq` orders them all in one queue, `sentAt` is when it was delivered. */
+export type QueuedOutMsg = OutboxRow & { agent: string };
+
 export interface Agent {
   readonly name: string;
   readonly inbox: InboxId;
+  /**
+   * Appends an event to the inbox and wakes the worker. It is as trusted as `e.trusted` says: who is calling is the
+   * caller's to know. With `refuseWhileAwaitingApproval`, an event whose session waits on an approval (not a question)
+   * throws `AwaitingApproval` and nothing is appended, in the same transaction.
+   */
+  append(e: NewEvent, o?: { refuseWhileAwaitingApproval?: boolean }): AppendResult;
+  /**
+   * Answers a call this agent waits on and wakes the worker. Only the first answer counts: a later one comes back
+   * `dropped`. Throws if no call of this agent with that id waits.
+   */
+  answer(callId: CallId, a: { verdict: "approve" | "deny"; text?: string; via?: string }): AppendResult;
+  /** Wakes one of the agent's sessions at `due`. */
+  followUp(t: FollowUpInput): TimerId;
+  /**
+   * Creates the recurring timer `id`, or makes the agent's existing one match: called with what it already has, it
+   * changes nothing, so a start-up script can call it on every start. The returned id is the one `cancelTimer` takes.
+   */
+  schedule(t: ScheduleInput & { id: string }): TimerId;
+  /** Cancels an armed timer of this agent's; false if there is none with that id. */
+  cancelTimer(id: TimerId): boolean;
+  /** What the agent's inbox holds, read-only. */
+  readonly read: Reader;
   /**
    * Closes a session: cancels its timers, drops a call it waits on, clears its working directory, then calls
    * `afterClose` with nothing awaited in between and runs `session.cleanup`. A session a run is using right now is
@@ -100,6 +152,11 @@ export interface Host {
   stop(): Promise<void>;
   /** Settles once the host has stopped: after `stop()`, or after a loop died and the host stopped the rest. */
   readonly stopped: Promise<void>;
+  /**
+   * Every agent's messages in the order they were queued, oldest first. `since` is the id of a message already seen;
+   * `limit` keeps the first ones after it.
+   */
+  messages(o?: { since?: MsgId; limit?: number }): QueuedOutMsg[];
 }
 
 const DEFAULT_DEBOUNCE_MS = 2000;
@@ -199,9 +256,52 @@ export function createHost(o: HostOptions): Host {
       return "closed";
     }
 
+    const read = reader(store, spec.inbox);
+    const awaitingApproval = (t: Tx, e: NewEvent) => {
+      const sessionId = e.thread === undefined ? null : t.sessionForThread(spec.inbox, e.thread);
+      const session = sessionId === null ? null : t.getSession(sessionId);
+      if (!session || session.status !== "paused" || session.pending === null) return;
+      const pending = t.getDeferred(session.pending);
+      if (pending && pending.kind !== "question") throw new AwaitingApproval(pending);
+    };
+
     const handle: Agent = {
       name: spec.name,
       inbox: spec.inbox,
+      append(e, o = {}) {
+        const result = store.tx((t) => {
+          if (o.refuseWhileAwaitingApproval) awaitingApproval(t, e);
+          return appendInTx(t, spec.inbox, clock.now(), e);
+        });
+        worker.wake();
+        return result;
+      },
+      answer(callId, a) {
+        const pending = store.tx((t) => t.getDeferred(callId));
+        if (pending === null || pending.inboxId !== spec.inbox) throw new Error(`Agent ${spec.name} has no call ${callId} waiting for an answer.`);
+        const result = answerDeferred(store, clock, spec.inbox, callId, a.verdict, a.text, a.via);
+        worker.wake();
+        return result;
+      },
+      followUp(t) {
+        const session = store.tx((tx) => tx.getSession(t.sessionId));
+        if (session === null || session.inboxId !== spec.inbox) throw new Error(`Agent ${spec.name} has no session ${t.sessionId}.`);
+        const timer = addFollowUp(store, spec.inbox, t);
+        scheduler.wake();
+        return timer.id;
+      },
+      schedule({ id, ...t }) {
+        // Scoped to the inbox: two agents' "daily" are two timers, and no caller id meets the kernel's own.
+        const timer = putSchedule(store, clock, spec.inbox, `schedule:${spec.inbox}:${id}`, t);
+        scheduler.wake();
+        return timer.id;
+      },
+      cancelTimer(id) {
+        const timer = store.tx((t) => t.getTimer(id));
+        if (timer === null || timer.inboxId !== spec.inbox) return false;
+        return store.tx((t) => t.cancelTimer(id));
+      },
+      read,
       closeSession: close,
       wake: () => {
         worker.wake();
@@ -256,6 +356,15 @@ export function createHost(o: HostOptions): Host {
       return all.map((a) => a.agent);
     },
     start,
+    messages(o = {}) {
+      const queued = store
+        .tx((t) => all.flatMap((a) => t.listOutbox(a.agent.inbox).map((m): QueuedOutMsg => ({ ...m, agent: a.agent.name }))))
+        .sort((x, y) => x.seq - y.seq);
+      const at = o.since === undefined ? -1 : queued.findIndex((m) => m.id === o.since);
+      if (o.since !== undefined && at < 0) throw new Error(`No message has the id ${o.since}.`);
+      const after = queued.slice(at + 1);
+      return o.limit === undefined ? after : after.slice(0, o.limit);
+    },
     async stop() {
       if (!running) {
         settle();

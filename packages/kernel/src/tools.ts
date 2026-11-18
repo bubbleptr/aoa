@@ -2,6 +2,7 @@ import type { CrashHook } from "./crash.ts";
 import { DEFER_TTL_MS, deferInTx, isQuestionTool } from "./deferred.ts";
 import { decide, type PolicyConfig, type Verdict } from "./policy.ts";
 import type { Clock, Store } from "./ports.ts";
+import type { Reader } from "./read.ts";
 import type { CallId, InboxId, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
 
 export type ToolContext = {
@@ -13,6 +14,8 @@ export type ToolContext = {
   /** The run's signal, handed to each tool's `execute`. */
   signal: AbortSignal;
   policy?: PolicyConfig;
+  /** What the policy may read of the inbox. */
+  read?: Reader;
   crash: CrashHook;
   /** Throws if this process has (simulated) crashed, so nothing more is written. */
   assertAlive: () => void;
@@ -57,7 +60,7 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
   const tainted = store.tx((t) => t.getSession(sessionId)!.tainted);
   const verdict: Verdict = question
     ? { decision: "defer", basis: "ask_user" }
-    : await decide(ctx.policy, { tool: def.name, args }, { tainted, workdir: ctx.workdir, call: { id: callId, sessionId } }, def.risk);
+    : await decide(ctx.policy, { tool: def.name, args }, { tainted, workdir: ctx.workdir, call: { id: callId, sessionId }, ...(ctx.read ? { read: ctx.read } : {}) }, def.risk);
 
   assertAlive();
   const settled = store.tx((t): ToolResult | null => {

@@ -25,22 +25,37 @@ export function addFollowUp(store: Store, inboxId: InboxId, f: FollowUpInput): T
 
 export type ScheduleInput = { everyMs: number; anchor: number; payload: unknown; sessionId?: SessionId };
 
+const firstDue = (r: Recurrence, now: number) => (r.anchor >= now ? r.anchor : nextSlot(r, now));
+
 /** Creates an armed schedule whose first occurrence is the anchor, or the next slot if the anchor has passed. */
 export function addSchedule(store: Store, clock: Clock, inboxId: InboxId, s: ScheduleInput): Timer {
+  return putSchedule(store, clock, inboxId, crypto.randomUUID(), s);
+}
+
+/**
+ * Creates the schedule `id`, or makes the one that exists match `s` (design §15): a start-up script calls this every
+ * time, and one timer stays. Called again with what the armed timer already has, it changes nothing, so an occurrence
+ * missed while the host was down still fires. Anything else replaces the schedule and arms it from the new anchor.
+ */
+export function putSchedule(store: Store, clock: Clock, inboxId: InboxId, id: TimerId, s: ScheduleInput): Timer {
   if (!(Number.isFinite(s.everyMs) && s.everyMs > 0)) throw new Error(`everyMs must be a positive number, got ${s.everyMs}`);
   const recurrence: Recurrence = { everyMs: s.everyMs, anchor: s.anchor };
+  const sessionId = s.sessionId ?? null;
   const now = clock.now();
-  const id = crypto.randomUUID();
   return store.tx((t) => {
-    t.insertTimer({
-      id,
-      inboxId,
-      kind: "schedule",
-      sessionId: s.sessionId ?? null,
-      due: s.anchor >= now ? s.anchor : nextSlot(recurrence, now),
-      recurrence,
-      payload: s.payload,
-    });
+    const existing = t.getTimer(id);
+    if (existing === null) {
+      t.insertTimer({ id, inboxId, kind: "schedule", sessionId, due: firstDue(recurrence, now), recurrence, payload: s.payload });
+      return t.getTimer(id)!;
+    }
+    if (existing.inboxId !== inboxId || existing.kind !== "schedule") throw new Error(`Timer ${id} exists and is not a schedule of inbox ${inboxId}.`);
+    const same =
+      existing.status === "armed" &&
+      existing.sessionId === sessionId &&
+      existing.recurrence!.everyMs === recurrence.everyMs &&
+      existing.recurrence!.anchor === recurrence.anchor &&
+      JSON.stringify(existing.payload) === JSON.stringify(s.payload);
+    if (!same) t.updateTimer(id, { due: firstDue(recurrence, now), recurrence, payload: s.payload, sessionId });
     return t.getTimer(id)!;
   });
 }
@@ -66,6 +81,7 @@ export class Scheduler {
   private crashed: SimulatedCrash | null = null;
   private stopped = true;
   private wakeUp: (() => void) | null = null;
+  private woken = false;
 
   constructor(o: SchedulerOptions) {
     this.store = o.store;
@@ -109,8 +125,18 @@ export class Scheduler {
     this.wakeUp?.();
   }
 
+  /** Passes again now: a timer was added or changed. A wake during a pass makes the next sleep end at once. */
+  wake(): void {
+    if (this.wakeUp) this.wakeUp();
+    else this.woken = true;
+  }
+
   private sleep(ms: number): Promise<void> {
     if (this.stopped) return Promise.resolve();
+    if (this.woken) {
+      this.woken = false;
+      return Promise.resolve();
+    }
     return new Promise((resolve) => {
       let cancel = () => {};
       this.wakeUp = () => {

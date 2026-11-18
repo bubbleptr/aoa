@@ -1,3 +1,4 @@
+import type { Reader } from "./read.ts";
 import type { CallId, Decision, Risk, SessionId } from "./types.ts";
 
 export type { Risk } from "./types.ts";
@@ -12,13 +13,14 @@ export type PolicyContext = {
   workdir: string | null;
   /** The call's identity, for a shadow judge that records under it. Absent when the policy runs on its own. */
   call?: { id: CallId; sessionId: SessionId };
+  /** The inbox the call's session belongs to, read-only; present with `call`. The call's result is never in it (§6.2). */
+  read?: Reader;
 };
 
 /** A rule with an opinion returns a decision; `null` passes the call to the next rule. */
 export type Rule = { name: string; match(call: ToolCall, ctx: PolicyContext): Decision | null };
 
 export type PolicyConfig = {
-  /** Per tool name; a tool not listed is `high`. */
   /** Overrides the tiers the tools carry. */
   risk?: Record<string, Risk>;
   /** Checked in order, before the risk tier. */

@@ -1,4 +1,4 @@
-import type { DecisionRecord, Event, PolicyConfig, Store, ToolCall } from "@aoa/kernel";
+import type { DecisionRecord, Event, PolicyConfig, Reader, ToolCall } from "@aoa/kernel";
 import { encode } from "@aoa/sdk/prompt";
 import type { Role } from "./config.ts";
 
@@ -69,39 +69,37 @@ const textOf = (e: Event): string => {
 };
 
 /**
- * The context of a call about to be decided, read from the store. An event belongs to the session it resumes, else to
+ * The context of a call about to be decided, read through the policy's reader. An event belongs to the session it resumes, else to
  * the session of the run that took it, else of its thread: the same rule the eval's export used.
  */
 export function liveReviewInput(
-  store: Store,
-  o: { inboxId: string; role: Role; sessionId: string; workdir: string | null; tainted: boolean },
+  read: Reader,
+  o: { role: Role; sessionId: string; workdir: string | null; tainted: boolean },
   call: ToolCall & { id: string },
 ): ReviewInput {
-  return store.tx((t) => {
-    const runs = new Map(t.listRuns(o.inboxId).map((r) => [r.id, r.sessionId]));
-    const sessionOf = (e: Event) =>
-      e.resume ?? (e.run ? runs.get(e.run) : undefined) ?? (e.thread === null ? null : t.sessionForThread(o.inboxId, e.thread));
-    const events = t
-      .listEvents(o.inboxId)
-      .filter((e) => sessionOf(e) === o.sessionId)
-      .sort((a, b) => a.receivedAt - b.receivedAt);
-    const firsts = new Map<string, DecisionRecord>();
-    for (const d of t.listDecisions(o.sessionId)) if (d.callId !== call.id && !firsts.has(d.callId)) firsts.set(d.callId, d);
-    const argsOf = new Map(t.listJournal(o.sessionId).map((j) => [j.callId, j.args]));
-    return {
-      role: o.role,
-      workdir: o.workdir,
-      userMessages: events.filter((e) => e.source === "user_message" && e.trusted).map(textOf),
-      agentMessages: events.filter((e) => e.source === "agent_message").map((e) => {
-        const from = (e.payload as { from?: unknown } | null)?.from;
-        return { from: typeof from === "string" ? from : null, text: textOf(e) };
-      }),
-      priorCalls: [...firsts.values()].map((d) => ({ tool: d.tool, decision: d.decision, args: argsOf.get(d.callId) ?? null })),
-      tool: call.tool,
-      args: call.args,
-      tainted: o.tainted,
-    };
-  });
+  const runs = new Map(read.runs().map((r) => [r.id, r.sessionId]));
+  const sessionOf = (e: Event) =>
+    e.resume ?? (e.run ? runs.get(e.run) : undefined) ?? (e.thread === null ? null : read.sessionFor(e.thread));
+  const events = read
+    .events()
+    .filter((e) => sessionOf(e) === o.sessionId)
+    .sort((a, b) => a.receivedAt - b.receivedAt);
+  const firsts = new Map<string, DecisionRecord>();
+  for (const d of read.decisions(o.sessionId)) if (d.callId !== call.id && !firsts.has(d.callId)) firsts.set(d.callId, d);
+  const argsOf = new Map(read.journal(o.sessionId).map((j) => [j.callId, j.args]));
+  return {
+    role: o.role,
+    workdir: o.workdir,
+    userMessages: events.filter((e) => e.source === "user_message" && e.trusted).map(textOf),
+    agentMessages: events.filter((e) => e.source === "agent_message").map((e) => {
+      const from = (e.payload as { from?: unknown } | null)?.from;
+      return { from: typeof from === "string" ? from : null, text: textOf(e) };
+    }),
+    priorCalls: [...firsts.values()].map((d) => ({ tool: d.tool, decision: d.decision, args: argsOf.get(d.callId) ?? null })),
+    tool: call.tool,
+    args: call.args,
+    tainted: o.tainted,
+  };
 }
 
 /**
@@ -109,16 +107,15 @@ export function liveReviewInput(
  * Ask, anything else and a failed request all leave the call to the user.
  */
 export function reviewer(o: {
-  store: Store;
-  inboxId: string;
   role: Role;
   complete: (systemPrompt: string, message: string) => Promise<string>;
 }): NonNullable<PolicyConfig["classify"]> {
   return async (call, ctx) => {
-    const input = ctx.call
-      ? liveReviewInput(
-          o.store,
-          { inboxId: o.inboxId, role: o.role, sessionId: ctx.call.sessionId, workdir: ctx.workdir, tainted: ctx.tainted },
+    const input =
+      ctx.call && ctx.read
+        ? liveReviewInput(
+          ctx.read,
+          { role: o.role, sessionId: ctx.call.sessionId, workdir: ctx.workdir, tainted: ctx.tainted },
           { ...call, id: ctx.call.id },
         )
       : { role: o.role, workdir: ctx.workdir, userMessages: [], agentMessages: [], priorCalls: [], ...call, tainted: ctx.tainted };
