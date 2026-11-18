@@ -79,9 +79,9 @@ export function close(agent: Agent, target: string, result: string): Session {
   const { thread, session } = resolveTask(agent, target);
   if (session === null) throw new Error(`The task on ${thread} has not started yet: serve picks it up first.`);
   // One store holds every agent's sessions, so the declaration needs no agent.
-  agent.store.results.declare(session.id, result);
+  agent.records.results.declare(session.id, result);
   // A session that is already closed has nothing left to close; a later reopening must not be closed by this.
-  if (session.status === "closed") agent.store.results.markApplied(session.id);
+  if (session.status === "closed") agent.records.results.markApplied(session.id);
   return session;
 }
 
@@ -137,7 +137,7 @@ export function answer(agent: Agent, prefix: string, verdict: string, text: stri
 
 export async function status(agent: Agent, o: { json: boolean; refresh: boolean }): Promise<string> {
   if (o.refresh) for (const a of agent.agents) await a.refreshPulls();
-  const reports = agent.agents.map((a) => collectStatus(a.store, a.name, a.inboxId, a.statusColumns));
+  const reports = agent.agents.map((a) => collectStatus(a.store, a.records, a.name, a.inboxId, a.statusColumns));
   const report: StatusReport = {
     agents: agent.agents.map((a) => ({ name: a.name, runtime: a.runtime, permissionOwner: a.permissions, autoReview: a.runtime === "codex" && a.role === "review" })),
     sessions: reports.flatMap((r) => r.sessions),
@@ -170,10 +170,7 @@ export async function messages(agent: Agent, o: { since: string | null; waitMs: 
   const deadline = agent.clock.now() + o.waitMs;
   for (;;) {
     const { all, waiting } = agent.store.tx((t) => {
-      const queued = agent.agents.flatMap((a) => {
-        const order = agent.store.outboxOrder(a.inboxId);
-        return t.listOutbox(a.inboxId).map((m) => ({ ...m, agent: a.name, seq: order.get(m.id)! }));
-      });
+      const queued = agent.agents.flatMap((a) => t.listOutbox(a.inboxId).map((m) => ({ ...m, agent: a.name })));
       return {
         all: queued.sort((x, y) => x.seq - y.seq),
         waiting: new Set(agent.agents.flatMap((a) => t.listDeferred(a.inboxId)).map((d) => d.callId)),

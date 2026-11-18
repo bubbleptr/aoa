@@ -351,7 +351,7 @@ describe("named agents", () => {
     expect((await w.cli("send", "--to", reviewThread, "One more look.")).code).toBe(0);
     expect(w.events("reviewer").at(-1)).toMatchObject({ source: "user_message", thread: reviewThread });
     expect((await w.cli("close", reviewThread, "discarded")).code).toBe(0);
-    expect(w.agent.store.results.get(w.sessions("reviewer")[0]!.id)?.result).toBe("discarded");
+    expect(w.agent.records.results.get(w.sessions("reviewer")[0]!.id)?.result).toBe("discarded");
   });
 
   test("the page's snapshot carries each agent's state", async () => {

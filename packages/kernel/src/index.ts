@@ -8,6 +8,7 @@ export type {
   EventInsert,
   JournalRecord,
   OutMsgInsert,
+  OutboxRow,
   QueuedMsg,
   RetryAt,
   Store,

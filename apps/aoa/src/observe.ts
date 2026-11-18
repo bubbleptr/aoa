@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type Event, type JournalRecord, type OutMsg, type PendingCall, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
+import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type Event, type JournalRecord, type OutMsg, type OutboxRow as QueuedRow, type PendingCall, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
 import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
@@ -295,7 +295,7 @@ function fullAsk(d: PendingCall, events: Event[]): string {
   return `${d.tool} ${JSON.stringify(d.args, null, 2)}`;
 }
 
-export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
+export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
   const { inboxId } = agent;
   const serveInbox = agent.agents[0]!.inboxId;
   const now = agent.clock.now();
@@ -405,7 +405,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
       const e = events.find((x) => x.source === "approval_answer" && (x.status === "pending" || x.status === "in_run") && (x.payload as { callId?: unknown }).callId === callId);
       return e ? (e.payload as { verdict: "approve" | "deny" }).verdict : null;
     };
-    const judgments = t.listJudgments(inboxId, now - WEEK_MS);
+    const judgments = agent.records.judgments.list(inboxId, now - WEEK_MS);
     const judgmentOf = new Map(judgments.map((j) => [j.callId, j]));
     const jevOf = (callId: string): JevScore | null => {
       const j = judgmentOf.get(callId);
@@ -464,9 +464,8 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     }
 
     const outbox = t.listOutbox(inboxId);
-    const sentAt = agent.store.sentTimes(inboxId);
     const waitingIds = new Set(deferred.map((d) => d.callId));
-    const outRow = (m: OutMsg): OutboxRow => ({
+    const outRow = (m: QueuedRow): OutboxRow => ({
       id: m.id,
       kind: m.kind,
       thread: m.thread,
@@ -475,7 +474,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
       status: m.status,
       attempts: m.attempts,
       createdAt: m.createdAt,
-      sentAt: sentAt.get(m.id) ?? null,
+      sentAt: m.sentAt,
       approval:
         m.kind !== "approval_request"
           ? null
@@ -491,7 +490,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
     const sent = outbox
       .filter((m) => m.status === "sent" || m.status === "cancelled")
       .reverse()
-      .sort((a, b) => (sentAt.get(b.id) ?? b.createdAt) - (sentAt.get(a.id) ?? a.createdAt))
+      .sort((a, b) => (b.sentAt ?? b.createdAt) - (a.sentAt ?? a.createdAt))
       .slice(0, LATEST);
 
     const expired = (e: (typeof events)[number]) => e.source === "approval_answer" && (e.payload as { expired?: true }).expired === true;
@@ -557,7 +556,7 @@ export function snapshot(agent: Pick<Agent, "store" | "inboxId" | "clock" | "pat
         memory: intents((tool) => tool.startsWith("memory_")),
         says: count(outbox.map((m) => m.createdAt)),
         fires: count(appended.filter((e) => e.source === "timer" || expired(e)).map((e) => e.receivedAt)),
-        delivered: count([...sentAt.values()]),
+        delivered: count(outbox.flatMap((m) => (m.sentAt === null ? [] : [m.sentAt]))),
       },
       inFromAgents: count(appended.filter((e) => e.source === "agent_message").map((e) => e.receivedAt)),
       nextChangeAt: null,

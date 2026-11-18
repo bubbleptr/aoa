@@ -321,7 +321,7 @@ export class World {
   }
 
   judgments() {
-    return this.agent.store.tx((t) => t.listJudgments(this.agent.inboxId, 0));
+    return this.agent.records.judgments.list(this.agent.inboxId, 0);
   }
 
   originLog(ref: string): Promise<string> {

@@ -1,5 +1,5 @@
-import type { Event, PendingCall, Session, Tx } from "@aoa/kernel";
-import type { SqliteStore } from "@aoa/store-sqlite";
+import type { Event, PendingCall, Session, Store, Tx } from "@aoa/kernel";
+import type { Records } from "./records.ts";
 
 export type PullRef = { number: number; url: string; thread: string; openedAt: number };
 
@@ -57,7 +57,7 @@ export type SessionStatus = {
 /** The mode's part of a session's status: what its work led to, and the outcome that follows from it. */
 export type ModeColumns = (
   t: Tx,
-  store: SqliteStore,
+  records: Records,
   session: Session,
   events: Event[],
 ) => { outcome: Outcome; columns: PullColumns | BranchColumns };
@@ -76,9 +76,9 @@ const firstEventAt = (events: Event[]): number | null => {
   return Number.isFinite(first) ? first : null;
 };
 
-export const pullColumns: ModeColumns = (t, store, s, events) => {
+export const pullColumns: ModeColumns = (t, records, s, events) => {
   const pr = pullOf(t, s.id);
-  const stored = store.pulls.get(s.id);
+  const stored = records.pulls.get(s.id);
   const first = firstEventAt(events);
   return {
     outcome: outcome({
@@ -94,9 +94,13 @@ export const pullColumns: ModeColumns = (t, store, s, events) => {
 };
 
 /** Local mode; `branchOf` names a session's branch, null for an agent whose sessions have none. */
-export const branchColumns = (branchOf: ((sessionId: string) => string) | null): ModeColumns => (_t, store, s, events) => {
-  const declared = store.results.get(s.id)?.result;
-  const firstMessage = store.firstMessageSentAt(s.id);
+export const branchColumns = (branchOf: ((sessionId: string) => string) | null): ModeColumns => (t, records, s, events) => {
+  const declared = records.results.get(s.id)?.result;
+  const sent = t
+    .listOutbox(s.inboxId)
+    .filter((m) => m.sessionId === s.id && m.kind === "message" && m.sentAt !== null)
+    .map((m) => m.sentAt!);
+  const firstMessage = sent.length > 0 ? Math.min(...sent) : null;
   const first = firstEventAt(events);
   const reworked = declared === "merged" && firstMessage !== null && userEventsAfter(events, firstMessage) > 0;
   return {
@@ -128,12 +132,12 @@ export function asks(tool: string, kind: PendingCall["kind"], args: unknown): st
 }
 
 /** Everything `aoa status` shows of one agent's inbox, read from the store alone. */
-export function collectStatus(store: SqliteStore, agent: string, inboxId: string, mode: ModeColumns): Omit<StatusReport, "agents"> {
+export function collectStatus(store: Store, records: Records, agent: string, inboxId: string, mode: ModeColumns): Omit<StatusReport, "agents"> {
   return store.tx((t) => {
     const events = t.listEvents(inboxId);
     const sessions = t.listSessions(inboxId).map((s): SessionStatus => {
       const mine = events.filter((e) => e.resume === s.id && e.status !== "dropped");
-      const { outcome, columns } = mode(t, store, s, mine);
+      const { outcome, columns } = mode(t, records, s, mine);
       return {
         agent,
         session: s.id,

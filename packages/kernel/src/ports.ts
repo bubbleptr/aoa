@@ -10,7 +10,6 @@ import type {
   EventStatus,
   InboxId,
   JournalEntry,
-  Judgment,
   MsgId,
   RunEnd,
   RunId,
@@ -50,6 +49,12 @@ export type OutMsgInsert = Omit<OutMsg, "status" | "attempts"> & {
   /** The run the message belongs to, when it is known at insert time; otherwise the session's next run claims it. */
   runId?: RunId;
 };
+
+/**
+ * An outbox row as the store keeps it: `seq` orders every inbox's messages in one queue, so a later message has a
+ * higher `seq` whatever its inbox; `sentAt` is when it was delivered.
+ */
+export type OutboxRow = OutMsg & { seq: number; sentAt: number | null };
 
 /** An undelivered message and the earliest time it may be tried. */
 export type QueuedMsg = { msg: OutMsg; nextAttemptAt: number };
@@ -126,10 +131,6 @@ export interface Tx {
   recordDecision(d: DecisionRecord): void;
   /** Oldest first. */
   listDecisions(session: SessionId): DecisionRecord[];
-  /** One row per judged call; judging the same call again replaces its row. */
-  recordJudgment(j: Judgment): void;
-  /** Judgments of this inbox's sessions at or after `since`, oldest first. */
-  listJudgments(inboxId: InboxId, since: number): Judgment[];
 
   insertRun(r: { id: RunId; inboxId: InboxId; sessionId: SessionId; events: EventId[]; startedAt: number }): void;
   endRun(id: RunId, outcome: { end: RunEnd } | { error: string }, endedAt: number): void;
@@ -161,7 +162,8 @@ export interface Tx {
 
   /** Inserts a pending message. If the inbox already holds its `dedupeKey`, inserts nothing and returns the existing id. */
   insertOutMsg(m: OutMsgInsert): MsgId;
-  listOutbox(inboxId: InboxId): OutMsg[];
+  /** Every message of the inbox, in the order they were queued. */
+  listOutbox(inboxId: InboxId): OutboxRow[];
   /** An undelivered approval request for `callId` becomes `cancelled`, so it is never sent. */
   cancelApprovalRequest(callId: CallId): void;
   /** `sending → pending`: what a dispatcher that died mid-delivery left behind. */

@@ -9,7 +9,6 @@ import type {
   Grant,
   JournalEntry,
   JournalRecord,
-  Judgment,
   RunEnd,
   RetryAt,
   RunRecord,
@@ -22,36 +21,12 @@ import type {
 } from "@aoa/kernel";
 import { migrate } from "./schema.ts";
 
-export type PullState = { number: number; state: "open" | "merged" | "closed"; checkedAt: number };
-
 /**
- * The last known state of each session's pull request, as `aoa status` last saw it on GitHub.
- * It lives outside `Tx` because the kernel knows nothing of pull requests.
+ * The SQLite store. `db` is the same connection the store writes with, for an application that keeps its own tables
+ * in the same file; the kernel never reads them.
  */
-export type PullStates = {
-  get(sessionId: string): PullState | null;
-  set(sessionId: string, s: PullState): void;
-};
-
-/** How the user says a local-mode session's branch ended (`aoa close`). `applied` once serve has closed the session for it. */
-export type DeclaredResult = { result: "merged" | "discarded"; applied: boolean };
-
-export type DeclaredResults = {
-  get(sessionId: string): DeclaredResult | null;
-  /** Records or replaces the declaration, not yet applied. */
-  declare(sessionId: string, result: DeclaredResult["result"]): void;
-  markApplied(sessionId: string): void;
-};
-
 export type SqliteStore = Store & {
-  pulls: PullStates;
-  results: DeclaredResults;
-  /** When the session's first message of kind `message` was delivered; null if none was. */
-  firstMessageSentAt(sessionId: string): number | null;
-  /** When each delivered message of the inbox was sent, by message id. */
-  sentTimes(inboxId: string): Map<string, number>;
-  /** Where each message of the inbox sits in the outbox's one queue, shared by every inbox: later messages higher. */
-  outboxOrder(inboxId: string): Map<string, number>;
+  readonly db: Database;
   /** SQLite's `data_version`: it changes whenever another connection commits to the database. */
   dataVersion(): number;
   close(): void;
@@ -65,55 +40,10 @@ export function sqliteStore(path: string): SqliteStore {
   db.exec("PRAGMA foreign_keys = ON");
   migrate(db);
   const t = createTx(db);
-  const getPull = db.query<{ number: number; state: PullState["state"]; checked_at: number }, [string]>(
-    "SELECT number, state, checked_at FROM pull_states WHERE session_id = ?",
-  );
-  const setPull = db.query(
-    `INSERT INTO pull_states (session_id, number, state, checked_at) VALUES ($session, $number, $state, $at)
-     ON CONFLICT (session_id) DO UPDATE SET number = excluded.number, state = excluded.state, checked_at = excluded.checked_at`,
-  );
-  const getResult = db.query<{ result: DeclaredResult["result"]; applied: number }, [string]>(
-    "SELECT result, applied FROM declared_results WHERE session_id = ?",
-  );
-  const declareResult = db.query(
-    `INSERT INTO declared_results (session_id, result, applied) VALUES ($session, $result, 0)
-     ON CONFLICT (session_id) DO UPDATE SET result = excluded.result, applied = 0`,
-  );
-  const applyResult = db.query("UPDATE declared_results SET applied = 1 WHERE session_id = ?");
-  const firstSent = db.query<{ at: number | null }, [string]>(
-    "SELECT MIN(sent_at) AS at FROM outbox WHERE session_id = ? AND kind = 'message' AND status = 'sent'",
-  );
-  const sentTimes = db.query<{ id: string; sent_at: number }, [string]>(
-    "SELECT id, sent_at FROM outbox WHERE inbox_id = ? AND sent_at IS NOT NULL",
-  );
-  const outboxOrder = db.query<{ id: string; seq: number }, [string]>("SELECT id, seq FROM outbox WHERE inbox_id = ?");
   const dataVersion = db.query<{ data_version: number }, []>("PRAGMA data_version");
   return {
     tx: (fn) => db.transaction(() => fn(t)).immediate(),
-    pulls: {
-      get(sessionId) {
-        const r = getPull.get(sessionId);
-        return r ? { number: r.number, state: r.state, checkedAt: r.checked_at } : null;
-      },
-      set(sessionId, p) {
-        setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt });
-      },
-    },
-    results: {
-      get(sessionId) {
-        const r = getResult.get(sessionId);
-        return r ? { result: r.result, applied: r.applied === 1 } : null;
-      },
-      declare(sessionId, result) {
-        declareResult.run({ session: sessionId, result });
-      },
-      markApplied(sessionId) {
-        applyResult.run(sessionId);
-      },
-    },
-    firstMessageSentAt: (sessionId) => firstSent.get(sessionId)?.at ?? null,
-    sentTimes: (inboxId) => new Map(sentTimes.all(inboxId).map((r) => [r.id, r.sent_at])),
-    outboxOrder: (inboxId) => new Map(outboxOrder.all(inboxId).map((r) => [r.id, r.seq])),
+    db,
     dataVersion: () => dataVersion.get()!.data_version,
     close: () => db.close(),
   };
@@ -247,6 +177,7 @@ const toTimer = (r: TimerRow): Timer => ({
 });
 
 type OutboxRow = {
+  seq: number;
   id: string;
   inbox_id: string;
   session_id: string;
@@ -259,6 +190,7 @@ type OutboxRow = {
   status: OutMsg["status"];
   attempts: number;
   next_attempt_at: number;
+  sent_at: number | null;
 };
 
 const toOutMsg = (r: OutboxRow): OutMsg => ({
@@ -312,26 +244,6 @@ type DecisionRow = {
   basis: string;
   at: number;
 };
-
-type JudgmentRow = {
-  call_id: string;
-  session_id: string;
-  model: string;
-  p: number | null;
-  latency_ms: number;
-  error: string | null;
-  at: number;
-};
-
-const toJudgment = (r: JudgmentRow): Judgment => ({
-  callId: r.call_id,
-  sessionId: r.session_id,
-  model: r.model,
-  p: r.p,
-  latencyMs: r.latency_ms,
-  error: r.error,
-  at: r.at,
-});
 
 const json = (v: unknown): string => JSON.stringify(v ?? null);
 
@@ -490,17 +402,6 @@ function createTx(db: Database): Tx {
        VALUES ($call, $session, $tool, $decision, $basis, $at)`,
     ),
     listDecisions: db.query<DecisionRow, [string]>("SELECT * FROM decisions WHERE session_id = ? ORDER BY seq"),
-    recordJudgment: db.query(
-      `INSERT INTO judgments (call_id, session_id, model, p, latency_ms, error, at)
-       VALUES ($call, $session, $model, $p, $latency, $error, $at)
-       ON CONFLICT (call_id) DO UPDATE SET
-         session_id = excluded.session_id, model = excluded.model, p = excluded.p,
-         latency_ms = excluded.latency_ms, error = excluded.error, at = excluded.at`,
-    ),
-    listJudgments: db.query<JudgmentRow, [string, number]>(
-      `SELECT j.* FROM judgments j JOIN sessions s ON s.id = j.session_id
-       WHERE s.inbox_id = ?1 AND j.at >= ?2 ORDER BY j.at, j.rowid`,
-    ),
     getCursor: db.query<{ value: string }, [string, string]>("SELECT value FROM cursors WHERE inbox_id = ? AND name = ?"),
     setCursor: db.query(
       `INSERT INTO cursors (inbox_id, name, value) VALUES ($inbox, $name, $value)
@@ -675,7 +576,7 @@ function createTx(db: Database): Tx {
       });
       return q.outMsgByKey.get(m.inboxId, m.dedupeKey)!.id;
     },
-    listOutbox: (inboxId) => q.listOutbox.all(inboxId).map(toOutMsg),
+    listOutbox: (inboxId) => q.listOutbox.all(inboxId).map((r) => ({ ...toOutMsg(r), seq: r.seq, sentAt: r.sent_at })),
     cancelApprovalRequest(callId) {
       q.cancelApprovalRequest.run({ call: callId });
     },
@@ -744,18 +645,6 @@ function createTx(db: Database): Tx {
         basis: r.basis,
         at: r.at,
       })),
-    recordJudgment(j) {
-      q.recordJudgment.run({
-        call: j.callId,
-        session: j.sessionId,
-        model: j.model,
-        p: j.p,
-        latency: j.latencyMs,
-        error: j.error,
-        at: j.at,
-      });
-    },
-    listJudgments: (inboxId, since) => q.listJudgments.all(inboxId, since).map(toJudgment),
     getCursor: (inboxId, name) => q.getCursor.get(inboxId, name)?.value ?? null,
     setCursor(inboxId, name, value) {
       q.setCursor.run({ inbox: inboxId, name, value });

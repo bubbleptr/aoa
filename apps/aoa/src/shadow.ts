@@ -1,5 +1,6 @@
 import type { FetchFn } from "@aoa/channel-github";
-import { type Clock, type Judgment, type PolicyContext, type ToolCall } from "@aoa/kernel";
+import { type Clock, type PolicyContext, type ToolCall } from "@aoa/kernel";
+import type { Judgment } from "./records.ts";
 import { ownWorktreeRelative } from "@aoa/sdk/tools/coding";
 
 /** TypeSafe's single-call endpoint; there is no streaming (design §12). */

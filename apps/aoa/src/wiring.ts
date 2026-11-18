@@ -23,6 +23,7 @@ import {
 import { agentPolicy, deferPush, reviewReadOnly } from "./policy.ts";
 import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT, handOffPrompt, reviewPrompt } from "./prompt.ts";
 import { sendToTool } from "./send-to.ts";
+import { type Records, records } from "./records.ts";
 import { reviewer } from "./reviewer.ts";
 import { jevJudge, withShadowJudge } from "./shadow.ts";
 import { NUDGE_INTERVAL_MS, PULL_CHECK_INTERVAL_MS } from "./serve.ts";
@@ -85,6 +86,8 @@ export type Agent = {
   paths: Paths;
   inboxId: string;
   store: SqliteStore;
+  /** The app's own tables beside the kernel's. */
+  records: Records;
   clock: Clock;
   log: (line: string) => void;
   mode: Front["mode"];
@@ -138,6 +141,7 @@ type FrontDeps = {
   branchOf: ((sessionId: string) => string) | null;
   paths: Paths;
   store: SqliteStore;
+  records: Records;
   clock: Clock;
   runGit: GitRunner;
   seams: Seams;
@@ -171,7 +175,7 @@ function githubFront(gh: NonNullable<AgentConfig["github"]>, d: FrontDeps): Fron
         d.log(`checking pull request #${pr.number} of session ${sessionId} failed: ${errorText(err)}`);
         return null;
       }
-      d.store.pulls.set(sessionId, { number: pr.number, state, checkedAt: d.clock.now() });
+      d.records.pulls.set(sessionId, { number: pr.number, state, checkedAt: d.clock.now() });
       return state === "open" ? null : `pull request #${pr.number} was ${state}`;
     },
     closed: () => {},
@@ -198,10 +202,10 @@ function localFront(d: FrontDeps): Front {
     fromOrigin: false,
     openThread: async () => channel.openThread(),
     async finished(sessionId) {
-      const declared = d.store.results.get(sessionId);
+      const declared = d.records.results.get(sessionId);
       return declared && !declared.applied ? `declared ${declared.result}` : null;
     },
-    closed: (sessionId) => d.store.results.markApplied(sessionId),
+    closed: (sessionId) => d.records.results.markApplied(sessionId),
     polls: false,
     // Reads only the store, so it can run as often as serve looks for other processes' writes.
     finishCheckMs: NUDGE_INTERVAL_MS,
@@ -215,6 +219,7 @@ type Shared = {
   config: AgentConfig;
   seams: Seams;
   store: SqliteStore;
+  records: Records;
   clock: Clock;
   log: (line: string) => void;
   runGit: GitRunner;
@@ -258,6 +263,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     config,
     seams,
     store,
+    records: records(store.db),
     clock,
     log: seams.log ?? defaultLog,
     runGit: seams.runGit ?? runGitWithBun,
@@ -273,6 +279,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
 
 function assembleOne(spec: Spec, s: Shared): Agent {
   const { config, seams, store, clock, log, runGit } = s;
+  const { records: recorded } = s;
   const named = spec.name !== DEFAULT_AGENT;
   const several = s.roster.length > 1;
   const paths = derivePaths(config, undefined, named ? spec.name : undefined);
@@ -280,7 +287,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
   const review = spec.role === "review";
   const branchOf = review ? null : (id: string) => sessionBranch(named ? spec.name : null, id);
   const memory = dirMemory(paths.memory);
-  const frontDeps = { label: several ? spec.name : undefined, branchOf, paths, store, clock, runGit, seams, log, page: s.page };
+  const frontDeps = { label: several ? spec.name : undefined, branchOf, paths, store, records: recorded, clock, runGit, seams, log, page: s.page };
   const front = config.github ? githubFront(config.github, frontDeps) : localFront(frontDeps);
   const { channel } = front;
   const trees = worktrees({ repo: paths.repo, base: config.repo.base, root: paths.worktrees, runGit, fromOrigin: front.fromOrigin, branchOf });
@@ -348,7 +355,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
               fetch: seams.fetch ?? fetch,
               clock,
               log,
-              record: (j) => store.tx((t) => t.recordJudgment(j)),
+              record: (j) => recorded.judgments.record(j),
             })
           : undefined,
       )
@@ -414,6 +421,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     paths,
     inboxId,
     store,
+    records: recorded,
     clock,
     log,
     mode: front.mode,
