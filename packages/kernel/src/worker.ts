@@ -93,6 +93,8 @@ export class Worker {
   private stops = 0;
   /** The signal of the run in flight. */
   private current: AbortController | null = null;
+  /** The session of the run in flight. */
+  private currentSession: SessionId | null = null;
 
   constructor(o: WorkerOptions) {
     this.store = o.store;
@@ -150,6 +152,17 @@ export class Worker {
     this.stops++;
     this.current?.abort(new Error("the host stopped"));
     this.wake();
+  }
+
+  /**
+   * Aborts the run in flight if it serves `sessionId`, through its signal, as a stop would: its events go back ready
+   * and no number of aborts makes them dead. The worker carries on, so the next pass runs them again, together with
+   * whatever reached the session meanwhile. False if no run of that session is in flight.
+   */
+  abort(sessionId: SessionId): boolean {
+    if (this.current === null || this.currentSession !== sessionId) return false;
+    this.current.abort(new Interrupted());
+    return true;
   }
 
   private sleep(until: number | null): Promise<void> {
@@ -237,6 +250,7 @@ export class Worker {
     const stopRenewal = this.renewLease(claim.runId);
     const controller = new AbortController();
     this.current = controller;
+    this.currentSession = claim.session.id;
     const { signal } = controller;
     const c = { ...claim };
     let settled = false;
@@ -293,9 +307,9 @@ export class Worker {
       if (this.crashed) throw this.crashed;
       if (err instanceof SimulatedCrash) throw err;
       if (signal.aborted) {
-        // A stop is not the run's failure: the events go back ready for the next start, and no number of stops makes
+        // A stop or an abort is not the run's failure: the events go back ready for the next pass, and no number of them makes
         // them dead. The attempt still counts, so the next run knows an earlier one may have done part of the work.
-        const error = "stopped: the host stopped during the run";
+        const error = signal.reason instanceof Interrupted ? signal.reason.message : "stopped: the host stopped during the run";
         this.store.tx((t) => {
           const now = this.clock.now();
           t.endRun(c.runId, { error }, now);
@@ -316,6 +330,7 @@ export class Worker {
       settled = true;
       stopRenewal();
       this.current = null;
+      this.currentSession = null;
     }
 
     this.assertAlive();
@@ -382,4 +397,12 @@ function groupPending(pending: Event[]): Event[][] {
     else groups.set(key, [e]);
   }
   return [...groups.values()];
+}
+
+/** The reason of a run aborted by `abort()`, not by a stop. */
+class Interrupted extends Error {
+  constructor() {
+    super("interrupted: the run was aborted");
+    this.name = "Interrupted";
+  }
 }

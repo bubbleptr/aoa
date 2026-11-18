@@ -144,6 +144,13 @@ export interface Agent {
    * deadlock a caller inside it. Try again later.
    */
   closeSession(id: SessionId, o?: { afterClose?: () => void }): Promise<"closed" | "busy">;
+  /**
+   * Aborts the run in flight on session `id`, if there is one, through the run's signal: the runtime and its tools stop
+   * as on `host.stop()`, the run's events go back ready without counting toward dead letters, and the worker runs them
+   * again with whatever reached the session meanwhile. Append the new instruction before aborting so it comes along.
+   * False if no run of that session is in flight in this process.
+   */
+  abort(id: SessionId): boolean;
   /** One pass of each loop, for tests and for hosts that do not run the loops. */
   readonly step: {
     worker(): Promise<DrainResult>;
@@ -349,6 +356,7 @@ export function createHost(o: HostOptions): Host {
         return () => watchers.delete(fn);
       },
       closeSession: close,
+      abort: (id) => worker.abort(id),
       step: {
         worker: () => worker.drain(),
         scheduler: () => scheduler.pass(),
