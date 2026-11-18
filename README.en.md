@@ -10,6 +10,11 @@
 
 An SDK for building Always-on Agents on Bun. Agents run 24x7 on an Inbox + Worker model: events enter an inbox, a worker starts a run on a model, risky tool calls stop and wait for a person to approve, and the process can be killed at any time and pick up where it left off.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/sdk-en-dark.png">
+  <img alt="aoa SDK architecture: your app writes events and approval answers to the Inbox with append and answer, sets timers with schedule and followUp, and reads the Outbox with messages and watch; each agent has an Inbox, Worker, Timers, Memory, Outbox, Permissions and Tools, and several agents can message each other with send_to; the Worker hands a run to a runtime, tier 1 being the built-in pi and tier 2 an external harness, with Codex and dsh adapters in examples/; the runtime's tool calls come back to Permissions, allowed ones run in Tools and ones needing approval go out through the Outbox; every agent shares one SQLite file" src="docs/diagrams/sdk-en-light.png">
+</picture>
+
 If you want a coding agent you can use right away, see the [`aoa` command](apps/aoa/README.en.md), built on this SDK.
 
 ## Install
@@ -184,5 +189,5 @@ A Bun + TypeScript monorepo.
 ```bash
 bun test               # all tests, no real models called
 bun run typecheck
-bun scripts/diagrams/build.ts   # rebuild the diagrams in the apps/aoa README from docs/diagrams/boards (needs Chrome)
+bun scripts/diagrams/build.ts   # rebuild the README diagrams from docs/diagrams/boards (needs Chrome)
 ```

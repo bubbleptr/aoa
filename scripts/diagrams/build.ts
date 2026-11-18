@@ -20,6 +20,7 @@ const logos: Record<string, string> = {
 };
 
 const boards = [
+  { name: "sdk", title: "aoa SDK" },
   { name: "architecture", title: "aoa Architecture" },
   { name: "tool-call", title: "aoa Tool Call" },
   { name: "multi-agent", title: "aoa Multi Agent" },
