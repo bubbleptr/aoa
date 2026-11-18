@@ -93,11 +93,11 @@
     },
     "packages/kernel": {
       "name": "@aoa-dev/kernel",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/sdk": {
       "name": "@aoa-dev/sdk",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@aoa-dev/kernel": "workspace:*",
       },
@@ -121,7 +121,7 @@
     },
     "packages/store-sqlite": {
       "name": "@aoa-dev/store-sqlite",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@aoa-dev/kernel": "workspace:*",
       },

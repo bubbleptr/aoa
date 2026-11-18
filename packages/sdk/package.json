@@ -1,6 +1,6 @@
 {
   "name": "@aoa-dev/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Build long-running agents on aoa's kernel: hosts, agents, timers, approvals, send_to; pi as the built-in runtime.",
   "license": "MIT",
   "repository": {

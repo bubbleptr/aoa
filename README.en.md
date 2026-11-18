@@ -99,7 +99,7 @@ They all live in the kernel, and all state is in one SQLite file.
 - **Permissions** decide whether each tool call may run; see the next section.
 - **Outbox** sends messages and retries delivery. With a `channel` they go there (a local file, GitHub and so on); without one a message counts as sent when written, and you read it from `host.messages()`.
 
-Also: `host.watch` tells you when the database has a commit, including another process's within a second; `agent.read` queries sessions, events, pending calls, timers, runs and journals, read-only; `agent.activity` streams the model's text and each tool call as they happen; `agent.abort` stops the run in flight on one session and puts its events back to run again (added after 0.1.0, not yet published).
+Also: `host.watch` tells you when the database has a commit, including another process's within a second; `agent.read` queries sessions, events, pending calls, timers, runs and journals, read-only; `agent.activity` streams the model's text and each tool call as they happen; `agent.abort` stops the run in flight on one session and puts its events back to run again (since 0.1.1).
 
 ## Permissions
 

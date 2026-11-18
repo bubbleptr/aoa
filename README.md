@@ -98,7 +98,7 @@ DEEPSEEK_API_KEY=... bun main.ts
 - **Permissions** 决定每次工具调用能不能做，见下一节。
 - **Outbox** 发消息并重试送达。传 `channel` 就送到那里（本地文件、GitHub 等）；不传时写入即算送出，从 `host.messages()` 读。
 
-另外：`host.watch` 在库有提交时通知你，其他进程的提交一秒内也能收到；`agent.read` 只读地查 session、事件、待审批、定时器、run 和日志；`agent.activity` 实时给出模型的文字和每次工具调用；`agent.abort` 中断一个 session 正在跑的 run，事件放回去重跑（0.1.0 之后加的，还没发布）。
+另外：`host.watch` 在库有提交时通知你，其他进程的提交一秒内也能收到；`agent.read` 只读地查 session、事件、待审批、定时器、run 和日志；`agent.activity` 实时给出模型的文字和每次工具调用；`agent.abort` 中断一个 session 正在跑的 run，事件放回去重跑（0.1.1 起）。
 
 ## 权限
 

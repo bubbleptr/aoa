@@ -214,7 +214,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 三个示例（`codex`、`dsh`、`digest`）也一样：依赖里没有 `@aoa-dev/kernel`，源码和测试都从 `@aoa-dev/sdk` 取，`examples/depends-on-sdk.test.ts` 守着。Codex 和 dsh 原来直接驱动内核 worker 的测试（`kernel.test.ts`）改成经 `createHost` 和 `agent.step`、`answer`、`read`，和 SDK 使用者的写法一样。测试工具 `@aoa-dev/conformance` 仍是开发依赖。
 
-2026-11-18 起 `@aoa-dev/kernel`、`@aoa-dev/sdk`、`@aoa-dev/store-sqlite` 可以被别的仓库安装：去掉 `private`，版本 0.1.0，只支持 Bun（≥ 1.3），包里直接是 `.ts` 源码，打包时 `workspace:*` 换成真实版本。pi 的三个依赖（`pi-ai`、`pi-coding-agent`、`typebox`）改成可选的 peer 依赖，只有 `@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 要它们；`@aoa-dev/sdk/prompt` 里 pi 工具结果的类型改为自己写出，不再从 pi 引。`packages/sdk/test/install.test.ts` 把三个包打成 tarball，装进仓库外的空目录，跑通并类型检查一个只用公开入口的小程序，且确认没装进任何别的包。还没发布到 npm。
+2026-11-18 起 `@aoa-dev/kernel`、`@aoa-dev/sdk`、`@aoa-dev/store-sqlite` 可以被别的仓库安装：去掉 `private`，版本 0.1.0，只支持 Bun（≥ 1.3），包里直接是 `.ts` 源码，打包时 `workspace:*` 换成真实版本。pi 的三个依赖（`pi-ai`、`pi-coding-agent`、`typebox`）改成可选的 peer 依赖，只有 `@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 要它们；`@aoa-dev/sdk/prompt` 里 pi 工具结果的类型改为自己写出，不再从 pi 引。`packages/sdk/test/install.test.ts` 把三个包打成 tarball，装进仓库外的空目录，跑通并类型检查一个只用公开入口的小程序，且确认没装进任何别的包。0.1.0 于当天发布到 npm；0.1.1 加上 `agent.abort`，三个包一起升版本，因为 store-sqlite 和 sdk 都把 kernel 钉在确切版本上。
 
 2026-11-18 加了 `agent.abort(sessionId)`（应 Domo 的对接要求）：经这次 run 的 `signal` 停下正在服务这个 session 的 run，走和 `host.stop()` 一样的路径，事件回到 `pending`、不计入死信上限，worker 接着跑，下一次 run 连同期间新到的事件一起拿到。run 的 `error` 是 `interrupted: the run was aborted`，和宿主停下的区分开。没有这个 session 的 run 在跑时返回 false。调用方先追加新指令再 `abort`，新指令就在下一次 run 里。只停得了本进程里的 run。
 
