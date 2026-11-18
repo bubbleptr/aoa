@@ -1,0 +1,18 @@
+{
+  "name": "@aoa/example-digest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aoa/kernel": "workspace:*",
+    "@aoa/sdk": "workspace:*",
+    "@aoa/store-sqlite": "workspace:*"
+  },
+  "devDependencies": {
+    "@aoa/conformance": "workspace:*",
+    "@earendil-works/pi-ai": "1.5.2"
+  }
+}

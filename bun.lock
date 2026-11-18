@@ -42,6 +42,19 @@
         "@aoa/conformance": "workspace:*",
       },
     },
+    "examples/digest": {
+      "name": "@aoa/example-digest",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aoa/kernel": "workspace:*",
+        "@aoa/sdk": "workspace:*",
+        "@aoa/store-sqlite": "workspace:*",
+      },
+      "devDependencies": {
+        "@aoa/conformance": "workspace:*",
+        "@earendil-works/pi-ai": "1.5.2",
+      },
+    },
     "examples/dsh": {
       "name": "@aoa/example-dsh",
       "version": "0.0.0",
@@ -114,6 +127,8 @@
     "@aoa/conformance": ["@aoa/conformance@workspace:packages/conformance"],
 
     "@aoa/example-codex": ["@aoa/example-codex@workspace:examples/codex"],
+
+    "@aoa/example-digest": ["@aoa/example-digest@workspace:examples/digest"],
 
     "@aoa/example-dsh": ["@aoa/example-dsh@workspace:examples/dsh"],
 

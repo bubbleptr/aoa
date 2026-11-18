@@ -202,6 +202,14 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - pi 在同一次 `prompt` 里自己重试模型请求时，重试前已经发出的文字会再来一遍。
 - Codex 和 dsh 示例还不发自己的文字和自带工具的调用；它们经 `input.tools` 的调用由内核发。
 
+第 6 步已完成（2026-11-18）：`examples/digest`（`@aoa/example-digest`），说明见它的 README。一个子进程在 `PATH` 里没有 git、不在任何仓库里，经 pi 跑完一天，pi 本身也不碰 git。顺带做了「内核里残留的编码假设」一节：没有 `memory` 时常驻上下文只剩「保持安静」一段；有 `memory` 时「只存指针」不再点名 issue、PR、提交；死信通知不再提 `aoa status`，`apps/aoa` 在自己的 channel 里按去重键前缀（`DEAD_NOTICE_PREFIX`）补上这一行。
+
+这个示例碰到的、SDK 还不顺手的地方：
+
+- 每次定时器触发开一个新 session，跑完不关；SDK 没有「run 结束」的钩子，应用只能自己扫着关。
+- 工具要知道「上一次成功检查是什么时候」，只能在工具里经 `agent.read.runs()` 推，工具定义时 agent 还没注册，得晚绑定。
+- 宿主的时钟不交给工具：工具里的「现在」只能借当前 run 的开始时间。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |
