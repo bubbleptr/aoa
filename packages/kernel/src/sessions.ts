@@ -1,5 +1,29 @@
-import type { InboxId, SessionId, ToolDef } from "./types.ts";
-import type { Store } from "./ports.ts";
+import type { CallId, InboxId, SessionId, ToolDef } from "./types.ts";
+import type { Store, Tx } from "./ports.ts";
+
+/**
+ * Drops an unanswered deferred call and records an error in the journal for non-admit calls so an
+ * interrupted run replaying the same call id receives the error instead of re-deferring on spent keys.
+ */
+export function abandonDeferred(
+  t: Tx,
+  sessionId: SessionId,
+  callId: CallId,
+  basis: string,
+  error: string,
+  at?: number,
+): void {
+  const d = t.getDeferred(callId);
+  if (d && d.kind !== "admit" && !t.getJournal(sessionId, d.callId)) {
+    const ts = at ?? d.requestedAt;
+    t.recordDecision({ callId: d.callId, sessionId, tool: d.tool, decision: "block", basis, at: ts });
+    t.recordIntent({ inboxId: d.inboxId, sessionId, callId: d.callId, tool: d.tool, args: d.args, at: ts });
+    t.recordResult(sessionId, d.callId, { status: "error", error }, ts);
+  }
+  t.deleteDeferred(callId);
+  t.cancelApprovalRequest(callId);
+  t.setSessionPending(sessionId, null);
+}
 
 /**
  * Ends a session: its timers are cancelled, and a call it waits on is dropped unanswered together with
@@ -9,9 +33,13 @@ export function closeSession(store: Store, sessionId: SessionId): void {
   store.tx((t) => {
     const pending = t.getSession(sessionId)?.pending ?? null;
     if (pending !== null) {
-      t.deleteDeferred(pending);
-      t.cancelApprovalRequest(pending);
-      t.setSessionPending(sessionId, null);
+      abandonDeferred(
+        t,
+        sessionId,
+        pending,
+        "session closed",
+        "The session was closed before this call was answered. The call was not executed.",
+      );
     }
     t.setSessionStatus(sessionId, "closed");
     t.cancelTimersForSession(sessionId);

@@ -144,6 +144,32 @@ for (const [name, factory] of storeFactories) {
       expect(h.outbox().map((m) => [m.kind, m.status])).toEqual([["approval_request", "cancelled"]]);
     });
 
+    test("closing a session after a before_complete crash records an error so retrying does not re-defer", async () => {
+      const deploy = countingTool("deploy");
+      const policy = { risk: {} };
+      const script = { calls: [{ tool: "deploy", callId: "call-1" }] };
+      const runtime = new ScriptedRuntime([script, script]);
+
+      h.append({ thread: "task-1" });
+      await expect(
+        h.worker({ runtime, tools: [deploy], policy, crash: crashAt("before_complete") }).drain(),
+      ).rejects.toBeInstanceOf(SimulatedCrash);
+
+      const session = runtime.runs[0]!.input.session.id;
+      h.waitOutLease();
+      closeSession(h.store, session);
+
+      await h.worker({ runtime, tools: [deploy], policy, store: h.connect() }).drain();
+
+      expect(deploy.effects).toEqual([]);
+      expect(runtime.runs[1]!.toolResults[0]).toEqual({
+        status: "error",
+        error: expect.stringContaining("closed"),
+      });
+      expect(h.store.tx((t) => t.getSession(session))).toMatchObject({ status: "open", pending: null });
+      expect(h.store.tx((t) => t.listDeferred(h.inboxId))).toEqual([]);
+    });
+
     test("policy rules see the session's workdir", async () => {
       const seen: (string | null)[] = [];
       const rule: Rule = {

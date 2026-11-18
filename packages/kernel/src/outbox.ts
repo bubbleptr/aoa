@@ -2,8 +2,8 @@ import type { Channel, OutMsg } from "./channel.ts";
 import { SimulatedCrash, type CrashHook, type CrashPoint } from "./crash.ts";
 import { answerCallId, expiryTimerId } from "./deferred.ts";
 import { DEFAULT_RATE_POLICY, pace, type RatePolicy } from "./pace.ts";
-import type { Clock, Store } from "./ports.ts";
-import type { Tx } from "./ports.ts";
+import type { Clock, Store, Tx } from "./ports.ts";
+import { abandonDeferred } from "./sessions.ts";
 import type { Event, InboxId, ToolDef } from "./types.ts";
 
 /** Delivery attempts before a message is `failed` (MAX_ATTEMPTS for messages, D-OUT-5). */
@@ -73,9 +73,14 @@ export function reportDead(t: Tx, inboxId: InboxId, dead: Event[], error: string
       const callId = answerCallId(e.payload);
       if (callId !== null && t.getSession(e.resume)?.pending === callId) {
         // The answer died before resolveAnswer settled the call; release the deferral so the session does not stay paused.
-        t.deleteDeferred(callId);
-        t.cancelApprovalRequest(callId);
-        t.setSessionPending(e.resume, null);
+        abandonDeferred(
+          t,
+          e.resume,
+          callId,
+          "answer failed",
+          "Applying the answer failed repeatedly. The call was not executed.",
+          now,
+        );
         t.cancelFollowUp(expiryTimerId(callId), e.resume);
       }
     }

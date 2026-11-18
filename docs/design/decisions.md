@@ -13,6 +13,7 @@
 - 一个 session 同时只能有一个待答的调用；这次 run 里之后的调用也返回延后，但不再发请求。
 - 事件重试到上限进 `dead` 时，同一个事务里给这项任务写一条失败通知（§8 的第三种消息）。
 - `approval_answer` 在 `resolveAnswer` 结算前就进入 `dead` 时，同一事务里清理对应的 `deferred`、撤回未发出的审批请求并取消超时定时器，同时把 session 重开，避免它永久卡在 `paused`。
+- `closeSession`（以及 `approval_answer` 进入 `dead` 时的清理）在丢弃未答复的 `approval`/`question`/`harness` 调用时，会在同一事务里为尚未记日志的 `call_id` 写入 `block` 决策与错误结果到 `tool_journal`（`admit` 不入调用日志），确保被打断的 run 重试并重放同一 `call_id` 时直接拿到错误，而不会拿着已取消的 `approval:<call_id>` / `expire:<call_id>` 键再次延后卡死。
 - `serve` 必须配分类器。`bash` 是中风险，没有分类器时，只读白名单之外的每条命令都会停下来等你，写代码的循环转不起来。
 - 文件工具的路径落在任务的 worktree 之外时延后。
 - worktree 建在数据目录 `~/.aoa` 下，而凭据规则会拦提到 `~/.aoa` 的命令。所以规则先把指向本 session 自己 worktree 的绝对路径改写成相对路径再判断；用 `..` 爬出去的、别的 session 的 worktree、数据目录里其余的东西照旧交给你。写成 `~/.aoa/worktrees/…` 的形式不会被改写，仍然会问你。
