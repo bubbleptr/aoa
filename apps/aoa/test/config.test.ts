@@ -134,90 +134,14 @@ describe("named agents", () => {
   });
 });
 
-describe("the Codex runtime", () => {
-  const { github: _, model: piModel, ...rest } = valid;
+describe("runtime and serve requirements", () => {
+  const { github: _, ...local } = valid;
   const small = { provider: "anthropic", modelId: "claude-small", apiKeyEnv: "OTHER_KEY" };
-  const codexTop = { ...rest, runtime: "codex" };
 
-  test("a codex agent needs no model; one it names is passed to Codex as is", () => {
-    expect(validateConfig(codexTop)).toMatchObject({ runtime: "codex" });
-    expect(validateConfig(codexTop).model).toBeUndefined();
-    expect(validateConfig({ ...codexTop, model: "gpt-5.5" })).toMatchObject({ runtime: "codex", model: "gpt-5.5" });
-    expect(validateConfig({ ...rest, model: piModel })).toMatchObject({ runtime: "pi", model: piModel });
-  });
-
-  test("a named codex agent does not inherit a pi model, and a named pi agent under a codex top level needs its own", () => {
-    const c = validateConfig({ ...rest, model: piModel, classifier: small, agents: { coder: { runtime: "codex" }, helper: {} } });
-    expect(c.agents).toEqual({
-      coder: { role: "implement", runtime: "codex", classifier: small },
-      helper: { role: "implement", runtime: "pi", model: piModel, classifier: small },
-    });
-    const top = validateConfig({ ...codexTop, model: "gpt-5.5", agents: { twin: {}, helper: { runtime: "pi", model: small } } });
-    expect(top.agents).toEqual({
-      twin: { role: "implement", runtime: "codex", model: "gpt-5.5" },
-      helper: { role: "implement", runtime: "pi", model: small },
-    });
-  });
-
-  test.each([
-    [{ ...rest, runtime: "claude", model: piModel }, "runtime"],
-    [{ ...codexTop, model: piModel }, "model"],
-    [{ ...codexTop, github: valid.github }, "runtime"],
-    [{ ...codexTop, agents: { helper: { runtime: "pi" } } }, "agents.helper.model"],
-  ])("rejects: %#", (raw, field) => {
-    expect(() => validateConfig(raw)).toThrow(new RegExp(`^Invalid config: ${field.replaceAll(".", "\\.")} `));
-  });
-
-  test("a review agent can run on Codex", () => {
-    const config = validateConfig({ ...rest, model: piModel, agents: { reviewer: { role: "review", runtime: "codex" } } });
-    expect(config.agents).toEqual({ reviewer: { role: "review", runtime: "codex" } });
-  });
-
-  test("serve wants a classifier only for the agents that run on pi", () => {
-    expect(() => validateForServe(validateConfig(codexTop))).not.toThrow();
-    expect(() => validateForServe(validateConfig({ ...rest, model: piModel }))).toThrow(/^Invalid config: classifier /);
-    const piHelper = validateConfig({ ...codexTop, agents: { helper: { runtime: "pi", model: small } } });
-    expect(() => validateForServe(piHelper)).toThrow(/^Invalid config: agents\.helper\.classifier /);
-  });
-});
-
-describe("the dsh runtime", () => {
-  const { github: _, model: piModel, ...rest } = valid;
-  const small = { provider: "anthropic", modelId: "claude-small", apiKeyEnv: "OTHER_KEY" };
-  const dshTop = { ...rest, runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" };
-
-  test("a dsh agent names a dsh model and the variable its key comes from; command and preset are optional", () => {
-    expect(validateConfig(dshTop)).toMatchObject({ runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" });
-    expect(validateConfig(dshTop).dsh).toBeUndefined();
-    expect(validateConfig({ ...dshTop, dsh: { command: "/opt/dsh/bin/dsh", preset: "read-only" } }).dsh).toEqual({
-      command: "/opt/dsh/bin/dsh",
-      preset: "read-only",
-    });
-  });
-
-  test("a named dsh agent inherits the route and the key, and names its own model when it wants one", () => {
-    const c = validateConfig({ ...dshTop, agents: { coder: {}, other: { model: "deepseek-pro" } } });
-    expect(c.agents).toEqual({
-      coder: { role: "implement", runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
-      other: { role: "implement", runtime: "dsh", model: "deepseek-pro", apiKeyEnv: "DEEPSEEK_API_KEY" },
-    });
-  });
-
-  test.each([
-    [{ ...rest, runtime: "dsh", apiKeyEnv: "DEEPSEEK_API_KEY" }, "model"],
-    [{ ...rest, runtime: "dsh", model: "deepseek-flash" }, "apiKeyEnv"],
-    [{ ...dshTop, model: piModel }, "model"],
-    [{ ...dshTop, dsh: { sandbox: "workspace-write" } }, "dsh.sandbox"],
-    [{ ...dshTop, dsh: { preset: "sdk-app" } }, "dsh.preset"],
-    [{ ...dshTop, github: valid.github }, "runtime"],
-    [{ ...dshTop, agents: { reviewer: { role: "review" } } }, "agents.reviewer.role"],
-    [{ ...dshTop, agents: { helper: { runtime: "pi" } } }, "agents.helper.model"],
-  ])("rejects: %#", (raw, field) => {
-    expect(() => validateConfig(raw)).toThrow(new RegExp(`^Invalid config: ${field.replaceAll(".", "\\.")} `));
-  });
-
-  test("serve wants no classifier for an agent that runs on dsh", () => {
-    expect(() => validateForServe(validateConfig(dshTop))).not.toThrow();
+  test("rejects an unknown runtime and requires a classifier for serve", () => {
+    expect(() => validateConfig({ ...local, runtime: "claude" })).toThrow(/^Invalid config: runtime /);
+    expect(() => validateForServe(validateConfig(local))).toThrow(/^Invalid config: classifier /);
+    expect(() => validateForServe(validateConfig({ ...local, classifier: small }))).not.toThrow();
   });
 });
 

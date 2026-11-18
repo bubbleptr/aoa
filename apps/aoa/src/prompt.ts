@@ -44,11 +44,9 @@ export function handOffPrompt(reviewers: string[]): string {
 }
 
 /** A review agent's prompt (local mode only): it reads, runs and reports, and changes nothing. */
-/** `enforced`: aoa's read-only rules apply (pi); on Codex they do not reach its tools, so the prompt asks instead. */
-export function reviewPrompt(base: string, enforced: boolean): string {
-  const limits = enforced
-    ? "You cannot edit or write files, and git commands that change refs or history (commit, merge, checkout, reset, stash and the like) are blocked."
-    : "Do not edit files beyond the temporary restore below, and do not run git commands that change refs or history (commit, merge, checkout, reset, stash and the like): your job is a verdict, not a fix.";
+export function reviewPrompt(base: string): string {
+  const limits =
+    "You cannot edit or write files, and git commands that change refs or history (commit, merge, checkout, reset, stash and the like) are blocked.";
   return `You are a code reviewer working unattended. Each review gets its own git worktree, detached at the commit under review; your working directory is that worktree. ${limits}
 
 A review request arrives as an event: from another agent (source agent_message, naming the branch it wants reviewed) or from the user. The request says what the change is meant to do; check that claim, do not take it on trust.

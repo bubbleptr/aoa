@@ -63,7 +63,7 @@ claude mcp add aoa -- aoa mcp        # optional: use it straight from Claude Cod
   <img alt="A tool call: Permissions decides allow, block or defer, while Jev scores alongside for now and takes over the decision later; on defer the session is saved and the run ends, the Outbox sends an approval request, your answer comes back to the Inbox as an event, and a new run resumes the session and executes the call exactly once; in GitHub mode the host process adds credentials for the agent; a Codex review agent's approvals go to Codex's own auto review" src="../../docs/diagrams/tool-call-en-light.png">
 </picture>
 
-- **The agent makes most decisions itself.** Every tool call first goes through a rule table: read-only calls are allowed, and things like `sudo`, force pushes and `curl | sh` are blocked. Everything else goes to a classifier, the same idea as auto mode in Claude Code. Today the classifier is a small model, and the intent model Jev scores the same calls alongside it; once there is enough data, Jev takes over. A review agent on Codex uses Codex's own auto review. So most calls never wait for a person, and the agent keeps running.
+- **The agent makes most decisions itself.** Every tool call first goes through a rule table: read-only calls are allowed, and things like `sudo`, force pushes and `curl | sh` are blocked. Everything else goes to a classifier, the same idea as auto mode in Claude Code. Today the classifier is a small model, and the intent model Jev scores the same calls alongside it; once there is enough data, Jev takes over. So most calls never wait for a person, and the agent keeps running.
 - **When it needs you, it uses a deferred tool call.** For calls that are high-risk or that the classifier is unsure about, the kernel saves the session, ends the run and sends you an approval request; once your answer comes back, it runs that one call exactly once (see [permissions in the SDK](../../README.en.md#permissions)).
 - **Credentials are added by a proxy.** `git_push`, opening PRs and posting comments run in aoa's host process, which adds the GitHub credentials, so the agent never sees them.
 
@@ -94,41 +94,6 @@ With a review agent configured, the implementation agent hands its branch over w
 - You review and merge the branch yourself, then tell aoa the outcome with `aoa close`. `close` only records it; at its next check (within 5 seconds) `serve` closes the task and removes the worktree, keeping the branch.
 - Events that failed three times and stopped show up in `aoa status`.
 - A `git push` inside `bash` asks you first. This is a convention, not isolation: the agent's shell is your shell.
-
-## Runtimes: pi, Codex, dsh
-
-Each agent (top-level or named) picks one with `runtime`; the default is `pi`. The Codex and dsh adapters live in [`examples/`](../../examples), and `aoa` uses them from there.
-
-| | pi | Codex | dsh (DeepSeek Harness) |
-|---|---|---|---|
-| Kind | Built-in | External harness | External harness |
-| Who decides tool calls | aoa decides every one | Codex's approval and sandbox settings; what it would ask is forwarded to you | The sandbox and approvals set by `dsh.preset`; what it would ask is forwarded to you |
-| How it connects | An in-process pi session | A `codex app-server` per run | A `dsh --profile sdk` per run |
-| aoa's own tools | Given to pi directly | Dynamic tools | An MCP bridge listening only on 127.0.0.1 |
-| Auth | `model.apiKeyEnv` | Codex's own login; aoa does not touch it | `apiKeyEnv`, passed only to the dsh child process |
-| Review role | Supported, with aoa's read-only rules | Supported, running in Codex's auto review mode | Not supported |
-| Modes | Local and GitHub | Local only | Local only |
-
-```ts
-agents: {
-  coder: { runtime: "codex", model: "your-codex-model-id" },             // model is optional; Codex's default is used
-  deepseek: { runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
-},
-```
-
-What the two external harnesses have in common:
-- Whatever they would ask about becomes an aoa approval request; once you approve, they perform the same operation again and this time it goes through. The permission is used once.
-- What they do without asking, aoa can neither see nor stop. aoa's push rule, `~/.aoa` rule and worktree boundary do not apply to their own tools; `serve` warns once per such agent at startup.
-
-**Codex**
-- Your Codex approval and sandbox settings apply as they are.
-- Plugins, MCP servers and hooks you installed in Codex are not carried over; aoa turns them all off when it starts Codex.
-- The review role runs in Codex's auto review mode (workspace-write sandbox, with approvals going to Codex's own auto reviewer rather than to you). Whether it can commit depends on Codex's review and the prompt, not on a hard limit.
-
-**dsh**
-- aoa gives it a separate home (`<dataDir>/dsh-home`) and writes a patch on every run: it sets the permission preset and turns off dsh's own subagents, team, goal, workflow, jobs and plugin management, as well as its own question and scheduling tools.
-- `dsh.preset` defaults to `workspace-write`; `read-only` and `danger-full-access` are the alternatives. Changing the preset also switches tasks already under way before their next run.
-- Before starting, aoa checks `dsh --version` and refuses to run anything other than the tested `0.2.2-rc.3`. dsh is still in developer preview, so a new version may need changes to the patch and the version constant.
 
 ## A chat agent as the entry point
 
@@ -163,6 +128,4 @@ After that:
 
 ```bash
 bun test apps/aoa
-AOA_CODEX_SMOKE=1 bun test examples/codex/test/smoke.test.ts   # real Codex, uses quota
-AOA_DSH_SMOKE=1 bun test examples/dsh/test/smoke.test.ts       # real dsh and a DeepSeek key
 ```

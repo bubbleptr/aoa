@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { FakeClock, countingTool } from "@aoa-dev/conformance";
 import type { ToolDef } from "@aoa-dev/kernel";
 import { sqliteStore } from "@aoa-dev/store-sqlite";
-import { createHost } from "../src/index.ts";
+import { createHost, sendToTool } from "../src/index.ts";
 import { dirTranscripts, loopRuntime, type LoopCompleteInput, type LoopCompleteOutput, type LoopTurn } from "../src/loop/index.ts";
 import { RETRY_NOTICE } from "../src/prompt.ts";
 
@@ -227,5 +227,67 @@ describe("loopRuntime (@aoa-dev/sdk/loop)", () => {
 
     expect(agent.read.runs().map((r) => r.error)).toEqual(["interrupted: the run was aborted", null]);
     expect(host.messages().map((m) => m.body)).toEqual(["finished on second pass"]);
+  });
+
+  test("multi-agent handoff over loopRuntime: front desk hands off via send_to, ops pauses for approval, then replies back", async () => {
+    const store = sqliteStore(":memory:");
+    opened.push(store);
+    const clock = new FakeClock();
+    const host = createHost({ store, clock, log: () => {} });
+    const refund = countingTool("issue_refund");
+    const sendTo = sendToTool(host);
+
+    const deskSteps: LoopCompleteOutput[] = [
+      { toolCalls: [{ id: "s1", name: "send_to", args: { agent: "ops", text: "refund order 7" } }] },
+      { text: "" },
+      { text: "Order 7 refunded." },
+    ];
+    let di = 0;
+    const opsSteps: LoopCompleteOutput[] = [
+      { toolCalls: [{ id: "r1", name: "issue_refund", args: { orderId: "7" } }] },
+      { toolCalls: [{ id: "s2", name: "send_to", args: { agent: "desk", text: "refunded 7" } }] },
+      { text: "" },
+    ];
+    let oi = 0;
+
+    const desk = host.agent({
+      name: "desk",
+      inbox: "desk",
+      runtime: loopRuntime({ systemPrompt: "desk", complete: async () => deskSteps[di++] ?? { text: "" } }),
+      tools: [sendTo],
+      reply: "final_text",
+      approvals: { by: "answer" },
+      debounceMs: 0,
+    });
+    const ops = host.agent({
+      name: "ops",
+      inbox: "ops",
+      runtime: loopRuntime({ systemPrompt: "ops", complete: async () => opsSteps[oi++] ?? { text: "" } }),
+      tools: [refund, sendTo],
+      reply: "final_text",
+      approvals: { by: "answer" },
+      debounceMs: 0,
+    });
+
+    const drainBoth = async () => {
+      for (let i = 0; i < 6; i++) {
+        const a = await desk.step.worker();
+        const b = await ops.step.worker();
+        if (a.runs === 0 && b.runs === 0) break;
+      }
+    };
+
+    desk.append(say("please refund order 7", "chat:42"));
+    await drainBoth();
+
+    const [pending] = ops.read.pending();
+    expect(pending?.tool).toBe("issue_refund");
+    expect(refund.effects).toHaveLength(0);
+
+    ops.answer(pending!.callId, { verdict: "approve", via: "card" });
+    await drainBoth();
+
+    expect(refund.effects).toHaveLength(1);
+    expect(desk.read.outbox({ status: "sent" }).map((m) => [m.thread, m.body])).toEqual([["chat:42", "Order 7 refunded."]]);
   });
 });

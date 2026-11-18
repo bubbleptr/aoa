@@ -2,8 +2,6 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa-dev/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa-dev/channel-local";
-import { type SpawnCodex, codexRuntime } from "@aoa-dev/example-codex";
-import { type DshSpawn, dshRuntime } from "@aoa-dev/example-dsh";
 import { piCompletion, piRuntime } from "@aoa-dev/sdk/pi";
 import { codingTools } from "@aoa-dev/sdk/tools/coding";
 import {
@@ -53,10 +51,6 @@ export type Seams = {
   log?: (line: string) => void;
   /** Local mode's desktop notification; by default the platform's. */
   notify?: Notifier;
-  /** Starts a Codex app server for a codex agent's run; by default the `codex` on the PATH. */
-  spawnCodex?: SpawnCodex;
-  /** Starts dsh for a dsh agent's run; by default the `dsh` the config names, or the one on the PATH. */
-  spawnDsh?: DshSpawn;
 };
 
 /**
@@ -255,14 +249,10 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
   // A missing key is reported by name when a model call needs it, so `status` and `answer` work without one.
   const keys = new Map(
     [
-      ...roster.flatMap((a) => [
-        ...(a.runtime === "pi" ? [a.model] : []),
-        ...(a.runtime === "dsh" ? [{ apiKeyEnv: a.apiKeyEnv }] : []),
-        ...(a.classifier ? [a.classifier] : []),
-      ]),
+      ...roster.flatMap((a) => [a.model, ...(a.classifier ? [a.classifier] : [])]),
       config.shadowJudge,
     ]
-      .filter((m): m is { apiKeyEnv: string } => m !== undefined)
+      .filter((m): m is ModelRef => m !== undefined)
       .map((m) => [m.apiKeyEnv, env[m.apiKeyEnv]]),
   );
   // The model clients hold the keys in memory from here on; the agents' bash and git inherit this environment, so they go.
@@ -315,45 +305,21 @@ function assembleOne(spec: Spec, s: Shared): Agent {
 
   const reviewers = s.roster.filter((a) => a.role === "review").map((a) => a.name);
   const rolePrompt = review
-    ? reviewPrompt(config.repo.base, spec.runtime === "pi")
+    ? reviewPrompt(config.repo.base)
     : reviewers.length > 0
       ? `${front.systemPrompt}\n\n${handOffPrompt(reviewers)}`
       : front.systemPrompt;
   const systemPrompt = spec.instructions === undefined ? rolePrompt : `${rolePrompt}\n\n${spec.instructions}`;
-  const runtime =
-    spec.runtime === "dsh"
-      ? dshRuntime({
-          systemPrompt,
-          model: spec.model,
-          apiKey: s.keyOf({ apiKeyEnv: spec.apiKeyEnv }),
-          apiKeyEnv: spec.apiKeyEnv,
-          home: join(paths.dataDir, "dsh-home"),
-          cwd: paths.repo,
-          env: seams.env ?? process.env,
-          log,
-          ...(spec.dsh?.command === undefined ? {} : { command: spec.dsh.command }),
-          ...(spec.dsh?.preset === undefined ? {} : { preset: spec.dsh.preset }),
-          ...(seams.spawnDsh ? { spawn: seams.spawnDsh } : {}),
-        })
-      : spec.runtime === "pi"
-      ? piRuntime({
-          provider: spec.model.provider,
-          modelId: spec.model.modelId,
-          apiKey: s.keyOf(spec.model),
-          agentDir: paths.piAgent,
-          sessionsDir: paths.sessions,
-          cwd: paths.repo,
-          systemPrompt,
-          providers: seams.providers,
-        })
-      : codexRuntime({
-          developerInstructions: systemPrompt,
-          cwd: paths.repo,
-          ...(spec.model === undefined ? {} : { model: spec.model }),
-          // A reviewer's verdict is advice and it cannot ask the user, so Codex's own auto review answers what Codex asks.
-          autoReview: review,
-          ...(seams.spawnCodex ? { spawn: seams.spawnCodex } : {}),
-        });
+  const runtime = piRuntime({
+    provider: spec.model.provider,
+    modelId: spec.model.modelId,
+    apiKey: s.keyOf(spec.model),
+    agentDir: paths.piAgent,
+    sessionsDir: paths.sessions,
+    cwd: paths.repo,
+    systemPrompt,
+    providers: seams.providers,
+  });
   // Who decides the agent's own tool calls follows from the runtime's tier.
   const permissions = runtime.kind;
   const classify = spec.classifier
@@ -391,10 +357,9 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     description: spec.role,
     inbox: inboxId,
     runtime,
-    // Codex reads, edits and runs commands with its own tools; it is offered only aoa's.
     tools: (builtins) => {
       const all = [
-        ...(spec.runtime === "pi" ? codingTools() : []),
+        ...codingTools(),
         ...builtins,
         ...front.tools,
         ...(several ? [handOff(s)] : []),
@@ -491,17 +456,11 @@ export function withStatusHint(channel: Channel): Channel {
 
 /** The default agent: the top-level config, which describes nothing else about it. */
 function topAgent(config: AgentConfig): NamedAgent {
-  const common = {
-    role: "implement" as const,
+  return {
+    role: "implement",
+    runtime: "pi",
+    model: config.model,
     ...(config.classifier ? { classifier: config.classifier } : {}),
     ...(config.risk ? { risk: config.risk } : {}),
   };
-  switch (config.runtime) {
-    case "pi":
-      return { ...common, runtime: "pi", model: config.model };
-    case "codex":
-      return { ...common, runtime: "codex", ...(config.model === undefined ? {} : { model: config.model }) };
-    case "dsh":
-      return { ...common, runtime: "dsh", model: config.model, apiKeyEnv: config.apiKeyEnv, ...(config.dsh === undefined ? {} : { dsh: config.dsh }) };
-  }
 }

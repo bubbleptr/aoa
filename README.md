@@ -135,8 +135,8 @@ host.agent({
 
 ## Runtime
 
-- **第一档（内核管每次工具调用）**：`@aoa-dev/sdk/loop` 零第三方依赖，传一个 `complete()` 函数就能接 OpenAI、Anthropic、Vercel AI SDK 或原生 `fetch`（见 [`examples/assistant`](examples/assistant)）；`@aoa-dev/sdk/pi` 内置 pi 的多模型接入与会话管理。
-- **第二档：外部 harness**，用它们自己的工具和沙箱，它们要问的审批转成 aoa 的审批请求。SDK 只给接口，不内置实现；[`examples/codex`](examples/codex) 和 [`examples/dsh`](examples/dsh) 是两种写法。
+- **第一档（内核管每次工具调用）**：`@aoa-dev/sdk/pi` 内置 pi 的多模型接入与会话管理（见 [`examples/tui`](examples/tui)）；不想装 pi 时，`@aoa-dev/sdk/loop` 零第三方依赖，传一个 `complete()` 函数就能接任意模型 SDK 或原生 `fetch`。
+- **第二档：外部 harness**（`HarnessRuntime`），用它们自己的工具和沙箱，把需要确认的操作经 `ask` 转成 aoa 的审批请求；SDK 定义接口并在一致性测试里覆盖六条约定，不内置具体 harness 实现。
 
 ## 多个 agent
 
@@ -165,10 +165,8 @@ host.agent({ name: "checker", description: "checks drafts", inbox: "checker", ru
 
 | | |
 |---|---|
-| [`examples/assistant`](examples/assistant) | 对话式双 agent 客服台：按钮审批卡片、单网关路由、跑在 `@aoa-dev/sdk/loop` 上（不装 pi） |
-| [`examples/digest`](examples/digest) | 不写代码的后台 agent：每天看一次 issue，有事才说 |
-| [`examples/codex`](examples/codex) · [`examples/dsh`](examples/dsh) | 第二档 harness 适配器 |
-| [`apps/aoa`](apps/aoa/README.md) | `aoa` 命令：写代码的 agent，CLI、MCP、GitHub、观察页 |
+| [`examples/tui`](examples/tui) | 极简终端对话 agent：用 `@aoa-dev/sdk/pi` 流式对话、规则放行只读检查、`/y` 审批写操作、Ctrl-C 中断与重启恢复 |
+| [`apps/aoa`](apps/aoa/README.md) | `aoa` 命令：写代码的后台 agent，CLI、MCP、GitHub、观察页 |
 
 0.x 期间接口可能有破坏性改动。设计见 [docs/design/](docs/design/README.md)，SDK 每一步的取舍见 [docs/design/sdk.md](docs/design/sdk.md)，规范见 [docs/spec.md](docs/spec.md)。
 

@@ -11,8 +11,6 @@ import {
   fauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import type { SpawnCodex } from "@aoa-dev/example-codex";
-import type { DshSpawn } from "@aoa-dev/example-dsh";
 import { type Agent, assemble } from "../src/wiring.ts";
 import { type AgentConfigInput, type AgentInput, validateConfig } from "../src/config.ts";
 import { main } from "../src/main.ts";
@@ -107,10 +105,6 @@ export class World {
   private readonly namedModels = new Map<string, ReturnType<typeof fauxProvider>>();
   private readonly judgeModel = fauxProvider({ provider: "judge", models: [{ id: "judge" }] });
   agent!: Agent;
-  /** Where a codex agent's app server comes from; set before `start`. */
-  spawnCodex?: SpawnCodex;
-  /** Where a dsh agent's harness comes from; set before `start`. */
-  spawnDsh?: DshSpawn;
 
   /** The environment the agent reads its model key from; `process.env` to test what child processes inherit. */
   readonly env: Record<string, string | undefined>;
@@ -123,8 +117,6 @@ export class World {
       local?: boolean;
       /** Named agents; each gets its own scripted model unless it names one. */
       agents?: Record<string, AgentInput>;
-      /** The default agent runs on Codex (through `spawnCodex`) instead of the scripted pi model. */
-      codexDefault?: true;
     } = {},
   ) {
     this.env = o.env ?? { [KEY_ENV]: MODEL_KEY, ...(o.shadowJudge ? { [JEV_ENV]: JEV_KEY } : {}) };
@@ -132,7 +124,7 @@ export class World {
     this.config = {
       dataDir: join(this.root, "data"),
       repo: { path: this.repo, base: "main" },
-      ...(o.codexDefault ? { runtime: "codex" as const } : { model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV } }),
+      model: { provider: "scripted", modelId: "agent", apiKeyEnv: KEY_ENV },
       ...(o.classifier === false ? {} : { classifier: { provider: "judge", modelId: "judge", apiKeyEnv: KEY_ENV } }),
       ...(o.shadowJudge ? { shadowJudge: { provider: "typesafe", modelId: "jev-1.14.0", apiKeyEnv: JEV_ENV } } : {}),
       ...(this.local
@@ -154,8 +146,6 @@ export class World {
         ? {
             agents: Object.fromEntries(
               Object.entries(o.agents).map(([name, a]) => {
-                // A codex agent talks to `spawnCodex` and a dsh agent to `spawnDsh`, not to a pi model.
-                if (a.runtime === "codex" || a.runtime === "dsh") return [name, a];
                 this.namedModels.set(name, fauxProvider({ provider: `scripted-${name}`, models: [{ id: "agent" }] }));
                 return [name, { model: { provider: `scripted-${name}`, modelId: "agent", apiKeyEnv: KEY_ENV }, ...a }];
               }),
@@ -216,8 +206,6 @@ export class World {
       log: (line: string) => this.logs.push(line),
       // Always injected, so no test ever shows a real notification.
       notify: async (title: string, body: string) => void this.notes.push({ title, body }),
-      ...(this.spawnCodex ? { spawnCodex: this.spawnCodex } : {}),
-      ...(this.spawnDsh ? { spawnDsh: this.spawnDsh } : {}),
     };
   }
 

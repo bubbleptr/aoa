@@ -139,7 +139,7 @@ export async function status(agent: Agent, o: { json: boolean; refresh: boolean 
   if (o.refresh) for (const a of agent.agents) await a.refreshPulls();
   const reports = agent.host.snapshot(() => agent.agents.map((a) => collectStatus(a.hosted.read, a.records, a.name, a.statusColumns)));
   const report: StatusReport = {
-    agents: agent.agents.map((a) => ({ name: a.name, runtime: a.runtime, permissionOwner: a.permissions, autoReview: a.runtime === "codex" && a.role === "review" })),
+    agents: agent.agents.map((a) => ({ name: a.name, runtime: a.runtime, permissionOwner: a.permissions })),
     sessions: reports.flatMap((r) => r.sessions),
     pending: reports.flatMap((r) => r.pending),
     dead: reports.flatMap((r) => r.dead),

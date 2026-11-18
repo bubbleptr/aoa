@@ -63,7 +63,7 @@ claude mcp add aoa -- aoa mcp        # 可选：在 Claude Code 里直接用
   <img alt="一次工具调用：Permissions 裁决为允许、拦截或延后，Jev 现在只在旁边打分，之后接管裁决；延后时会话存盘、run 结束，Outbox 发出审批请求，你的答复作为事件回到 Inbox，新 run 恢复会话并只执行一次这次调用；GitHub 模式下宿主进程替 agent 加上凭据；Codex 审查 agent 的审批交给 Codex 自己的自动审查" src="../../docs/diagrams/tool-call-light.png">
 </picture>
 
-- **让 agent 自己做大部分决定。** 每次工具调用先过规则表：只读的直接放行，`sudo`、强推、`curl | sh` 这类直接拦；剩下的交给 classifier 判断，思路和 Claude Code 的 auto mode 一样。classifier 现在是一个小模型，同时让意图裁决模型 Jev 给同一个调用打分，攒够数据后由 Jev 接管。跑在 Codex 上的审查 agent 直接用 Codex 的 auto review。这样大部分调用不用等人，agent 能一直跑下去。
+- **让 agent 自己做大部分决定。** 每次工具调用先过规则表：只读的直接放行，`sudo`、强推、`curl | sh` 这类直接拦；剩下的交给 classifier 判断，思路和 Claude Code 的 auto mode 一样。classifier 现在是一个小模型，同时让意图裁决模型 Jev 给同一个调用打分，攒够数据后由 Jev 接管。这样大部分调用不用等人，agent 能一直跑下去。
 - **需要人的时候用 deferred tool call。** 风险高或 classifier 拿不准的调用，内核保存会话、结束这次 run，把审批请求发给你，你的答复回来后只执行一次这次调用（见 [SDK 的权限](../../README.md#权限)）。
 - **凭据由 proxy 加上。** `git_push`、开 PR、发评论在 aoa 的宿主进程里执行，由它加上 GitHub 凭据，agent 看不到凭据。
 
@@ -94,41 +94,6 @@ agents: {
 - 你自己看分支、合并，然后用 `aoa close` 告诉 aoa 结局。`close` 只做记录；`serve` 在下一次检查（5 秒内）关掉任务、删掉 worktree，分支保留。
 - 失败三次的事件停下后，在 `aoa status` 里能看到。
 - `bash` 里出现 `git push` 时会先问你。这只是约定，不是隔离：agent 的 shell 就是你的 shell。
-
-## Runtime：pi、Codex、dsh
-
-每个 agent（顶层或具名）用 `runtime` 选一个，默认是 `pi`。Codex 和 dsh 的适配器在 [`examples/`](../../examples)，`aoa` 从那里引用。
-
-| | pi | Codex | dsh（DeepSeek Harness） |
-|---|---|---|---|
-| 类型 | Built-in | 外部 harness | 外部 harness |
-| 谁决定工具调用 | aoa 决定每一次 | Codex 的审批和沙箱设置，它要问的转给你 | `dsh.preset` 定的沙箱和审批，它要问的转给你 |
-| 怎么接 | 进程内的 pi 会话 | 每次 run 起一个 `codex app-server` | 每次 run 起一个 `dsh --profile sdk` |
-| aoa 自己的工具 | 直接给 pi | 动态工具 | 只监听 127.0.0.1 的 MCP 桥 |
-| 认证 | `model.apiKeyEnv` | Codex 自己的登录，aoa 不碰 | `apiKeyEnv`，只传给 dsh 子进程 |
-| 审查角色 | 支持，aoa 的只读规则生效 | 支持，跑在 Codex 的 auto review 模式里 | 不支持 |
-| 模式 | 本地和 GitHub | 只能本地 | 只能本地 |
-
-```ts
-agents: {
-  coder: { runtime: "codex", model: "your-codex-model-id" },             // model 可省，用 Codex 的默认模型
-  deepseek: { runtime: "dsh", model: "deepseek-flash", apiKeyEnv: "DEEPSEEK_API_KEY" },
-},
-```
-
-两个外部 harness 的共同点：
-- 它们要问的审批会变成 aoa 的审批请求；你批准后，它们再做一次同样的操作，这次直接放行，许可只用一次。
-- 它们不问就能做的事，aoa 看不到，也拦不住。aoa 的推送规则、`~/.aoa` 规则和 worktree 边界对它们自己的工具不起作用；`serve` 启动时会为每个这样的 agent 提醒一次。
-
-**Codex**
-- 你的 Codex 审批和沙箱设置照用。
-- 你在 Codex 里装的插件、MCP server 和 hooks 不会带进来，aoa 启动 Codex 时全部关掉。
-- 审查角色跑在 Codex 的 auto review 模式里（workspace-write 沙箱，审批交给 Codex 自己的自动审查，不会来问你）。它能不能提交，靠的是 Codex 的审查和提示，不是硬性限制。
-
-**dsh**
-- aoa 给它一个独立的 home（`<dataDir>/dsh-home`），每次 run 写一个 patch：写入权限预设，关掉 dsh 自己的子代理、team、goal、workflow、jobs、插件管理，以及它自己的提问和定时工具。
-- `dsh.preset` 默认 `workspace-write`，可选 `read-only`、`danger-full-access`。改了预设，已经开始的任务在下一次 run 前也会切过去。
-- 启动前会检查 `dsh --version`，不是测试过的 `0.2.2-rc.3` 就不跑。dsh 还在开发者预览阶段，换版本可能要跟着改 patch 和版本常量。
 
 ## 让聊天里的 agent 当入口
 
@@ -163,6 +128,4 @@ claude mcp add aoa -- aoa mcp
 
 ```bash
 bun test apps/aoa
-AOA_CODEX_SMOKE=1 bun test examples/codex/test/smoke.test.ts   # 真实 Codex，会消耗额度
-AOA_DSH_SMOKE=1 bun test examples/dsh/test/smoke.test.ts       # 真实 dsh 和 DeepSeek key
 ```

@@ -1,5 +1,7 @@
 # 权限归 harness 的 agent（§12）
 
+> 2026-11-19 更新：`examples/codex`、`examples/dsh` 以及 `apps/aoa` 对它们的引用已移除；内核仍保留第二档 `HarnessRuntime` 接口、许可与 `admit` 机制及一致性测试（`harness-conventions.test.ts`、`harness-gate.test.ts`、`harness-admit.test.ts`），下文保留两套适配器的设计记录备查。
+
 runtime 分两档。第一档（内置的 pi，`@aoa-dev/sdk/pi`）自己没有工具，每次调用都走内核的 `Tool.invoke`，由内核裁决、记日志、执行，这一节不改它。第二档是自带工具的 harness（第一个是 Codex app-server，见下一节）：它能做什么由用户在 harness 里配置，内核既不裁决也不执行它的调用，只做两件事：转达 harness 自己提出的询问，以及在用户放行之前扣住不可信的输入。这一节讲内核这边；一致性测试用一个扮演 harness 的脚本 runtime。
 
 - 模式：runtime 的类型说了算（§15「两档 runtime」）。`kind: "kernel"` 是第一档；`kind: "harness"` 是第二档，它同时改两处：`select()` 怎么挑事件，以及 run 拿到什么（`HarnessRunInput` 多一个 `ask`）。原先是 `WorkerOptions.permissions`，第 3 步换成了类型。

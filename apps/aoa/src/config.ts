@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RatePolicy, Risk } from "@aoa-dev/sdk";
-import type { PermissionPreset } from "@aoa-dev/example-dsh";
 
 export type ModelRef = {
   /** pi provider id, e.g. `anthropic`. */
@@ -15,23 +14,10 @@ export type ModelRef = {
 
 export type Role = "implement" | "review";
 
-/** Where aoa starts dsh and which of dsh's permission presets it runs; both optional. */
-export type DshOptions = { command?: string; preset?: PermissionPreset };
-
-/**
- * What runs an agent (design §12). `pi`: aoa's own loop, every tool call decided by aoa. `codex`: a Codex app-server
- * thread whose own tools Codex runs under the user's Codex configuration; Codex authenticates itself, and `model`,
- * when set, is a Codex model id. `dsh`: a DeepSeek Harness SDK process whose own tools dsh runs under its own
- * sandbox and approval settings; `model` is a dsh model name and `apiKeyEnv` names the variable its key comes from.
- */
-export type RuntimeChoice =
-  | { runtime: "pi"; model: ModelRef }
-  | { runtime: "codex"; model?: string }
-  | { runtime: "dsh"; model: string; apiKeyEnv: string; dsh?: DshOptions };
+export type RuntimeChoice = { runtime: "pi"; model: ModelRef };
 
 export type Runtime = RuntimeChoice["runtime"];
 
-/** Who decides what the agent's own tools may do: aoa's kernel, or the harness the agent runs in. */
 /** A named agent with everything it did not set taken from the top level. */
 export type NamedAgent = {
   role: Role;
@@ -46,22 +32,15 @@ export type AgentInput = {
   role?: Role;
   instructions?: string;
   runtime?: Runtime;
-  model?: ModelRef | string;
-  /** For a dsh agent: the variable its key comes from. */
-  apiKeyEnv?: string;
-  /** For a dsh agent: where dsh is and which profile it runs. */
-  dsh?: DshOptions;
+  model?: ModelRef;
   classifier?: ModelRef;
   risk?: Record<string, Risk>;
 };
 
 export type AgentConfig = {
   dataDir: string;
-  /** Set for a dsh agent: the variable its key comes from, and where dsh is. */
-  apiKeyEnv?: string;
-  dsh?: DshOptions;
   repo: { path: string; base: string };
-  /** Judges `medium` calls of the agents that run on pi; without one they wait for the user. */
+  /** Judges `medium` calls; without one they wait for the user. */
   classifier?: ModelRef;
   /** Scores every classifier call with TypeSafe Jev but never changes the decision (design §12). */
   shadowJudge?: ModelRef;
@@ -87,11 +66,8 @@ export type AgentConfig = {
 type GitHubConfig = NonNullable<AgentConfig["github"]>;
 
 /** What a config file writes; the App ids may be numbers, and the runtime defaults to pi. */
-export type AgentConfigInput = Omit<AgentConfig, "github" | "agents" | "runtime" | "model" | "apiKeyEnv" | "dsh"> & {
+export type AgentConfigInput = Omit<AgentConfig, "github" | "agents" | "runtime"> & {
   runtime?: Runtime;
-  model?: ModelRef | string;
-  apiKeyEnv?: string;
-  dsh?: DshOptions;
   agents?: Record<string, AgentInput>;
   github?: Omit<GitHubConfig, "appId" | "installationId"> & { appId: string | number; installationId: string | number };
 };
@@ -135,58 +111,15 @@ function modelRef(value: unknown, field: string): ModelRef {
 }
 
 function runtimeOf(value: unknown, field: string): Runtime | undefined {
-  if (value === undefined || value === "pi" || value === "codex" || value === "dsh") return value;
-  throw new ConfigError(field, "must be pi, codex or dsh");
-}
-
-/** A dsh model name; the key and the provider route are configured next to it. */
-function dshModel(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.trim() === "") throw new ConfigError(field, "must be a dsh model name (a string) for a dsh agent");
-  return value;
-}
-
-const PERMISSION_PRESETS: readonly PermissionPreset[] = ["read-only", "workspace-write", "danger-full-access"];
-
-function dshOptions(value: unknown, field: string): DshOptions {
-  const o = object(value, field, ["command", "preset"]);
-  const options: DshOptions = {};
-  if (o.command !== undefined) options.command = str(o, "command", `${field}.`);
-  if (o.preset !== undefined) {
-    const preset = str(o, "preset", `${field}.`);
-    if (!PERMISSION_PRESETS.includes(preset as PermissionPreset)) {
-      throw new ConfigError(`${field}.preset`, `must be a dsh permission preset: ${PERMISSION_PRESETS.join(", ")}`);
-    }
-    options.preset = preset as PermissionPreset;
-  }
-  return options;
-}
-
-/** A Codex model id; Codex holds its own credentials, so there is nothing else to name. */
-function codexModel(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.trim() === "") throw new ConfigError(field, "must be a Codex model id (a string) for a codex agent");
-  return value;
+  if (value === undefined || value === "pi") return value;
+  throw new ConfigError(field, "must be pi");
 }
 
 /** The runtime and model an agent ends up with; `inherited` is what the top level has for a field the agent left out. */
 function runtimeChoice(o: Obj, field: string, inherited: RuntimeChoice | null): RuntimeChoice {
   const p = field === "" ? "" : `${field}.`;
   const runtime = runtimeOf(o.runtime, `${p}runtime`) ?? inherited?.runtime ?? "pi";
-  const same = inherited?.runtime === runtime ? inherited : null;
-  if (runtime === "codex") {
-    if (o.model !== undefined) return { runtime, model: codexModel(o.model, `${p}model`) };
-    return same?.model === undefined ? { runtime } : { runtime, model: same.model as string };
-  }
-  if (runtime === "dsh") {
-    const inheritedDsh = inherited?.runtime === "dsh" ? inherited : null;
-    const model = o.model === undefined ? inheritedDsh?.model : dshModel(o.model, `${p}model`);
-    if (model === undefined) throw new ConfigError(`${p}model`, "is required for a dsh agent: a dsh model name");
-    const apiKeyEnv = o.apiKeyEnv === undefined ? inheritedDsh?.apiKeyEnv : str(o, "apiKeyEnv", p);
-    if (apiKeyEnv === undefined) throw new ConfigError(`${p}apiKeyEnv`, "is required for a dsh agent: the variable its key comes from");
-    const dsh = o.dsh === undefined ? inheritedDsh?.dsh : dshOptions(o.dsh, `${p}dsh`);
-    return dsh === undefined ? { runtime, model, apiKeyEnv } : { runtime, model, apiKeyEnv, dsh };
-  }
-  if (o.model === undefined && same) return { runtime, model: same.model as ModelRef };
-  if (o.model === undefined && inherited) throw new ConfigError(`${p}model`, "is required for a pi agent when the top level runs another runtime");
+  if (o.model === undefined && inherited) return { runtime, model: inherited.model };
   return { runtime, model: modelRef(o.model, `${p}model`) };
 }
 
@@ -254,12 +187,10 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
     const field = `agents.${name}`;
     if (!AGENT_NAME.test(name)) throw new ConfigError(field, "is not a valid agent name: a lowercase letter, then up to 31 lowercase letters, digits or -");
     if (name === DEFAULT_AGENT) throw new ConfigError(field, "is reserved for the agent the top-level fields describe");
-    const a = object(raw, field, ["role", "instructions", "runtime", "model", "apiKeyEnv", "dsh", "classifier", "risk"]);
+    const a = object(raw, field, ["role", "instructions", "runtime", "model", "classifier", "risk"]);
     if (a.role !== undefined && a.role !== "implement" && a.role !== "review") throw new ConfigError(`${field}.role`, "must be implement or review");
     const role = (a.role as Role | undefined) ?? "implement";
     const choice = runtimeChoice(a, field, top);
-    // dsh decides what its own tools may do under its own settings; aoa's read-only rules cannot bind it.
-    if (choice.runtime === "dsh" && role === "review") throw new ConfigError(`${field}.role`, "cannot be review on dsh: aoa's read-only rules do not apply to dsh's own tools");
     const agent: NamedAgent = { role, ...choice };
     if (a.instructions !== undefined) agent.instructions = str(a, "instructions", `${field}.`);
     const classifier = a.classifier === undefined ? top.classifier : modelRef(a.classifier, `${field}.classifier`);
@@ -273,18 +204,14 @@ function agents(value: unknown, top: AgentConfig): Record<string, NamedAgent> {
 
 /** Checks a loaded config; the error names the first bad field. */
 export function validateConfig(raw: unknown): AgentConfig {
-  const c = object(raw, "config", ["dataDir", "repo", "runtime", "model", "apiKeyEnv", "dsh", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
+  const c = object(raw, "config", ["dataDir", "repo", "runtime", "model", "classifier", "shadowJudge", "github", "risk", "rate", "agents"]);
   const repo = object(c.repo, "repo", ["path", "base"]);
   const config: AgentConfig = {
     dataDir: str(c, "dataDir", ""),
     repo: { path: str(repo, "path", "repo."), base: str(repo, "base", "repo.") },
     ...runtimeChoice(c, "", null),
   };
-  if (c.github !== undefined) {
-    // GitHub mode's push and pull request tools are aoa's; a harness agent would push with its own, unasked.
-    if (config.runtime !== "pi") throw new ConfigError("runtime", `cannot be ${config.runtime} with github: GitHub mode runs on pi`);
-    config.github = github(c.github);
-  }
+  if (c.github !== undefined) config.github = github(c.github);
   if (c.classifier !== undefined) config.classifier = modelRef(c.classifier, "classifier");
   if (c.shadowJudge !== undefined) {
     const judge = modelRef(c.shadowJudge, "shadowJudge");
@@ -303,14 +230,13 @@ export function validateConfig(raw: unknown): AgentConfig {
 
 /**
  * What `serve` needs beyond a valid config. `bash` and `git_push` are `medium`, and a `medium` call with no
- * classifier waits for the user, so without one a pi agent cannot even run the project's checks unattended. A codex
- * agent runs commands with Codex's own tools, and every aoa tool it is offered is `low`, so it needs none.
+ * classifier waits for the user, so without one an agent cannot even run the project's checks unattended.
  */
 export function validateForServe(c: AgentConfig): void {
   const missing = [
-    ...(c.runtime === "pi" && !c.classifier ? ["classifier"] : []),
+    ...(!c.classifier ? ["classifier"] : []),
     ...Object.entries(c.agents ?? {})
-      .filter(([, a]) => a.runtime === "pi" && !a.classifier)
+      .filter(([, a]) => !a.classifier)
       .map(([name]) => `agents.${name}.classifier`),
   ];
   if (missing.length > 0) {

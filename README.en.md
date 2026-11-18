@@ -136,8 +136,8 @@ The kernel's own tools (timers, notify, memory, `send_to`) mark themselves `low`
 
 ## Runtimes
 
-- **Tier 1 (the kernel decides and journals every tool call)**: `@aoa-dev/sdk/loop` has zero third-party dependencies — pass a single `complete()` function to plug in OpenAI, Anthropic, Vercel AI SDK or plain `fetch` (see [`examples/assistant`](examples/assistant)); `@aoa-dev/sdk/pi` ships the built-in pi multi-provider runtime.
-- **Tier 2: external harnesses**, which use their own tools and sandboxes; what they would ask about becomes an aoa approval request. The SDK only defines the interface and ships no implementation; [`examples/codex`](examples/codex) and [`examples/dsh`](examples/dsh) show two ways to write one.
+- **Tier 1 (the kernel decides and journals every tool call)**: `@aoa-dev/sdk/pi` ships the built-in pi multi-provider runtime (see [`examples/tui`](examples/tui)); `@aoa-dev/sdk/loop` has zero third-party dependencies — pass a single `complete()` function to plug in any model SDK or plain `fetch`.
+- **Tier 2: external harnesses** (`HarnessRuntime`), which use their own tools and sandboxes and relay approvals through `ask`; the SDK defines the interface and verifies its six conventions in conformance tests, without bundling vendor harness adapters.
 
 ## Multiple agents
 
@@ -166,10 +166,8 @@ Each of C1–C20 in §9 of the [spec](docs/spec.md) was written as a failing tes
 
 | | |
 |---|---|
-| [`examples/assistant`](examples/assistant) | A conversational two-agent service desk: interactive approval cards, gateway routing, built on `@aoa-dev/sdk/loop` without pi |
-| [`examples/digest`](examples/digest) | A background agent that doesn't write code: it checks issues once a day and speaks only when needed |
-| [`examples/codex`](examples/codex) · [`examples/dsh`](examples/dsh) | Tier-2 harness adapters |
-| [`apps/aoa`](apps/aoa/README.en.md) | The `aoa` command: a coding agent with a CLI, MCP, GitHub and an observation page |
+| [`examples/tui`](examples/tui) | Minimal terminal chat agent on `@aoa-dev/sdk/pi`: live streaming, read-only rules, `/y` approvals, Ctrl-C abort and SQLite persistence |
+| [`apps/aoa`](apps/aoa/README.en.md) | The `aoa` command: a background coding agent with a CLI, MCP, GitHub and an observation page |
 
 The API may change in breaking ways during 0.x. The design is in [docs/design/](docs/design/README.md), the SDK's step-by-step tradeoffs in [docs/design/sdk.md](docs/design/sdk.md), and the spec in [docs/spec.md](docs/spec.md) (all in Chinese).
 

@@ -18,8 +18,6 @@
       "dependencies": {
         "@aoa-dev/channel-github": "workspace:*",
         "@aoa-dev/channel-local": "workspace:*",
-        "@aoa-dev/example-codex": "workspace:*",
-        "@aoa-dev/example-dsh": "workspace:*",
         "@aoa-dev/sdk": "workspace:*",
         "@aoa-dev/store-sqlite": "workspace:*",
         "@earendil-works/pi-ai": "1.5.2",
@@ -32,30 +30,8 @@
         "@aoa-dev/conformance": "workspace:*",
       },
     },
-    "examples/assistant": {
-      "name": "@aoa-dev/example-assistant",
-      "version": "0.0.0",
-      "dependencies": {
-        "@aoa-dev/sdk": "workspace:*",
-        "@aoa-dev/store-sqlite": "workspace:*",
-      },
-      "devDependencies": {
-        "@aoa-dev/conformance": "workspace:*",
-      },
-    },
-    "examples/codex": {
-      "name": "@aoa-dev/example-codex",
-      "version": "0.0.0",
-      "dependencies": {
-        "@aoa-dev/sdk": "workspace:*",
-      },
-      "devDependencies": {
-        "@aoa-dev/conformance": "workspace:*",
-        "@aoa-dev/store-sqlite": "workspace:*",
-      },
-    },
-    "examples/digest": {
-      "name": "@aoa-dev/example-digest",
+    "examples/tui": {
+      "name": "@aoa-dev/example-tui",
       "version": "0.0.0",
       "dependencies": {
         "@aoa-dev/sdk": "workspace:*",
@@ -66,18 +42,6 @@
       },
       "devDependencies": {
         "@aoa-dev/conformance": "workspace:*",
-      },
-    },
-    "examples/dsh": {
-      "name": "@aoa-dev/example-dsh",
-      "version": "0.0.0",
-      "dependencies": {
-        "@aoa-dev/sdk": "workspace:*",
-        "@modelcontextprotocol/sdk": "1.32.2",
-      },
-      "devDependencies": {
-        "@aoa-dev/conformance": "workspace:*",
-        "@aoa-dev/store-sqlite": "workspace:*",
       },
     },
     "packages/channels/github": {
@@ -149,13 +113,7 @@
 
     "@aoa-dev/conformance": ["@aoa-dev/conformance@workspace:packages/conformance"],
 
-    "@aoa-dev/example-assistant": ["@aoa-dev/example-assistant@workspace:examples/assistant"],
-
-    "@aoa-dev/example-codex": ["@aoa-dev/example-codex@workspace:examples/codex"],
-
-    "@aoa-dev/example-digest": ["@aoa-dev/example-digest@workspace:examples/digest"],
-
-    "@aoa-dev/example-dsh": ["@aoa-dev/example-dsh@workspace:examples/dsh"],
+    "@aoa-dev/example-tui": ["@aoa-dev/example-tui@workspace:examples/tui"],
 
     "@aoa-dev/kernel": ["@aoa-dev/kernel@workspace:packages/kernel"],
 

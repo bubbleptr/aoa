@@ -241,9 +241,9 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 - 零第三方依赖的第一档 `KernelRuntime` 适配器：调用方只需提供一个 `complete({ systemPrompt, messages, tools, signal, emit })` 函数（接 OpenAI、Anthropic、Vercel AI SDK 或原生 `fetch`），由 `loopRuntime` 负责多轮工具调用、逐轮追加的会话记录（默认内存 `memoryTranscripts()`，跨重启落盘用 `dirTranscripts(dir)`）、重跑时的 `eventMarker` 检测与 `RETRY_NOTICE`、重复 provider `callId` 重编号、遇到 `deferred` 立即停下、流式或非流式的 `RunActivity` 推送，以及填充 `RunResult.reply`。`packages/sdk/test/install.test.ts` 的外部消费者用例改用 `@aoa-dev/sdk/loop`，验证不装 `pi` 时打包、安装、运行和类型检查全通。
 
-第 10 步已完成（2026-11-18）：`examples/assistant`（`@aoa-dev/example-assistant`）：
+第 10 步已完成（2026-11-18，2026-11-19 收口 `examples/`）：
 
-- 一个与 `apps/aoa` 和 `examples/digest` 形态相反的双 agent 客服台示例（`desk` 中文前台 + `ops` 后台操作员），依赖里只有 `@aoa-dev/sdk` 和 `@aoa-dev/store-sqlite`，跑在 `@aoa-dev/sdk/loop` 上（附带约 70 行原生 `fetch` 的 `openaiComplete` 适配器）：单网关按规则把消息路由给不同 agent，直接用中文对话回复而不调 `notify`，高风险退款经 `OutMsg.detail` 渲染成按钮卡片，审批期间追加备注消息排进队列而不误拒审批，点击批准后执行一次退款并经 `send_to` 回传前台答复用户。
+- 移除 `examples/codex`、`examples/dsh` 以及 `apps/aoa` 对它们的反向依赖（内核保留第二档 `HarnessRuntime` 接口与一致性测试）；原先 `digest` 和多 agent 客服台的 SDK 行为测试沉淀回 `packages/sdk/test/`，`examples/` 只保留唯一一个不被任何包引用的极简示例 `examples/tui`（`@aoa-dev/example-tui`）：约 150 行，建在 `@aoa-dev/sdk`、`@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 上，`reply: "final_text"` + `agent.activity` 流式对话，只读工具直接跑，写操作走 `OutMsg.detail` + `approvals: { by: "answer" }` 在终端用 `/y`、`/n` 审批，待批期间打字排队而不误拒，Ctrl-C 调 `agent.abort` 中断在途 run。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
@@ -253,10 +253,10 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 | 4 | `Store` 收口和 `lock()`；`agent.read`、`host.messages`、`host.watch`、`serving()`；定时器 id 和 `cancelTimer`；无 channel 的投递；`send_to` 进 SDK | 另一个进程写入后 1 秒内 `watch` 到；第二个 `start()` 抛错；重启后同 id 的 `schedule` 只有一条 |
 | 5 | 活动流：`RunInput.emit`，内核发工具事件，pi 发文字 | 脚本模型下按序收到 text、tool_start、tool_end；延后的调用和重放不发 `tool_start` |
 | 6 | 一个不写代码的示例 agent（每天汇总 issue，有事才找你），不传 channel，用 `step` 写测试 | 不依赖 git 就能跑通，证明 SDK 不绑在编码上 |
-| 7 | 读口补齐与 `host.snapshot`、`store.app`、`ToolExecContext`、`onRunEnd`、`agent.follow`、跨进程 `abort`；`apps/aoa` 断掉 `Tx` | `apps/aoa/src` 零 `.tx(` / `Tx` / `store.db` / `followTools`；`digest` 去掉晚绑定并自动关无状态 session；跨进程 `abort` 停下在途 run |
-| 8 | 结构化 Outbox（`OutMsg.detail`）、对话回复模式（`reply: "final_text"` 与可配常驻前言）、显式审批模式（`approvals: { by: "answer", ttlMs }`） | 通道不用解析英文 Markdown 就能渲染审批卡片和死信；对话模式下直接回复进 outbox、空回复仍静默；`by: "answer"` 时审批期间的普通消息排队而不误拒审批 |
+| 7 | 读口补齐与 `host.snapshot`、`store.app`、`ToolExecContext`、`onRunEnd`、`agent.follow`、跨进程 `abort`；`apps/aoa` 断掉 `Tx` | `apps/aoa/src` 零 `.tx(` / `Tx` / `store.db` / `followTools`；去掉晚绑定并支持 `onRunEnd` 自动关 session；跨进程 `abort` 停下在途 run |
+| 8 | 结构化 Outbox（`OutMsg.detail`）、对话回复模式（`reply: "final_text"` 与可配常驻前言）、显式审批模式（`approvals: { by: "answer", ttlMs }`） | 通道不用解析英文 Markdown 就能渲染审批和死信；对话模式下直接回复进 outbox、空回复仍静默；`by: "answer"` 时审批期间的普通消息排队而不误拒审批 |
 | 9 | `@aoa-dev/sdk/loop`：零第三方依赖的第一档 `KernelRuntime` 适配器（多轮工具循环、JSONL/内存会话存储、`eventMarker` 重试检测、调用编号、延后中断） | 不装 `pi` 也能用任意 `complete()` 函数跑通完整工具循环、崩溃重跑与延后审批；外部安装测试覆盖 |
-| 10 | 对话式示例 `examples/assistant`：直接回复、按钮审批卡片、单网关多 agent 路由，跑在 `@aoa-dev/sdk/loop` 上 | 中文提示词不与常驻上下文打架，审批期间追问不误拒审批，点击批准后工具执行且追问一并送达 |
+| 10 | 删掉 `codex`/`dsh` 等重型示例与 `apps` 反向依赖，`examples/` 只留唯一一个基于 `@aoa-dev/sdk/pi` 的极简终端对话示例 `examples/tui` | 单包约 150 行、不被任何包引用；无 git 子进程、流式输出、`/y` 审批、待批排队均通过测试 |
 
 ## 暂缓
 

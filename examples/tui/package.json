@@ -1,5 +1,5 @@
 {
-  "name": "@aoa-dev/example-assistant",
+  "name": "@aoa-dev/example-tui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,10 @@
   },
   "dependencies": {
     "@aoa-dev/sdk": "workspace:*",
-    "@aoa-dev/store-sqlite": "workspace:*"
+    "@aoa-dev/store-sqlite": "workspace:*",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "typebox": "1.3.27"
   },
   "devDependencies": {
     "@aoa-dev/conformance": "workspace:*"

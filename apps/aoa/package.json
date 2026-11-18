@@ -12,8 +12,6 @@
   "dependencies": {
     "@aoa-dev/channel-github": "workspace:*",
     "@aoa-dev/channel-local": "workspace:*",
-    "@aoa-dev/example-codex": "workspace:*",
-    "@aoa-dev/example-dsh": "workspace:*",
     "@aoa-dev/sdk": "workspace:*",
     "@aoa-dev/store-sqlite": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",
