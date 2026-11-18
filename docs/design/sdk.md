@@ -256,7 +256,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 | 7 | 读口补齐与 `host.snapshot`、`store.app`、`ToolExecContext`、`onRunEnd`、`agent.follow`、跨进程 `abort`；`apps/aoa` 断掉 `Tx` | `apps/aoa/src` 零 `.tx(` / `Tx` / `store.db` / `followTools`；`digest` 去掉晚绑定并自动关无状态 session；跨进程 `abort` 停下在途 run |
 | 8 | 结构化 Outbox（`OutMsg.detail`）、对话回复模式（`reply: "final_text"` 与可配常驻前言）、显式审批模式（`approvals: { by: "answer", ttlMs }`） | 通道不用解析英文 Markdown 就能渲染审批卡片和死信；对话模式下直接回复进 outbox、空回复仍静默；`by: "answer"` 时审批期间的普通消息排队而不误拒审批 |
 | 9 | `@aoa-dev/sdk/loop`：零第三方依赖的第一档 `KernelRuntime` 适配器（多轮工具循环、JSONL/内存会话存储、`eventMarker` 重试检测、调用编号、延后中断） | 不装 `pi` 也能用任意 `complete()` 函数跑通完整工具循环、崩溃重跑与延后审批；外部安装测试覆盖 |
-| 10 | 反向示例 `examples/assistant`：对话式、按钮审批、单网关多 agent 路由，跑在 `@aoa-dev/sdk/loop` 上 | 中文提示词不与常驻上下文打架，审批期间追问不误拒审批，点击批准后工具执行且追问一并送达 |
+| 10 | 对话式示例 `examples/assistant`：直接回复、按钮审批卡片、单网关多 agent 路由，跑在 `@aoa-dev/sdk/loop` 上 | 中文提示词不与常驻上下文打架，审批期间追问不误拒审批，点击批准后工具执行且追问一并送达 |
 
 ## 暂缓
 
