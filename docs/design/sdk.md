@@ -69,7 +69,7 @@ interface Agent {
 type QueuedOutMsg = OutMsg & { agent: string; seq: number; sentAt: number | null };
 ```
 
-- 宿主内的追加和答复（包括 `send_to`）当场唤醒对应的 worker 和 dispatcher；别的进程的写入经 `watch` 唤醒，取代 `serve` 现在每 5 秒的轮询。
+- 宿主内的追加和答复（包括 `send_to`）当场唤醒对应的 worker；别的进程的写入经 `watch` 唤醒，取代 `serve` 原来每 5 秒的轮询。
 - `watch` 只说「库里有提交」，不说哪个 inbox、哪种表变了：WAL 文件的触发分不出这些，要分就得给每张表维护水位。调用方收到后自己重读，观察页现在就是这么做的（§12「观察页」：盯 WAL 文件，`data_version` 每秒兜底，从 `web.ts` 提到 SDK）。
 - 锁是 store 的能力：`Store` 多一个 `lock(): Lock | null`。SQLite 文件库用文件锁，`:memory:` 返回 null（同一个进程里本来就只有一个宿主）。拿到锁的宿主每 5 秒记一次心跳，`serving()` 读的就是它，取代 `apps/aoa` 里的 `serve:started`/`serve:seen`。不跑循环的宿主照样能追加、答复、读和 `watch`，就是现在 `aoa send`、`aoa answer`、`aoa web` 的用法。
 - `append` 的 `refuseWhileAwaitingApproval`：目标 session 停在审批（不是 `ask_user` 的提问）上时，在同一个事务里拒绝并抛错。`aoa mcp` 的 `send(to)` 靠它，免得聊天里的文字被改写成审批的结论（§12「主会话接入」）。
@@ -169,7 +169,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 ## 步骤
 
-每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段到对应的步骤再去掉：`AgentSpec.permissions`（第 3 步换成 runtime 的类型）、`AgentSpec.pollMs` 只在给了时才轮询（第 4 步 `poll` 变可选后改成默认 60 秒）、`agent.wake()`（第 4 步追加和答复自己唤醒）。`serve` 的心跳和每 5 秒的唤醒还在 `apps/aoa`，第 4 步随 `serving()` 和 `watch` 搬走。第 2 步已完成（2026-11-18）：工具自带风险等级，不传 `policy` 按等级走，内核不再带规则，编码规则在 `@aoa/sdk/tools/coding`。
+每步单独提交，前一步是后一步的前提。第 1 步已完成（2026-11-18）：`packages/sdk` 有了 `createHost`、`host.agent`、`agent.step`、`agent.closeSession`，`apps/aoa` 只经它组装循环。过渡期的字段已随第 3、4 步去掉：`AgentSpec.permissions`、只在给了时才轮询的 `pollMs`、`agent.wake()`，以及 `apps/aoa` 里 `serve` 的心跳和每 5 秒的唤醒。第 2 步已完成（2026-11-18）：工具自带风险等级，不传 `policy` 按等级走，内核不再带规则，编码规则在 `@aoa/sdk/tools/coding`。
 
 第 3 步已完成（2026-11-18）：`AgentRuntime` 是 `KernelRuntime | HarnessRuntime`，worker 看 `runtime.kind`，`ask` 只在 `HarnessRunInput` 上；`RunInput.signal` 和 `ToolExecContext.signal` 在 `stop()` 时触发。pi 在 `@aoa/sdk/pi`，`codingTools` 在 `@aoa/sdk/tools/coding`，Codex 和 dsh 在 `examples/`（`@aoa/example-codex`、`@aoa/example-dsh`）。和上文不同或上文没写的地方：
 
@@ -178,6 +178,19 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - 运行时之间共用的渲染（事件块、答复、`encode`、`resultText`）放在 `@aoa/sdk/prompt`，第二档适配器从这里取，不用装 pi。
 - pi 的依赖现在是 `@aoa/sdk` 的普通依赖：仓库没发布，分不出可选依赖。发布时改成可选的 peer 依赖，`@aoa/sdk/pi` 以外的子路径不引用它们。
 - 第六条约定的写法：Codex 等手上的回复都发出去再 `turn/interrupt`，等 Codex 回 `turn/completed` 再结束；dsh 走和 `idle` 一样的 `shutdown`。
+
+第 4 步已完成（2026-11-18）：`agent.append`、`answer`、`read`、`followUp`、`schedule`、`cancelTimer`，`host.messages`、`serving`、`watch`、`close`，`sendToTool` 都在 `@aoa/sdk`；`agent.wake()` 和 `serve` 每 5 秒的唤醒去掉了。和上文不同或上文没写的地方：
+
+- 锁、心跳和 `watch` 不在内核的 `Store` 上，在 `HostStore extends Store` 上（`lock()`、`lastBeat()`、`watch()`、`close()`），`createHost` 要的是它：内核的 worker、scheduler 这些只用 `tx`。SQLite 的锁是在旁边的 `<db>-host` 文件上开着一个排他事务：持有的进程死了由系统放掉，同一个进程里第二个连接也拿不到。`lock()` 拿不到时抛错，`:memory:` 返回 null。
+- `watch(fn, { othersOnly })`：宿主的循环只因别的进程的提交被叫醒，否则自己的每次写入都会把所有循环叫醒一遍。本进程的写事务按 SQLite 的 `total_changes()` 判断，只读的事务不触发。
+- 没有 channel 时，消息在写进 outbox 的同一个事务里标为 `sent`，不经 dispatcher：这样只调 `step.worker()` 也成立，同一次 drain 里的下一个 run 也看得到。
+- `schedule` 的 id 在库里是 `schedule:<inbox>:<id>`，两个 agent 的同名定时器互不相干，也碰不上内核自己的 `wake:`、`expire:`。用同样的参数再调什么都不改，所以宿主停着时错过的那一次照样触发；参数不同，或定时器已被撤，才按新的锚点重排并重新武装。
+- `read` 的 `since` 是时间（事件按收到、run 按开始），`limit` 取 `since` 之后最早的几条。读口的类型 `Reader` 在内核，分类器经 `PolicyContext.read` 拿到同一个读口；`apps/aoa` 的审核模型改用它。
+- `append` 拒绝时抛 `AwaitingApproval`（带着在等的调用），措辞由调用方给。
+- `send_to`：一个工具给所有 agent 共用，说明里列出全部 agent（包括发送方自己），发给自己时报错。不是回复时的默认 thread 是 `agent:<目标名>/<发送方 session>/<调用 id>`，由调用推出而不是随机，所以同一个调用重跑仍然写进同一条 thread。额外参数用 `params` 声明（JSON Schema 属性），原样进 payload；`check` 之外多一个 `thread` 钩子，`apps/aoa` 用它照旧开 thread（GitHub 模式下是一个 issue，`agent:` 开头的 thread 发不到 GitHub）。
+- `AgentSpec.description` 和 `Agent.description` 给 `send_to` 的列表用；`apps/aoa` 填角色名。
+- `SqliteStore` 只剩 `HostStore` 加一个 `db`（store 自己的连接）：`apps/aoa` 的 PR 状态、`aoa close` 的声明和影子判断在 `apps/aoa/src/records.ts`，用同一个连接读写，免得两个连接互相等锁。建这几张表的旧迁移留在 store 里（迁移只追加，不改已发布的）。outbox 行（`OutboxRow`）带 `seq` 和 `sentAt`。
+- 观察页的「serve 状态」读 `host_beat`；从来没有宿主跑过时仍是 `never`。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
