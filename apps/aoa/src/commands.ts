@@ -1,5 +1,4 @@
-import type { OutMsg, Session } from "@aoa/kernel";
-import { AwaitingApproval } from "@aoa/sdk";
+import { AwaitingApproval, type OutMsg, type Session } from "@aoa/sdk";
 import { type StatusReport, asks, collectStatus, renderStatus, resolveCallId } from "./status.ts";
 import type { Agent } from "./wiring.ts";
 

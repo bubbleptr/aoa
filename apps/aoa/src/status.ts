@@ -1,4 +1,4 @@
-import type { Event, PendingCall, Session, Store, Tx } from "@aoa/kernel";
+import type { Event, PendingCall, Session, Store, Tx } from "@aoa/sdk";
 import type { Records } from "./records.ts";
 
 export type PullRef = { number: number; url: string; thread: string; openedAt: number };

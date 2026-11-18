@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decide } from "@aoa/kernel";
+import { decide } from "@aoa/sdk";
 import { agentPolicy, deferPush, reviewReadOnly, toolRisk } from "../src/policy.ts";
 
 // Through tmpdir's symlink (/var -> /private/var on macOS), as a configured path may arrive.

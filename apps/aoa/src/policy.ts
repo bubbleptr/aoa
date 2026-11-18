@@ -1,17 +1,5 @@
 import { githubTools } from "@aoa/channel-github";
-import {
-  askUserTools,
-  followTools,
-  memoryTools,
-  outboxTools,
-  systemClock,
-  timerTools,
-  type PolicyConfig,
-  type Risk,
-  type Rule,
-  type ToolDef,
-} from "@aoa/kernel";
-import { sendToTool } from "@aoa/sdk";
+import { builtinToolRisk, type PolicyConfig, type Risk, type Rule, type ToolDef } from "@aoa/sdk";
 import { BRANCH_LIST_FLAGS, codingRules, codingTools, commandOf, gitInvocations, outsideWorktree } from "@aoa/sdk/tools/coding";
 
 /**
@@ -69,20 +57,11 @@ export function agentPolicy(o: {
 /**
  * Every tool aoa can give an agent, by name, with the tier its definition declares. For deciding a call known only by
  * its tool name, as the eval's replay and the policy tests do; a live call gets its tool's tier from the tool itself.
- * The tools are built only to read their names and tiers, so they get inert stand-ins for what they would run against.
  */
 export function toolRisk(): Record<string, Risk> {
-  const inert = undefined as never;
-  const deps = { store: inert, clock: systemClock, inboxId: "" };
   const defs: ToolDef[] = [
     ...codingTools(),
-    ...timerTools(deps),
-    ...outboxTools(deps),
-    ...memoryTools(inert),
-    ...askUserTools(),
-    ...followTools(deps),
     ...githubTools({ owner: "", repo: "", userLogin: "", botLogin: "", appId: "", installationId: "", privateKeyPath: "" }),
-    sendToTool({ agents: [] }),
   ];
-  return Object.fromEntries(defs.flatMap((d) => (d.risk ? [[d.name, d.risk]] : [])));
+  return { ...builtinToolRisk(), ...Object.fromEntries(defs.flatMap((d) => (d.risk ? [[d.name, d.risk]] : []))) };
 }

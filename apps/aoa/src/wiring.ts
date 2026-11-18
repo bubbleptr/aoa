@@ -2,12 +2,24 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local";
-import { DEAD_NOTICE_PREFIX, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/example-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/example-dsh";
 import { piCompletion, piRuntime } from "@aoa/sdk/pi";
 import { codingTools } from "@aoa/sdk/tools/coding";
-import { type Agent as HostAgent, type Host, createHost, sendToTool } from "@aoa/sdk";
+import {
+  DEAD_NOTICE_PREFIX,
+  createHost,
+  dirMemory,
+  followTools,
+  sendToTool,
+  systemClock,
+  type Agent as HostAgent,
+  type Channel,
+  type Clock,
+  type Host,
+  type Rule,
+  type ToolDef,
+} from "@aoa/sdk";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
 import {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { connect } from "node:net";
-import { systemClock } from "@aoa/kernel";
+import { systemClock } from "@aoa/sdk";
 import { sqliteStore } from "@aoa/store-sqlite";
 import { validateConfig } from "../src/config.ts";
 import type { Edge, Snapshot } from "../src/observe.ts";

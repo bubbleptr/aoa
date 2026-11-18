@@ -210,6 +210,8 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - 工具要知道「上一次成功检查是什么时候」，只能在工具里经 `agent.read.runs()` 推，工具定义时 agent 还没注册，得晚绑定。
 - 宿主的时钟不交给工具：工具里的「现在」只能借当前 run 的开始时间。
 
+2026-11-18 起 `apps/aoa` 只经 `@aoa/sdk` 用内核，`package.json` 里不再有 `@aoa/kernel`，`apps/aoa/test/depends-on-sdk.test.ts` 守着这一点。`@aoa/sdk` 重新导出内核的全部类型，值只导出不属于宿主的几样（`systemClock`、`dirMemory`、`followTools`、单独跑策略的 `decide`、`DEAD_NOTICE_PREFIX`、`RESIDENT_RECENT_MESSAGES`），另加 `builtinToolRisk()`：按名字查内置工具、`follow` 和 `send_to` 的风险等级，给只知道工具名的重放和测试用。store 和 channel 仍是应用直接依赖、传进 SDK 的包，SDK 不依赖它们。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |

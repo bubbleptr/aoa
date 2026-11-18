@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { addSchedule } from "@aoa/kernel";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -92,19 +91,20 @@ describe("snapshot", () => {
     await w.drain();
     const session = w.sessions()[0]!.id;
     const weekly = { note: "Read aoa status.\nNote in memory what changed since last week." };
-    const schedule = addSchedule(w.agent.store, w.clock, w.agent.inboxId, {
+    const scheduleId = w.agent.hosted.schedule({
+      id: "weekly",
       everyMs: 7 * 24 * 3_600_000,
       anchor: w.clock.now() + 60_000,
       payload: weekly,
       sessionId: session,
     });
     const other = { report: ["ci", "deps"] };
-    addSchedule(w.agent.store, w.clock, w.agent.inboxId, { everyMs: 60_000, anchor: w.clock.now(), payload: other });
+    w.agent.hosted.schedule({ id: "other", everyMs: 60_000, anchor: w.clock.now(), payload: other });
 
     const rows = observe(w).timers.rows;
     expect(rows.find((r) => r.kind === "follow_up")).toMatchObject({ status: "armed", sessionId: session, thread, text: note });
-    expect(rows.find((r) => r.id === schedule.id)).toMatchObject({ sessionId: session, thread, text: weekly.note, everyMs: 7 * 24 * 3_600_000 });
-    expect(rows.find((r) => r.kind === "schedule" && r.id !== schedule.id)).toMatchObject({
+    expect(rows.find((r) => r.id === scheduleId)).toMatchObject({ sessionId: session, thread, text: weekly.note, everyMs: 7 * 24 * 3_600_000 });
+    expect(rows.find((r) => r.kind === "schedule" && r.id !== scheduleId)).toMatchObject({
       sessionId: null,
       thread: null,
       text: JSON.stringify(other, null, 2),

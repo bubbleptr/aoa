@@ -14,7 +14,6 @@
     "@aoa/channel-local": "workspace:*",
     "@aoa/example-codex": "workspace:*",
     "@aoa/example-dsh": "workspace:*",
-    "@aoa/kernel": "workspace:*",
     "@aoa/sdk": "workspace:*",
     "@aoa/store-sqlite": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",

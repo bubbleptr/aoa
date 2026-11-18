@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { RatePolicy, Risk } from "@aoa/kernel";
+import type { RatePolicy, Risk } from "@aoa/sdk";
 import type { PermissionPreset } from "@aoa/example-dsh";
 
 export type ModelRef = {

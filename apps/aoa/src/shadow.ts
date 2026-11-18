@@ -1,5 +1,5 @@
 import type { FetchFn } from "@aoa/channel-github";
-import { type Clock, type PolicyContext, type ToolCall } from "@aoa/kernel";
+import { type Clock, type PolicyContext, type ToolCall } from "@aoa/sdk";
 import type { Judgment } from "./records.ts";
 import { ownWorktreeRelative } from "@aoa/sdk/tools/coding";
 

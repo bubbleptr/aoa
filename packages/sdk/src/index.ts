@@ -2,3 +2,4 @@ export { createHost, type Agent, type AgentSpec, type Host, type HostOptions } f
 export { AwaitingApproval, type QueuedOutMsg } from "./host.ts";
 export { BEAT_MS, SERVING_STALE_MS } from "./host.ts";
 export { MAX_HOPS, sendToTool, type AgentMessage, type SendToArgs, type SendToOptions } from "./send-to.ts";
+export * from "./kernel.ts";
