@@ -6,15 +6,7 @@
 bun add @aoa-dev/sdk @aoa-dev/store-sqlite
 ```
 
-```ts
-import { createHost } from "@aoa-dev/sdk";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
-
-const host = createHost({ store: sqliteStore("agents.db") });
-const agent = host.agent({ name: "helper", inbox: "helper", runtime });
-agent.append({ source: "user_message", dedupeKey: "m1", payload: { text: "hi" }, thread: "t1", trusted: true });
-host.start();
-```
+完整能跑的例子（一个要批准才发邮件的 agent）见[仓库首页](https://github.com/bubbleptr/aoa#一个例子)。
 
 - store 是必传的；channel 可选，不传时消息写入即算送出，从 `host.messages()` 读。
 - 入口：`@aoa-dev/sdk`（宿主、agent、内核的类型和少量值）、`@aoa-dev/sdk/pi`（pi runtime）、`@aoa-dev/sdk/prompt`（第二档适配器共用的渲染）、`@aoa-dev/sdk/tools/coding`（可选的编码工具和规则）。
