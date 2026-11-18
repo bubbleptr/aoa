@@ -49,6 +49,7 @@ export {
 export { closeSession, followTools, type FollowToolDeps } from "./sessions.ts";
 export { DEFAULT_RATE_POLICY, pace, type PacePlan, type RatePolicy } from "./pace.ts";
 export {
+  DEAD_NOTICE_PREFIX,
   DISPATCHER_MAX_SLEEP_MS,
   Dispatcher,
   OUTBOX_MAX_ATTEMPTS,

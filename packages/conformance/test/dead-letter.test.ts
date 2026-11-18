@@ -33,7 +33,7 @@ for (const [name, factory] of storeFactories) {
       expect(msg).toMatchObject({ kind: "message", thread: "issue-1", sessionId: session, dedupeKey: `dead:${session}:${id}` });
       expect(msg!.body).toContain("repeated failures");
       expect(msg!.body).toContain("model unavailable");
-      expect(msg!.body).toContain("aoa status");
+      expect(msg!.body).not.toContain("aoa status");
       expect(msg!.body).not.toContain("x".repeat(501));
 
       const channel = new FakeChannel();

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local";
-import { dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
+import { DEAD_NOTICE_PREFIX, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/example-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/example-dsh";
 import { piCompletion, piRuntime } from "@aoa/sdk/pi";
@@ -380,7 +380,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     },
     memory,
     policy: agentPolicy({ risk: spec.risk, classify, ahead: review ? [reviewReadOnly] : [], rules: front.rules }),
-    channel,
+    channel: withStatusHint(channel),
     ...(config.rate ? { rate: config.rate } : {}),
     session: {
       prepare: (session) => (review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session)),
@@ -450,6 +450,15 @@ function handOff(s: Shared): ToolDef {
     },
     thread: (target, args) => appAgent(target.name).openThread(args.text),
   });
+}
+
+/** The SDK's dead-letter notice names no command; aoa's ends by pointing at `aoa status`. */
+export function withStatusHint(channel: Channel): Channel {
+  return {
+    ...(channel.poll ? { poll: (cursor: string | null) => channel.poll!(cursor) } : {}),
+    deliver: (m) =>
+      channel.deliver(m.dedupeKey.startsWith(DEAD_NOTICE_PREFIX) ? { ...m, body: `${m.body}\n\nRun \`aoa status\` for the details.` } : m),
+  };
 }
 
 /** The default agent: the top-level config, which describes nothing else about it. */

@@ -56,6 +56,9 @@ export function outboxTools({ store, clock, inboxId }: OutboxToolDeps): ToolDef[
 /** How much of a failed run's error the user is shown. */
 export const DEAD_ERROR_LIMIT = 500;
 
+/** The dedupe key prefix of a dead-letter notice, so an application can add its own last line in its channel. */
+export const DEAD_NOTICE_PREFIX = "dead:";
+
 /**
  * Tells the user that a task gave up (design §8: a failed task is one of the three times the agent speaks).
  * Runs inside the transaction that moved these events to `dead`, one message per session. `error` is the last
@@ -74,7 +77,6 @@ export function reportDead(t: Tx, inboxId: InboxId, dead: Event[], error: string
       const shown = error.length > DEAD_ERROR_LIMIT ? `${error.slice(0, DEAD_ERROR_LIMIT)}…` : error;
       lines.push("", `The last error was: ${shown}`);
     }
-    lines.push("", "Run `aoa status` for the details.");
     t.insertOutMsg({
       id: crypto.randomUUID(),
       inboxId,
@@ -83,7 +85,7 @@ export function reportDead(t: Tx, inboxId: InboxId, dead: Event[], error: string
       kind: "message",
       body: lines.join("\n"),
       callId: null,
-      dedupeKey: `dead:${sessionId}:${oldest.id}`,
+      dedupeKey: `${DEAD_NOTICE_PREFIX}${sessionId}:${oldest.id}`,
       createdAt: now,
       // Owned by the run that died, so the session's next run does not count it as its own message.
       ...(oldest.run === null ? {} : { runId: oldest.run }),
