@@ -14,6 +14,7 @@ import {
   reader,
   systemClock,
   timerTools,
+  POLL_INTERVAL_MS,
   type AgentRuntime,
   type AppendResult,
   type CallId,
@@ -61,8 +62,12 @@ export type AgentSpec = {
   tools?: ToolDef[] | ((builtins: ToolDef[]) => ToolDef[]);
   memory?: Memory;
   policy?: PolicyConfig;
+  /**
+   * Where the agent's messages go and, if it has `poll`, where outside events come from. Without a channel a message is
+   * sent the moment it is written, and the caller reads it from `host.messages()`.
+   */
   channel?: Channel;
-  /** How often the host polls the channel while it runs; without it the channel is never polled. */
+  /** How often the host polls a channel that has `poll`. Default 60 seconds. */
   pollMs?: number;
   /** The outbox's pace towards the channel. */
   rate?: RatePolicy;
@@ -169,7 +174,7 @@ type Loops = {
   scheduler: Scheduler;
   dispatcher: Dispatcher | null;
   poller: ChannelPoller | null;
-  pollMs: number | undefined;
+  pollMs: number;
 };
 
 export function createHost(o: HostOptions): Host {
@@ -185,7 +190,8 @@ export function createHost(o: HostOptions): Host {
   let running: { stop(): Promise<void> } | null = null;
 
   function agent(spec: AgentSpec): Agent {
-    const deps = { store, clock, inboxId: spec.inbox };
+    // Without a channel nothing would ever deliver a message, and what the user was told would stay empty (D-MEM-3).
+    const deps = { store: spec.channel ? store : sentOnWrite(store, clock), clock, inboxId: spec.inbox };
     const builtins = [...timerTools(deps), ...outboxTools(deps), ...(spec.memory ? memoryTools(spec.memory) : []), ...askUserTools()];
     const tools = typeof spec.tools === "function" ? spec.tools(builtins) : [...builtins, ...(spec.tools ?? [])];
     // Named in run lines only when there is someone to tell it from.
@@ -193,7 +199,6 @@ export function createHost(o: HostOptions): Host {
 
     const channel: Channel | null = spec.channel
       ? {
-          poll: (cursor) => spec.channel!.poll(cursor),
           async deliver(m) {
             try {
               await spec.channel!.deliver(m);
@@ -228,7 +233,8 @@ export function createHost(o: HostOptions): Host {
       },
     });
     const scheduler = new Scheduler({ ...deps, onFire: () => worker.wake() });
-    const poller = channel ? new ChannelPoller({ ...deps, channel, onEvents: () => worker.wake() }) : null;
+    const poll = spec.channel?.poll?.bind(spec.channel);
+    const poller = poll ? new ChannelPoller({ ...deps, channel: { poll }, onEvents: () => worker.wake() }) : null;
 
     const inRun = (id: SessionId) => store.tx((t) => t.listEvents(spec.inbox)).some((e) => e.status === "in_run" && e.resume === id);
 
@@ -314,7 +320,7 @@ export function createHost(o: HostOptions): Host {
         poller: async () => (poller ? poller.pass() : { accepted: 0 }),
       },
     };
-    all.push({ agent: handle, worker, scheduler, dispatcher, poller, pollMs: spec.pollMs });
+    all.push({ agent: handle, worker, scheduler, dispatcher, poller, pollMs: spec.pollMs ?? POLL_INTERVAL_MS });
     return handle;
   }
 
@@ -332,7 +338,7 @@ export function createHost(o: HostOptions): Host {
       ] as const;
     });
     const repeating = all.flatMap((a) =>
-      a.poller && a.pollMs !== undefined ? [every(clock, a.pollMs, () => a.poller!.pass(), (err) => log(`polling the channel failed: ${errorText(err)}`))] : [],
+      a.poller ? [every(clock, a.pollMs, () => a.poller!.pass(), (err) => log(`polling the channel failed: ${errorText(err)}`))] : [],
     );
     let stopping: Promise<void> | null = null;
     const stop = () =>
@@ -373,6 +379,22 @@ export function createHost(o: HostOptions): Host {
       await running.stop();
     },
     stopped,
+  };
+}
+
+/** A store whose messages are marked sent in the transaction that writes them, at the time they were written. */
+function sentOnWrite(store: Store, clock: Clock): Store {
+  return {
+    tx: (fn) =>
+      store.tx((t) => {
+        const tx: Tx = Object.create(t);
+        tx.insertOutMsg = (m) => {
+          const id = t.insertOutMsg(m);
+          if (t.markSending(id)) t.markSent(id, m.createdAt);
+          return id;
+        };
+        return fn(tx);
+      }),
   };
 }
 

@@ -24,6 +24,9 @@ export type OutMsg = {
 export interface Channel {
   /** Must be safe to call again with the same `dedupeKey` after a failure (I-OUT-2). */
   deliver(m: OutMsg): Promise<void>;
-  /** Events since `cursor`. The caller stores the returned cursor in the same transaction as the events. */
-  poll(cursor: string | null): Promise<{ events: NewEvent[]; cursor: string }>;
+  /**
+   * Events since `cursor`. The caller stores the returned cursor in the same transaction as the events. A channel
+   * whose events arrive some other way (pushed, or appended by the caller) has none and is never polled.
+   */
+  poll?(cursor: string | null): Promise<{ events: NewEvent[]; cursor: string }>;
 }

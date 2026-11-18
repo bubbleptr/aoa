@@ -29,13 +29,9 @@ const NOTIFY_LIMIT = 200;
 
 const markerOf = (dedupeKey: string) => `<!-- aoa:${dedupeKey} -->`;
 
-/** Messages go to a Markdown file plus a best-effort notification; answers come from `aoa` commands, so poll finds nothing. */
+/** Messages go to a Markdown file plus a best-effort notification; answers come from `aoa` commands, so there is nothing to poll. */
 export function localChannel(o: LocalChannelOptions): LocalChannel {
   return {
-    async poll() {
-      return { events: [], cursor: "local" };
-    },
-
     async deliver(m: OutMsg) {
       const marker = markerOf(m.dedupeKey);
       // Redelivery after a failure finds its own entry and adds nothing (I-OUT-2).

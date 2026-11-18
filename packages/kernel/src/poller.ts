@@ -11,7 +11,7 @@ export type ChannelPollerOptions = {
   store: Store;
   clock: Clock;
   inboxId: InboxId;
-  channel: Channel;
+  channel: Pick<Required<Channel>, "poll">;
   /** Names the cursor, for an inbox fed by more than one channel. */
   name?: string;
   intervalMs?: number;
@@ -25,7 +25,7 @@ export class ChannelPoller {
   private readonly store: Store;
   private readonly clock: Clock;
   private readonly inboxId: InboxId;
-  private readonly channel: Channel;
+  private readonly channel: Pick<Required<Channel>, "poll">;
   private readonly name: string;
   private readonly intervalMs: number;
   private readonly crashHook: CrashHook;

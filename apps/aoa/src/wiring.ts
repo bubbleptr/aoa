@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa/channel-local";
-import { POLL_INTERVAL_MS, dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
+import { dirMemory, followTools, systemClock, type Channel, type Clock, type Rule, type ToolDef } from "@aoa/kernel";
 import { type SpawnCodex, codexRuntime } from "@aoa/example-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/example-dsh";
 import { piCompletion, piRuntime } from "@aoa/sdk/pi";
@@ -66,8 +66,6 @@ type Front = {
   finished(sessionId: string): Promise<string | null>;
   /** Called right after the session was closed because it finished. */
   closed(sessionId: string): void;
-  /** Whether serve polls the channel for events. */
-  polls: boolean;
   /** How often serve looks for finished sessions. */
   finishCheckMs: number;
   statusColumns: ModeColumns;
@@ -181,7 +179,6 @@ function githubFront(gh: NonNullable<AgentConfig["github"]>, d: FrontDeps): Fron
       return state === "open" ? null : `pull request #${pr.number} was ${state}`;
     },
     closed: () => {},
-    polls: true,
     finishCheckMs: PULL_CHECK_INTERVAL_MS,
     statusColumns: pullColumns,
   };
@@ -208,7 +205,6 @@ function localFront(d: FrontDeps): Front {
       return declared && !declared.applied ? `declared ${declared.result}` : null;
     },
     closed: (sessionId) => d.records.results.markApplied(sessionId),
-    polls: false,
     // Reads only the store, so it can run as often as serve looks for other processes' writes.
     finishCheckMs: NUDGE_INTERVAL_MS,
     statusColumns: branchColumns(d.branchOf),
@@ -388,7 +384,6 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     memory,
     policy: agentPolicy({ risk: spec.risk, classify, ahead: review ? [reviewReadOnly] : [], rules: front.rules }),
     channel,
-    ...(front.polls ? { pollMs: POLL_INTERVAL_MS } : {}),
     ...(config.rate ? { rate: config.rate } : {}),
     session: {
       prepare: (session) => (review ? trees.prepare(session, reviewedBranch(session.id)) : trees.prepare(session)),

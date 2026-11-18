@@ -165,7 +165,6 @@ test("host.messages merges every agent's outbox in the order queued, pages from 
     ["b", "from b"],
   ]);
   expect(all[0]!.seq).toBeLessThan(all[1]!.seq);
-  expect(all[0]!.sentAt).toBeNull();
   expect(host.messages({ since: all[0]!.id }).map((m) => m.agent)).toEqual(["b"]);
   expect(host.messages({ limit: 1 }).map((m) => m.agent)).toEqual(["a"]);
   expect(() => host.messages({ since: "nope" })).toThrow(/nope/);

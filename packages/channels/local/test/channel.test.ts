@@ -109,13 +109,6 @@ describe("deliver", () => {
   });
 });
 
-test("poll returns no events", async () => {
-  const channel = localChannel({ file: fresh() });
-  const first = await channel.poll(null);
-  expect(first.events).toEqual([]);
-  expect((await channel.poll(first.cursor)).events).toEqual([]);
-});
-
 test("openThread returns a fresh local thread key each time", () => {
   const channel = localChannel({ file: fresh() });
   const a = channel.openThread();

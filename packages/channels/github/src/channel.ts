@@ -36,7 +36,7 @@ const CLOCK_SKEW_MS = 5 * 60_000;
 
 const ANSWER_LINE = "Reply `/approve` to let this go ahead, or `/deny` followed by a reason to stop it.";
 
-export type GitHubChannel = Channel & {
+export type GitHubChannel = Channel & Pick<Required<Channel>, "poll"> & {
   /** Creates a labelled issue as the App and returns its thread key. */
   openThread(title: string, body: string): Promise<string>;
   pullState(number: number): Promise<"open" | "merged" | "closed">;

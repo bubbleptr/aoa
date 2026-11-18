@@ -116,7 +116,7 @@ export class Harness {
     return new Dispatcher({ store: o.store ?? this.store, clock: this.clock, inboxId: this.inboxId, ...o });
   }
 
-  poller(o: { channel: Channel; store?: Store; crash?: CrashHook; onEvents?: () => void }): ChannelPoller {
+  poller(o: { channel: Pick<Required<Channel>, "poll">; store?: Store; crash?: CrashHook; onEvents?: () => void }): ChannelPoller {
     return new ChannelPoller({ store: o.store ?? this.store, clock: this.clock, inboxId: this.inboxId, ...o });
   }
 
