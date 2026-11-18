@@ -60,11 +60,16 @@ const agent = host.agent({
 
 // agent 的消息都进 outbox；没有 channel 时从 host.messages() 读。
 let seen = host.messages().at(-1)?.id;
+const answered = new Set<string>();
 host.watch(() => {
   for (const m of host.messages(seen ? { since: seen } : {})) console.log(`[${m.kind}] ${m.body}`);
   seen = host.messages().at(-1)?.id ?? seen;
-  // 示例里直接批准；真实应用在这里把决定交给人。
-  for (const call of agent.read.pending()) agent.answer(call.callId, { verdict: "approve" });
+  // 示例里直接批准；真实应用在这里把决定交给人。调用在新 run 接手前一直算待审批，只答一次。
+  for (const call of agent.read.pending()) {
+    if (answered.has(call.callId)) continue;
+    answered.add(call.callId);
+    agent.answer(call.callId, { verdict: "approve" });
+  }
 });
 
 agent.append({
@@ -93,7 +98,7 @@ DEEPSEEK_API_KEY=... bun main.ts
 - **Permissions** 决定每次工具调用能不能做，见下一节。
 - **Outbox** 发消息并重试送达。传 `channel` 就送到那里（本地文件、GitHub 等）；不传时写入即算送出，从 `host.messages()` 读。
 
-另外：`host.watch` 在库有提交时通知你，其他进程的提交一秒内也能收到；`agent.read` 只读地查 session、事件、待审批、定时器、run 和日志；`agent.activity` 实时给出模型的文字和每次工具调用；`agent.abort` 中断一个 session 正在跑的 run，事件放回去重跑。
+另外：`host.watch` 在库有提交时通知你，其他进程的提交一秒内也能收到；`agent.read` 只读地查 session、事件、待审批、定时器、run 和日志；`agent.activity` 实时给出模型的文字和每次工具调用；`agent.abort` 中断一个 session 正在跑的 run，事件放回去重跑（0.1.0 之后加的，还没发布）。
 
 ## 权限
 
@@ -116,6 +121,8 @@ host.agent({
   },
 });
 ```
+
+`piClassifier` 的提示词是给写代码的 agent 写的；别的场景自己写一个 `classify`，它拿到调用和 session 是否沾过外人内容，返回 `allow`、`block` 或 `unsure`。
 
 延后就是 deferred tool call：内核保存会话、结束这次 run，往 outbox 发一条审批请求，worker 接着处理别的事件。`agent.answer` 的答复作为新事件进 inbox，内核执行这一次调用，再开新 run 接着做。只有 `answer` 或可信的 `user_message` 算数，外人写的内容和其他 agent 的消息都不行。
 
@@ -141,7 +148,7 @@ host.agent({ name: "checker", description: "checks drafts", inbox: "checker", ru
 ## 崩溃后接着做
 
 - **进程随时能杀。** 一次 run 结束时，结果、会话和「这批事件已处理」在同一个事务里写进去。重启后没处理完的事件还在 inbox 里，会被重新取走再跑。
-- **认领有有效期。** worker 取事件时在库里登记一个有效期（5 分钟，跑着会续），过期没完成就算失败。失败的事件 30 秒、2 分钟后重试，三次都失败就停下，并往 outbox 发一条通知。
+- **认领有有效期。** worker 取事件时在库里登记一个有效期（5 分钟，跑着会续），过期没完成就算失败。失败的事件 30 秒、2 分钟后重试，三次都失败就成为死信、不再重试；属于某个 session 的死信会往 outbox 发一条通知。
 - **重跑不会重复执行工具。** 工具执行前先记一笔；重跑时遇到记过却没有结果的调用，不再执行，而是告诉 agent「结果未知，先查再决定」。标了 `idempotent` 的工具例外。
 - **事件和消息不重复。** 事件按来源去重；outbox 送达失败按 1、2、4、8 分钟重试，五次都失败就标为失败。
 

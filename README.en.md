@@ -60,11 +60,17 @@ const agent = host.agent({
 
 // Every message the agent sends goes to the outbox; with no channel, read it from host.messages().
 let seen = host.messages().at(-1)?.id;
+const answered = new Set<string>();
 host.watch(() => {
   for (const m of host.messages(seen ? { since: seen } : {})) console.log(`[${m.kind}] ${m.body}`);
   seen = host.messages().at(-1)?.id ?? seen;
   // The example approves on the spot; a real application hands the decision to a person here.
-  for (const call of agent.read.pending()) agent.answer(call.callId, { verdict: "approve" });
+  // A call stays pending until a new run takes it up, so answer it once.
+  for (const call of agent.read.pending()) {
+    if (answered.has(call.callId)) continue;
+    answered.add(call.callId);
+    agent.answer(call.callId, { verdict: "approve" });
+  }
 });
 
 agent.append({
@@ -93,7 +99,7 @@ They all live in the kernel, and all state is in one SQLite file.
 - **Permissions** decide whether each tool call may run; see the next section.
 - **Outbox** sends messages and retries delivery. With a `channel` they go there (a local file, GitHub and so on); without one a message counts as sent when written, and you read it from `host.messages()`.
 
-Also: `host.watch` tells you when the database has a commit, including another process's within a second; `agent.read` queries sessions, events, pending calls, timers, runs and journals, read-only; `agent.activity` streams the model's text and each tool call as they happen; `agent.abort` stops the run in flight on one session and puts its events back to run again.
+Also: `host.watch` tells you when the database has a commit, including another process's within a second; `agent.read` queries sessions, events, pending calls, timers, runs and journals, read-only; `agent.activity` streams the model's text and each tool call as they happen; `agent.abort` stops the run in flight on one session and puts its events back to run again (added after 0.1.0, not yet published).
 
 ## Permissions
 
@@ -116,6 +122,8 @@ host.agent({
   },
 });
 ```
+
+`piClassifier`'s prompt is written for a coding agent; elsewhere, write your own `classify`: it gets the call and whether the session has taken in others' content, and returns `allow`, `block` or `unsure`.
 
 Deferring is a deferred tool call: the kernel saves the session, ends the run, and puts an approval request in the outbox, while the worker moves on to other events. The answer from `agent.answer` enters the inbox as a new event; the kernel runs that one call, and a new run picks up where it left off. Only `answer` or a trusted `user_message` counts, not content written by others or messages from other agents.
 
@@ -141,7 +149,7 @@ A reply goes back to the session that sent the message. One chain carries at mos
 ## Picking up after a crash
 
 - **The process can be killed at any time.** When a run ends, its result, the session and "these events are done" are written in one transaction. After a restart, unfinished events are still in the inbox and get picked up again.
-- **Claims expire.** A worker records an expiry in the database when it takes events (5 minutes, renewed while running); if it hasn't finished by then, the attempt counts as failed. Failed events are retried after 30 seconds and 2 minutes, and after three failures they stop and a notice goes to the outbox.
+- **Claims expire.** A worker records an expiry in the database when it takes events (5 minutes, renewed while running); if it hasn't finished by then, the attempt counts as failed. Failed events are retried after 30 seconds and 2 minutes, and after three failures they become dead letters and are not retried; a dead letter that belongs to a session puts a notice in the outbox.
 - **A rerun doesn't execute a tool twice.** Before a tool runs, the kernel makes a note; when a rerun meets a call that was noted but has no result, it doesn't execute it again and tells the agent "result unknown, check before deciding" instead. Tools marked `idempotent` are the exception.
 - **Events and messages aren't duplicated.** Events are deduplicated by source; failed outbox deliveries are retried after 1, 2, 4 and 8 minutes, and marked failed after five attempts.
 
