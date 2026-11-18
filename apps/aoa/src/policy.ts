@@ -11,8 +11,8 @@ import {
   type Rule,
   type ToolDef,
 } from "@aoa/kernel";
+import { sendToTool } from "@aoa/sdk";
 import { BRANCH_LIST_FLAGS, codingRules, codingTools, commandOf, gitInvocations, outsideWorktree } from "@aoa/sdk/tools/coding";
-import { sendToTool } from "./send-to.ts";
 
 /**
  * Local mode: the branch stays on this machine until the user merges it, so any `git push` in a bash call waits
@@ -82,7 +82,7 @@ export function toolRisk(): Record<string, Risk> {
     ...askUserTools(),
     ...followTools(deps),
     ...githubTools({ owner: "", repo: "", userLogin: "", botLogin: "", appId: "", installationId: "", privateKeyPath: "" }),
-    sendToTool({ store: inert, clock: systemClock, from: "", inboxId: "", roster: [], agents: () => [] }),
+    sendToTool({ agents: [] }),
   ];
   return Object.fromEntries(defs.flatMap((d) => (d.risk ? [[d.name, d.risk]] : [])));
 }

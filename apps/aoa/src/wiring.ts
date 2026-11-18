@@ -7,7 +7,7 @@ import { type SpawnCodex, codexRuntime } from "@aoa/example-codex";
 import { type DshSpawn, dshRuntime } from "@aoa/example-dsh";
 import { piCompletion, piRuntime } from "@aoa/sdk/pi";
 import { codingTools } from "@aoa/sdk/tools/coding";
-import { type Agent as HostAgent, type Host, createHost } from "@aoa/sdk";
+import { type Agent as HostAgent, type Host, createHost, sendToTool } from "@aoa/sdk";
 import { type SqliteStore, sqliteStore } from "@aoa/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
@@ -22,7 +22,6 @@ import {
 } from "./config.ts";
 import { agentPolicy, deferPush, reviewReadOnly } from "./policy.ts";
 import { GITHUB_SYSTEM_PROMPT, LOCAL_SYSTEM_PROMPT, handOffPrompt, reviewPrompt } from "./prompt.ts";
-import { sendToTool } from "./send-to.ts";
 import { type Records, records } from "./records.ts";
 import { reviewer } from "./reviewer.ts";
 import { jevJudge, withShadowJudge } from "./shadow.ts";
@@ -365,6 +364,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     );
   const hosted = s.host.agent({
     name: spec.name,
+    description: spec.role,
     inbox: inboxId,
     runtime,
     // Codex reads, edits and runs commands with its own tools; it is offered only aoa's.
@@ -373,7 +373,7 @@ function assembleOne(spec: Spec, s: Shared): Agent {
         ...(spec.runtime === "pi" ? codingTools() : []),
         ...builtins,
         ...front.tools,
-        ...(several ? [sendToTool({ store, clock, from: spec.name, inboxId, roster: s.roster, agents: () => s.agents })] : []),
+        ...(several ? [handOff(s)] : []),
       ];
       // A reviewer reads, runs and reports: no way to change files or to stop and ask (its verdict is the answer).
       return review ? all.filter((t) => !["edit", "write", "ask_user"].includes(t.name)) : all;
@@ -430,6 +430,26 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     close: () => store.close(),
     page: s.page,
   };
+}
+
+/**
+ * `send_to` between the config's agents: a review agent may be given the branch to review, which must exist, and a
+ * message that is not a reply opens a thread the way a task the user sends does (an issue in GitHub mode).
+ */
+function handOff(s: Shared): ToolDef {
+  const appAgent = (name: string) => s.agents.find((a) => a.name === name)!;
+  return sendToTool(s.host, {
+    params: { branch: { type: "string", description: "Only for a review agent: the branch to review." } },
+    async check(target, args) {
+      const { branch } = args;
+      if (branch === undefined) return;
+      if (typeof branch !== "string" || branch === "") throw new Error("branch must be a non-empty string");
+      const to = appAgent(target.name);
+      if (to.role !== "review") throw new Error(`branch is only for a review agent; ${to.name} implements.`);
+      if ((await to.worktrees.commitOf(branch)) === null) throw new Error(`There is no branch ${branch} in the repository.`);
+    },
+    thread: (target, args) => appAgent(target.name).openThread(args.text),
+  });
 }
 
 /** The default agent: the top-level config, which describes nothing else about it. */

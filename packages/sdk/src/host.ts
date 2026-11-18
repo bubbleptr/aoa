@@ -52,8 +52,10 @@ export type HostOptions = {
 
 /** One agent: an inbox and what serves it (design §15). */
 export type AgentSpec = {
-  /** How the host names the agent in its log, and later what other agents call it. */
+  /** How the host names the agent in its log, and what other agents call it in `send_to`. */
   name: string;
+  /** What the agent does, in a few words, for `send_to`'s list of agents. */
+  description?: string;
   inbox: InboxId;
   runtime: AgentRuntime;
   /**
@@ -104,6 +106,7 @@ export type QueuedOutMsg = OutboxRow & { agent: string };
 
 export interface Agent {
   readonly name: string;
+  readonly description: string | undefined;
   readonly inbox: InboxId;
   /**
    * Appends an event to the inbox and wakes the worker. It is as trusted as `e.trusted` says: who is calling is the
@@ -287,6 +290,7 @@ export function createHost(o: HostOptions): Host {
 
     const handle: Agent = {
       name: spec.name,
+      description: spec.description,
       inbox: spec.inbox,
       append(e, o = {}) {
         const result = store.tx((t) => {
