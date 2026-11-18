@@ -534,43 +534,51 @@ export class DstRuntime {
   ): Promise<void> {
     const toolMap = new Map<string, Tool>(input.tools.map((t) => [t.name, t]));
 
-    for (const call of plan.calls) {
+    for (let idx = 0; idx < plan.calls.length; idx++) {
+      const call = plan.calls[idx]!;
       if (quiescing && !plan.initiated.has(call.callId)) {
         continue;
       }
 
       if (call.kind === "harness") {
-        if (this.answeredCallIds.has(call.callId)) {
+        if (quiescing) {
+          continue;
+        }
+        // Tier-2 Convention #4: fresh harness ask calls use per-run call IDs so retries after
+        // interrupted or closed deferrals never reuse spent approval/expiry/journal keys.
+        const callId = `${input.runId}:h${idx}`;
+        if (this.answeredCallIds.has(callId)) {
           continue;
         }
         if (!input.ask) throw new Error("harness runtime requires input.ask");
         plan.initiated.add(call.callId);
         const verdict = await input.ask({
-          callId: call.callId,
+          callId,
           tool: call.tool,
           args: call.args,
           ...(call.reason ? { reason: call.reason } : {}),
         });
         if (verdict === "allow") {
-          input.emit?.({ kind: "tool_start", callId: call.callId, tool: call.tool, args: call.args });
+          input.emit?.({ kind: "tool_start", callId, tool: call.tool, args: call.args });
           this.effects.harnessExecutions.push({
             sessionId: input.session.id,
-            callId: call.callId,
+            callId,
             tool: call.tool,
             args: call.args,
           });
           input.emit?.({
             kind: "tool_end",
-            callId: call.callId,
+            callId,
             result: { status: "ok", output: { ok: true, tool: call.tool } },
           });
           continue;
         }
         if (!quiescing && plan.extraAfterDefer && plan.extraAfterDefer.kind === "harness") {
           const extra = plan.extraAfterDefer;
-          if (!this.answeredCallIds.has(extra.callId)) {
+          const extraCallId = `${input.runId}:h_extra`;
+          if (!this.answeredCallIds.has(extraCallId)) {
             const extraVerdict = await input.ask({
-              callId: extra.callId,
+              callId: extraCallId,
               tool: extra.tool,
               args: extra.args,
               ...(extra.reason ? { reason: extra.reason } : {}),
@@ -578,7 +586,7 @@ export class DstRuntime {
             if (extraVerdict === "allow") {
               this.effects.harnessExecutions.push({
                 sessionId: input.session.id,
-                callId: extra.callId,
+                callId: extraCallId,
                 tool: extra.tool,
                 args: extra.args,
               });
