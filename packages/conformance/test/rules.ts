@@ -1,4 +1,4 @@
-import type { Rule } from "@aoa-dev/kernel";
+import type { Rule } from "../src/kernel.ts";
 
 const command = (args: unknown): string =>
   typeof args === "object" && args !== null && typeof (args as { command?: unknown }).command === "string" ? (args as { command: string }).command : "";

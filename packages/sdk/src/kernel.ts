@@ -7,7 +7,7 @@ import {
   timerTools,
   type Risk,
   type ToolDef,
-} from "@aoa-dev/kernel";
+} from "./kernel/index.ts";
 import { sendToTool } from "./send-to.ts";
 
 /**
@@ -15,8 +15,8 @@ import { sendToTool } from "./send-to.ts";
  * not part of a host (the system clock, the file memory, the `follow` tool, the policy's decision on its own, and two
  * constants an application's own pages and channels use).
  */
-export type * from "@aoa-dev/kernel";
-export { DEAD_NOTICE_PREFIX, RESIDENT_RECENT_MESSAGES, decide, dirMemory, followTools, systemClock } from "@aoa-dev/kernel";
+export type * from "./kernel/index.ts";
+export { DEAD_NOTICE_PREFIX, RESIDENT_RECENT_MESSAGES, decide, dirMemory, followTools, systemClock } from "./kernel/index.ts";
 
 /**
  * The tier each tool the SDK can give an agent declares: the built-in ones, `follow` and `send_to`. For deciding a

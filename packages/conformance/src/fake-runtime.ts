@@ -1,4 +1,4 @@
-import type { Ask, CallId, RunEnd, RunInput, RunResult, ToolResult } from "@aoa-dev/kernel";
+import type { Ask, CallId, RunEnd, RunInput, RunResult, ToolResult } from "./kernel.ts";
 
 /**
  * `args` may be computed from the run's input, e.g. to name the session's own progress file.

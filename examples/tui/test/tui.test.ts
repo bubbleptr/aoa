@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeClock } from "@aoa-dev/conformance";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { sqliteStore } from "@aoa-dev/sdk";
 import { createTui } from "../src/index.ts";
 
 const opened: { close(): void }[] = [];
@@ -92,7 +92,7 @@ test("runs through pi in a child process with no git on PATH and outside any git
   const dir = mkdtempSync(join(tmpdir(), "aoa-tui-nogit-"));
   dirs.push(dir);
   const piAi = Bun.fileURLToPath(import.meta.resolve("@earendil-works/pi-ai"));
-  const sqlite = Bun.fileURLToPath(import.meta.resolve("@aoa-dev/store-sqlite"));
+  const sqlite = Bun.fileURLToPath(import.meta.resolve("@aoa-dev/sdk"));
   const tuiEntry = join(import.meta.dir, "../src/index.ts");
   const script = `
     import { fauxAssistantMessage, fauxProvider } from ${JSON.stringify(piAi)};

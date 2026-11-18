@@ -7,7 +7,7 @@ import {
   type Rule,
   type Session,
   type ToolDef,
-} from "@aoa-dev/kernel";
+} from "../src/kernel.ts";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const whereAmI: ToolDef = {

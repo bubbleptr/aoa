@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, SimulatedCrash } from "@aoa-dev/kernel";
+import { LEASE_MS, SimulatedCrash } from "../src/kernel.ts";
 import { Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
 
 /** The two delays of design §9: after the first failed attempt, after the second. */

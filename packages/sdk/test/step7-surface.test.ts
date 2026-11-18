@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeClock, ScriptedRuntime } from "@aoa-dev/conformance";
-import { systemClock, type RunOutcome, type ToolDef } from "@aoa-dev/kernel";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { systemClock, type RunOutcome, type ToolDef } from "../src/kernel/index.ts";
+import { sqliteStore } from "../src/index.ts";
 import { createHost, followTool } from "../src/index.ts";
 
 const opened: { close(): void }[] = [];
@@ -130,7 +130,7 @@ test("agent.abort from another process stops the serving host's in-flight run wi
   const sessionId = agent.read.sessionFor("t")!;
 
   const script = `
-    import { sqliteStore } from "@aoa-dev/store-sqlite";
+    import { sqliteStore } from "../src/index.ts";
     import { createHost } from "../src/index.ts";
     const store = sqliteStore(${JSON.stringify(db)});
     const host = createHost({ store, log: () => {} });

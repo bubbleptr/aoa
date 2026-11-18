@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { OutMsg } from "@aoa-dev/kernel";
+import type { OutMsg } from "@aoa-dev/sdk";
 import { githubChannel } from "../src/index.ts";
 import { BOT, FakeGitHub, OWNER, REPO, USER, writeAppKey } from "./fake-github.ts";
 

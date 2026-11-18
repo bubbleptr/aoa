@@ -22,8 +22,8 @@ If you want a coding agent you can use right away, see the [`aoa` command](apps/
 Bun only (≥ 1.3); the packages ship TypeScript source.
 
 ```bash
-bun add @aoa-dev/sdk @aoa-dev/store-sqlite
-# For the built-in pi runtime, add its peer dependencies
+bun add @aoa-dev/sdk
+# For the built-in pi runtime, add its peer dependencies (not needed with @aoa-dev/sdk/loop)
 bun add @earendil-works/pi-ai@1.5.2 @earendil-works/pi-coding-agent@1.5.2 typebox@1.3.27
 ```
 
@@ -32,9 +32,8 @@ bun add @earendil-works/pi-ai@1.5.2 @earendil-works/pi-coding-agent@1.5.2 typebo
 An agent that can send email. Sending email is a high-risk tool, so the kernel stops and asks for approval first, and only after approval runs the call, exactly once.
 
 ```ts
-import { createHost, type ToolDef } from "@aoa-dev/sdk";
+import { createHost, sqliteStore, type ToolDef } from "@aoa-dev/sdk";
 import { piRuntime } from "@aoa-dev/sdk/pi";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
 
 const sendEmail: ToolDef = {
   name: "send_email",
@@ -177,12 +176,10 @@ A Bun + TypeScript monorepo.
 
 | Package | What it does |
 |---|---|
-| `packages/kernel` | The five primitives, worker, policy and scheduling, independent of storage and models |
-| `packages/store-sqlite` | SQLite storage and migrations |
-| `packages/sdk` | The host that assembles agents, the built-in pi runtime (`@aoa-dev/sdk/pi`), and the optional coding tools and rules (`@aoa-dev/sdk/tools/coding`) |
-| `packages/channels/`: `local` · `github` | Local and GitHub channels |
+| `packages/sdk` | The single published package `@aoa-dev/sdk`: the five primitives, SQLite storage (`sqliteStore`), host, `@aoa-dev/sdk/loop`, `@aoa-dev/sdk/pi`, and optional coding tools and rules (`@aoa-dev/sdk/tools/coding`) |
+| `packages/channels/`: `local` · `github` | Local and GitHub channels (used by `apps/aoa`) |
 | `packages/conformance` | The C1–C20 conformance tests from §9 of the spec |
-| `examples/` | See the previous section |
+| `examples/tui` | Minimal terminal chat example |
 | `apps/aoa` | The `aoa` command |
 
 ```bash

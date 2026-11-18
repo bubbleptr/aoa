@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decide, type PolicyConfig, type PolicyContext } from "@aoa-dev/kernel";
+import { decide, type PolicyConfig, type PolicyContext } from "../src/kernel/index.ts";
 import { codingRules } from "../src/tools/coding/index.ts";
 
 /** Bash is otherwise low risk here, so whatever is not allowed comes from a rule. */

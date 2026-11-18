@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_RATE_POLICY, pace, type MsgKind, type OutMsg, type RatePolicy } from "@aoa-dev/kernel";
+import { DEFAULT_RATE_POLICY, pace, type MsgKind, type OutMsg, type RatePolicy } from "../src/kernel.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

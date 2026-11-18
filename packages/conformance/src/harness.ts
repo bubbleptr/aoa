@@ -18,8 +18,8 @@ import {
   type NewEvent,
   type Store,
   type WorkerOptions,
-} from "@aoa-dev/kernel";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+} from "./kernel.ts";
+import { sqliteStore } from "@aoa-dev/sdk";
 import { FakeClock } from "./fake-clock.ts";
 
 /** One database per test. `connect` opens another connection to it, as a second process would. */

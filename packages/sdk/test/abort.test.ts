@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { FakeClock, ScriptedRuntime } from "@aoa-dev/conformance";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { sqliteStore } from "../src/index.ts";
 import { createHost } from "../src/index.ts";
 
 const opened: { close(): void }[] = [];

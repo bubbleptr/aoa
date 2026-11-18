@@ -1,4 +1,4 @@
-import type { KernelRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "@aoa-dev/kernel";
+import type { KernelRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "../kernel/index.ts";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   type AgentSession,

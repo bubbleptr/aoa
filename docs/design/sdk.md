@@ -245,6 +245,8 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 - 移除 `examples/codex`、`examples/dsh` 以及 `apps/aoa` 对它们的反向依赖（内核保留第二档 `HarnessRuntime` 接口与一致性测试）；原先 `digest` 和多 agent 客服台的 SDK 行为测试沉淀回 `packages/sdk/test/`，`examples/` 只保留唯一一个不被任何包引用的极简示例 `examples/tui`（`@aoa-dev/example-tui`）：约 150 行，建在 `@aoa-dev/sdk`、`@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 上，`reply: "final_text"` + `agent.activity` 流式对话，只读工具直接跑，写操作走 `OutMsg.detail` + `approvals: { by: "answer" }` 在终端用 `/y`、`/n` 审批，待批期间打字排队而不误拒，Ctrl-C 调 `agent.abort` 中断在途 run。
 
+2026-11-19 起（`0.2.0`）三个发布包合并为唯一一个 `@aoa-dev/sdk`：`packages/kernel/src` 迁入 `packages/sdk/src/kernel`（不在 `package.json` 的 `exports` 里暴露，彻底封在包内），`packages/store-sqlite/src` 迁入 `packages/sdk/src/sqlite` 并同时从 `@aoa-dev/sdk` 顶层和 `@aoa-dev/sdk/sqlite` 导出 `sqliteStore`（`createHost({ store })` 仍接收 `HostStore` 接口）。因为 `bun:sqlite` 是 Bun 内置模块，`@aoa-dev/sdk` 的运行时 `dependencies` 为空，保持零构建直接发布 `.ts` 源码；外部安装测试验证空目录 `bun add @aoa-dev/sdk` 只装进这一个包。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |

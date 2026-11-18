@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { PolicyConfig } from "@aoa-dev/kernel";
+import type { PolicyConfig } from "../src/kernel.ts";
 import { testRules } from "./rules.ts";
 import { Harness, ScriptedRuntime, countingTool, storeFactories } from "../src/index.ts";
 

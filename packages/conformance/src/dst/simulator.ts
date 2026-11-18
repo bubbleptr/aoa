@@ -46,7 +46,7 @@ import {
   type TimerId,
   type ToolDef,
   type Tx,
-} from "@aoa-dev/kernel";
+} from "../kernel.ts";
 import { FakeChannel, type DeliveryFailure } from "../fake-channel.ts";
 import { Harness, crashAt, sqliteFactory, type StoreFactory } from "../harness.ts";
 import { checkInvariants, checkQuiescence, createShadowState, type InvariantContext } from "./invariants.ts";

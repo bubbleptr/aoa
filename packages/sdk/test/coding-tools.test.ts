@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolDef, ToolExecContext } from "@aoa-dev/kernel";
+import type { ToolDef, ToolExecContext } from "../src/kernel/index.ts";
 import { codingTools } from "../src/tools/coding/index.ts";
 
 let dirs: string[] = [];

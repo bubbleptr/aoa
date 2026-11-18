@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { FakeClock } from "@aoa-dev/conformance";
-import type { RunActivity } from "@aoa-dev/kernel";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import type { RunActivity } from "../../src/kernel/index.ts";
+import { sqliteStore } from "../../src/index.ts";
 import { createHost } from "../../src/index.ts";
 import { scriptedRuntime } from "./harness.ts";
 

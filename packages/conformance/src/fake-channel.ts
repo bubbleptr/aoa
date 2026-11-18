@@ -1,4 +1,4 @@
-import type { Channel, NewEvent, OutMsg } from "@aoa-dev/kernel";
+import type { Channel, NewEvent, OutMsg } from "./kernel.ts";
 
 export type DeliveryFailure = "before_accept" | "after_accept";
 

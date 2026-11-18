@@ -1,4 +1,4 @@
-import type { SqliteStore } from "@aoa-dev/store-sqlite";
+import type { SqliteStore } from "@aoa-dev/sdk";
 
 /**
  * What the app keeps beside the kernel's tables, in the same database file (design §15「store 收口」): the last known

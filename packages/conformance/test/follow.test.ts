@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { followTools } from "@aoa-dev/kernel";
+import { followTools } from "../src/kernel.ts";
 import { Harness, ScriptedRuntime, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {

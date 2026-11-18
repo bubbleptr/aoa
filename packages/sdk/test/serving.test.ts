@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeClock, ScriptedRuntime } from "@aoa-dev/conformance";
-import { systemClock } from "@aoa-dev/kernel";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { systemClock } from "../src/kernel/index.ts";
+import { sqliteStore } from "../src/index.ts";
 import { createHost } from "../src/index.ts";
 
 const dirs: string[] = [];
@@ -23,8 +23,8 @@ const dbFile = () => {
 /** Appends one event to `db` from a separate process, as `aoa send` does. */
 async function writeFromAnotherProcess(db: string): Promise<void> {
   const script = `
-    import { sqliteStore } from "@aoa-dev/store-sqlite";
-    import { appendEvent, systemClock } from "@aoa-dev/kernel";
+    import { sqliteStore } from "../src/index.ts";
+    import { appendEvent, systemClock } from "../src/kernel/index.ts";
     const store = sqliteStore(${JSON.stringify(db)});
     appendEvent({ store, clock: systemClock, inboxId: "in" }, { source: "user_message", dedupeKey: "from-outside", payload: { text: "hi" }, thread: "t", trusted: true });
     store.close();
@@ -112,7 +112,7 @@ test("a second host on the same store cannot start while the first serves; servi
 test("the lock goes with the process that held it", async () => {
   const db = dbFile();
   const script = `
-    import { sqliteStore } from "@aoa-dev/store-sqlite";
+    import { sqliteStore } from "../src/index.ts";
     sqliteStore(${JSON.stringify(db)}).lock();
     process.stdout.write("locked\\n");
     await Bun.sleep(60_000);

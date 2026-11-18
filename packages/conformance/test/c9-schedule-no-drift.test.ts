@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { addSchedule } from "@aoa-dev/kernel";
+import { addSchedule } from "../src/kernel.ts";
 import { Harness, storeFactories } from "../src/index.ts";
 
 const HOUR = 3_600_000;

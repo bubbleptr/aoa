@@ -22,7 +22,7 @@ import type {
   Timer,
   ToolResult,
   Tx,
-} from "@aoa-dev/kernel";
+} from "../kernel/index.ts";
 import { migrate } from "./schema.ts";
 
 /** An application's own schema in the store's database file, versioned independently in `app_migrations`. */

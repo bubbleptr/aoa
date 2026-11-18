@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { OUTBOX_MAX_ATTEMPTS, SimulatedCrash, answerDeferred, outboxTools, type RatePolicy } from "@aoa-dev/kernel";
+import { OUTBOX_MAX_ATTEMPTS, SimulatedCrash, answerDeferred, outboxTools, type RatePolicy } from "../src/kernel.ts";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories, type ScriptedCall } from "../src/index.ts";
 
 const MINUTE = 60_000;

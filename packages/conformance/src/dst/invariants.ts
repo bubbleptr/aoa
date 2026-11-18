@@ -18,7 +18,7 @@ import {
   type Store,
   type Timer,
   type Tx,
-} from "@aoa-dev/kernel";
+} from "../kernel.ts";
 import type { FakeChannel } from "../fake-channel.ts";
 import type { FakeClock } from "../fake-clock.ts";
 

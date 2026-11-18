@@ -2,4 +2,5 @@ export { createHost, followTool, type Agent, type AgentSpec, type Host, type Hos
 export { AwaitingApproval, type QueuedOutMsg } from "./host.ts";
 export { BEAT_MS, SERVING_STALE_MS } from "./host.ts";
 export { MAX_HOPS, sendToTool, type AgentMessage, type SendToArgs, type SendToOptions } from "./send-to.ts";
+export { sqliteStore, type AppSchema, type SqliteApp, type SqliteStore, type SqliteStoreOptions } from "./sqlite/index.ts";
 export * from "./kernel.ts";

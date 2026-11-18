@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, UNKNOWN_OUTCOME, retryDelayMs, type ToolDef } from "@aoa-dev/kernel";
+import { LEASE_MS, UNKNOWN_OUTCOME, retryDelayMs, type ToolDef } from "../src/kernel.ts";
 import { Harness, ScriptedRuntime, gate, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {

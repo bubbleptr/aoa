@@ -2,7 +2,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { sqliteStore } from "@aoa-dev/sdk";
 import { createTui } from "./tui.ts";
 
 function pickModel(): { provider: string; modelId: string; apiKey: string } {

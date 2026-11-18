@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { LEASE_MS, MAX_ATTEMPTS, SimulatedCrash, retryDelayMs } from "@aoa-dev/kernel";
+import { LEASE_MS, MAX_ATTEMPTS, SimulatedCrash, retryDelayMs } from "../src/kernel.ts";
 import { Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
 
 for (const [name, factory] of storeFactories) {

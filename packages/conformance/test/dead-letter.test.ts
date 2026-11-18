@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { MAX_ATTEMPTS, SimulatedCrash, retryDelayMs, type Worker } from "@aoa-dev/kernel";
+import { MAX_ATTEMPTS, SimulatedCrash, retryDelayMs, type Worker } from "../src/kernel.ts";
 import { FakeChannel, Harness, ScriptedRuntime, countingTool, crashAt, storeFactories } from "../src/index.ts";
 
 const failing = (n: number, message: string) => Array.from({ length: n }, () => ({ fail: new Error(message) }));

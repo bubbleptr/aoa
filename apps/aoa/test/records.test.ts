@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
+import { sqliteStore } from "@aoa-dev/sdk";
 import { records } from "../src/records.ts";
 
 const opened: { close(): void }[] = [];

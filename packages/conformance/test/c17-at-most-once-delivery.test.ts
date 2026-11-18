@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SimulatedCrash, outboxTools } from "@aoa-dev/kernel";
+import { SimulatedCrash, outboxTools } from "../src/kernel.ts";
 import { FakeChannel, Harness, ScriptedRuntime, crashAt, storeFactories } from "../src/index.ts";
 
 const MINUTE = 60_000;

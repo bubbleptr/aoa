@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { addFollowUp } from "@aoa-dev/kernel";
+import { addFollowUp } from "../src/kernel.ts";
 import { Harness, storeFactories } from "../src/index.ts";
 
 const MINUTE = 60_000;

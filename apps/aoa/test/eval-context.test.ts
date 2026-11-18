@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrate } from "../../../packages/store-sqlite/src/schema.ts";
+import { sqliteStore } from "@aoa-dev/sdk";
 import { buildExport, type CallRecord } from "../eval/export.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "aoa-eval-"));
@@ -13,8 +13,9 @@ const S = "s-1";
 const INBOX = "local/repo";
 
 function fixture(): Database {
-  const db = new Database(join(dir, "aoa.db"));
-  migrate(db);
+  const path = join(dir, "aoa.db");
+  sqliteStore(path, { watchFile: false }).close();
+  const db = new Database(path);
   db.run(`INSERT INTO sessions (id, inbox_id, status, created_at) VALUES (?, ?, 'closed', 50)`, [S, INBOX]);
   let n = 0;
   const event = (source: string, at: number, trusted: number, payload: object) =>

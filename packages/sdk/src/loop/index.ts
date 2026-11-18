@@ -1,4 +1,4 @@
-import type { CallId, KernelRuntime, RunInput, RunResult, SessionId, Tool, ToolResult } from "@aoa-dev/kernel";
+import type { CallId, KernelRuntime, RunInput, RunResult, SessionId, Tool, ToolResult } from "../kernel/index.ts";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { eventMarker, renderUserMessage } from "../prompt.ts";

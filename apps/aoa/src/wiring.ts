@@ -10,6 +10,7 @@ import {
   dirMemory,
   followTool,
   sendToTool,
+  sqliteStore,
   systemClock,
   type Agent as HostAgent,
   type Channel,
@@ -17,9 +18,9 @@ import {
   type Host,
   type Reader,
   type Rule,
+  type SqliteStore,
   type ToolDef,
 } from "@aoa-dev/sdk";
-import { type SqliteStore, sqliteStore } from "@aoa-dev/store-sqlite";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   type AgentConfig,

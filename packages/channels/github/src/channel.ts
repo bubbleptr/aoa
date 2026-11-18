@@ -1,4 +1,4 @@
-import type { Channel, NewEvent, OutMsg } from "@aoa-dev/kernel";
+import type { Channel, NewEvent, OutMsg } from "@aoa-dev/sdk";
 import { type GitHubConfig, GitHubClient, type Resolved, resolve } from "./client.ts";
 import { sameLogin, threadKey, threadNumber } from "./thread.ts";
 

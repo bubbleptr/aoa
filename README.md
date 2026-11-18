@@ -22,8 +22,8 @@
 只支持 Bun（≥ 1.3），包里直接是 TypeScript 源码。
 
 ```bash
-bun add @aoa-dev/sdk @aoa-dev/store-sqlite
-# 用内置的 pi runtime 时再装它的 peer 依赖
+bun add @aoa-dev/sdk
+# 用内置的 pi runtime 时再装它的 peer 依赖（用 @aoa-dev/sdk/loop 不需要）
 bun add @earendil-works/pi-ai@1.5.2 @earendil-works/pi-coding-agent@1.5.2 typebox@1.3.27
 ```
 
@@ -32,9 +32,8 @@ bun add @earendil-works/pi-ai@1.5.2 @earendil-works/pi-coding-agent@1.5.2 typebo
 一个会发邮件的 agent。发邮件是高风险工具，内核先停下来要批准，批准后才执行，而且只执行一次。
 
 ```ts
-import { createHost, type ToolDef } from "@aoa-dev/sdk";
+import { createHost, sqliteStore, type ToolDef } from "@aoa-dev/sdk";
 import { piRuntime } from "@aoa-dev/sdk/pi";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
 
 const sendEmail: ToolDef = {
   name: "send_email",
@@ -176,12 +175,10 @@ Bun + TypeScript 的 monorepo。
 
 | 包 | 作用 |
 |---|---|
-| `packages/kernel` | 五个原语、worker、策略、调度，不依赖存储和模型 |
-| `packages/store-sqlite` | SQLite 存储和迁移 |
-| `packages/sdk` | 组装 agent 的宿主、内置的 pi runtime（`@aoa-dev/sdk/pi`）、可选的编码工具和规则（`@aoa-dev/sdk/tools/coding`） |
-| `packages/channels/`：`local` · `github` | 本地和 GitHub 通道 |
+| `packages/sdk` | 唯一对外发布的包 `@aoa-dev/sdk`：五个原语、SQLite 存储（`sqliteStore`）、宿主、`@aoa-dev/sdk/loop`、`@aoa-dev/sdk/pi`、可选的编码工具和规则（`@aoa-dev/sdk/tools/coding`） |
+| `packages/channels/`：`local` · `github` | 本地和 GitHub 通道（`apps/aoa` 用） |
 | `packages/conformance` | 规范 §9 的 C1–C20 一致性测试 |
-| `examples/` | 见上一节 |
+| `examples/tui` | 极简终端对话示例 |
 | `apps/aoa` | `aoa` 命令 |
 
 ```bash

@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Channel, OutMsg } from "@aoa-dev/kernel";
+import type { Channel, OutMsg } from "@aoa-dev/sdk";
 
 /** Shows a message to the user outside the file, e.g. a desktop notification. */
 export type Notifier = (title: string, body: string) => Promise<void>;

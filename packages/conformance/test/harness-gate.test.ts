@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFER_TTL_MS } from "@aoa-dev/kernel";
+import { DEFER_TTL_MS } from "../src/kernel.ts";
 import { Harness, ScriptedRuntime, storeFactories, type RunScript, type ScriptedCall } from "../src/index.ts";
 
 const THREAD = "github:o/r#1";

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CallId, Event, RunInput, Tool, ToolResult } from "@aoa-dev/kernel";
+import type { CallId, Event, RunInput, Tool, ToolResult } from "../../src/kernel/index.ts";
 import {
   fauxAssistantMessage,
   fauxProvider,

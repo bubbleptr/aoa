@@ -1,8 +1,7 @@
-// A program in another repository: it knows the published packages and nothing else of aoa.
-import { createHost, systemClock } from "@aoa-dev/sdk";
+// A program in another repository: it installs only `@aoa-dev/sdk` and nothing else of aoa.
+import { createHost, sqliteStore, systemClock } from "@aoa-dev/sdk";
 import { loopRuntime } from "@aoa-dev/sdk/loop";
 import { renderAnswer } from "@aoa-dev/sdk/prompt";
-import { sqliteStore } from "@aoa-dev/store-sqlite";
 
 const runtime = loopRuntime({
   systemPrompt: "Say how many events arrived.",

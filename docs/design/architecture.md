@@ -38,23 +38,18 @@ interface Channel {
 
 | 包 | 内容 |
 | --- | --- |
-| `packages/kernel` | 类型、worker 循环、scheduler、dispatcher、策略裁决 |
-| `packages/sdk` | `createHost`：把每个 agent 的循环、内置工具、session 的关闭和清理组装起来；`@aoa-dev/sdk/pi` 是内置的 pi runtime，`@aoa-dev/sdk/prompt` 是 runtime 共用的渲染，`@aoa-dev/sdk/tools/coding` 是编码工具和规则（§15） |
-| `packages/store-sqlite` | 表结构和事务，`bun:sqlite` |
-| `examples/codex` | 示例：Codex app-server 适配器，Codex 用自己的工具，aoa 转达它的询问（§12） |
-| `examples/dsh` | 示例：DeepSeek Harness（dsh）SDK 适配器，dsh 用自己的工具，aoa 的工具走 MCP 桥（§12） |
+| `packages/sdk` | 唯一对外发布的 npm 包（`@aoa-dev/sdk`）：内部含内核（`src/kernel`：类型、worker 循环、scheduler、dispatcher、策略裁决，不单独导出）与 SQLite 存储（`src/sqlite`：`bun:sqlite` 表结构和事务）；对外导出 `createHost`、`sqliteStore`、`@aoa-dev/sdk/loop`、`@aoa-dev/sdk/pi`、`@aoa-dev/sdk/prompt`、`@aoa-dev/sdk/tools/coding`（§15） |
 | `packages/channels/local` | 本地通道：消息写文件，发桌面通知 |
 | `packages/channels/github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
-| `apps/aoa` | CLI、`serve`、worktree 管理；经 `packages/sdk` 组装 agent |
+| `apps/aoa` | CLI、`serve`、worktree 管理；只经 `@aoa-dev/sdk` 公开接口组装 agent |
+| `examples/tui` | 极简 TUI 交互式编码 agent 示例，建立在 `@aoa-dev/sdk` 与 `@aoa-dev/sdk/pi` 之上 |
 
 写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`@aoa-dev/sdk/tools/coding` 的 `codingTools` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
 
 runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消息时，内核把结局记成 `sent`。
 
 「任务」不是内核概念。内核只有 session；`apps/aoa` 在新 session 开始时建一个 worktree，于是一项任务就是一个 session 加一个 worktree。
-
-上面是现在的包结构。§15 定了往 SDK 走的目标结构，正在一步步做。
 
 ## 4. 数据
 
