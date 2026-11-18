@@ -16,6 +16,8 @@ export type ScriptedCall = {
 export type RunScript = {
   /** The run waits on this before doing anything, so a test can hold it open. */
   gate?: Promise<void>;
+  /** Emitted as one text delta before the calls, as a model's words would be. */
+  text?: string;
   calls?: ScriptedCall[];
   /** After the calls, the run waits for its signal and then fails with the signal's reason: a run only a stop ends. */
   hang?: true;
@@ -56,6 +58,7 @@ export class ScriptedRuntime {
     this.notify();
     try {
       await script.gate;
+      if (script.text !== undefined) input.emit?.({ kind: "text", delta: script.text });
       for (const call of script.calls ?? []) {
         const args = typeof call.args === "function" ? call.args(input) : (call.args ?? {});
         if (call.harness) {

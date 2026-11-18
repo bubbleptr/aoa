@@ -78,6 +78,13 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     customTools: input.tools.map((t) => toPiTool(t, ids, stop)),
   });
   stop.session = session;
+  // Only the model's words: pi's own tool events would repeat what the kernel emits for every call to input.tools.
+  const unsubscribe = session.subscribe((e) => {
+    if (e.type !== "message_update" || !input.emit) return;
+    const m = e.assistantMessageEvent;
+    if (m.type === "text_delta") input.emit({ kind: "text", delta: m.delta });
+    else if (m.type === "thinking_delta") input.emit({ kind: "reasoning", delta: m.delta });
+  });
   // A stop ends the run like a failed invoke: pi aborts the request or tool in flight and saves the transcript.
   const onAbort = () => stop.fail(input.signal.reason);
   input.signal.addEventListener("abort", onAbort, { once: true });
@@ -99,6 +106,7 @@ async function run(config: PiRuntimeConfig, models: ModelRuntime, input: RunInpu
     return { end: { kind: "silent" }, sessionRef };
   } finally {
     input.signal.removeEventListener("abort", onAbort);
+    unsubscribe();
     session.dispose();
   }
 }

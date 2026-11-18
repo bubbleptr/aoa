@@ -3,7 +3,7 @@ import { DEFER_TTL_MS, deferInTx, isQuestionTool } from "./deferred.ts";
 import { decide, type PolicyConfig, type Verdict } from "./policy.ts";
 import type { Clock, Store } from "./ports.ts";
 import type { PolicyReader } from "./read.ts";
-import type { CallId, InboxId, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
+import type { CallId, InboxId, RunActivity, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
 
 export type ToolContext = {
   store: Store;
@@ -14,6 +14,8 @@ export type ToolContext = {
   /** The run's signal, handed to each tool's `execute`. */
   signal: AbortSignal;
   policy?: PolicyConfig;
+  /** The run's activity stream; `executeRecorded` reports each execution on it. */
+  emit?: (a: RunActivity) => void;
   /** What the policy may read of the inbox. */
   read?: PolicyReader;
   crash: CrashHook;
@@ -90,14 +92,19 @@ async function invoke(def: ToolDef, ctx: ToolContext, callId: CallId, args: unkn
   return settled ?? executeRecorded(def, ctx, callId, args);
 }
 
-/** Executes a call whose intent is already journaled, then records its result. */
+/**
+ * Executes a call whose intent is already journaled, then records its result. The one place a tool executes, so the
+ * activity stream reports executions here: `tool_end` only once the result is recorded.
+ */
 export async function executeRecorded(def: ToolDef, ctx: ToolContext, callId: CallId, args: unknown): Promise<ToolResult> {
   const { store, clock, sessionId, workdir, signal, crash, assertAlive } = ctx;
+  ctx.emit?.({ kind: "tool_start", callId, tool: def.name, args });
   const result = await execute(def, args, { sessionId, callId, workdir, signal });
   crash("after_tool_exec");
   assertAlive();
   store.tx((t) => t.recordResult(sessionId, callId, result, clock.now()));
   crash("after_tool_result");
+  ctx.emit?.({ kind: "tool_end", callId, result });
   return result;
 }
 

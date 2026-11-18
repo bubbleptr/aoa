@@ -34,6 +34,7 @@ import {
   type PolicyConfig,
   type RatePolicy,
   type Reader,
+  type RunActivity,
   type RunOutcome,
   type ScheduleInput,
   type Session,
@@ -130,6 +131,12 @@ export interface Agent {
   cancelTimer(id: TimerId): boolean;
   /** What the agent's inbox holds, read-only. */
   readonly read: Reader;
+  /**
+   * Calls `fn` with what each of the agent's runs in this process does as it happens: the model's text and reasoning,
+   * and each tool call that executes (design §15「活动流」). Nothing is stored; after a run, read its journal and end.
+   * Returns what stops it.
+   */
+  activity(fn: (a: RunActivity, run: { runId: string; sessionId: SessionId }) => void): () => void;
   /**
    * Closes a session: cancels its timers, drops a call it waits on, clears its working directory, then calls
    * `afterClose` with nothing awaited in between and runs `session.cleanup`. A session a run is using right now is
@@ -228,6 +235,7 @@ export function createHost(o: HostOptions): Host {
         }
       : null;
     const dispatcher = channel ? new Dispatcher({ ...deps, channel, ...(spec.rate ? { policy: spec.rate } : {}) }) : null;
+    const watchers = new Set<(a: RunActivity, run: { runId: string; sessionId: SessionId }) => void>();
     const worker: Worker = new Worker({
       ...deps,
       runtime: spec.runtime,
@@ -243,6 +251,15 @@ export function createHost(o: HostOptions): Host {
             },
           }
         : {}),
+      onActivity: (a, run) => {
+        for (const fn of watchers) {
+          try {
+            fn(a, run);
+          } catch (err) {
+            log(`an activity subscriber of ${spec.name} failed: ${errorText(err)}`);
+          }
+        }
+      },
       onRunStart: (r) => runLine(`run ${r.runId} started in session ${r.sessionId} with ${r.events} event(s)`),
       onRunEnd: (r) => {
         runLine(runEndLine(r));
@@ -327,6 +344,10 @@ export function createHost(o: HostOptions): Host {
         return store.tx((t) => t.cancelTimer(id));
       },
       read,
+      activity(fn) {
+        watchers.add(fn);
+        return () => watchers.delete(fn);
+      },
       closeSession: close,
       step: {
         worker: () => worker.drain(),

@@ -192,6 +192,16 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - `SqliteStore` 只剩 `HostStore` 加一个 `db`（store 自己的连接）：`apps/aoa` 的 PR 状态、`aoa close` 的声明和影子判断在 `apps/aoa/src/records.ts`，用同一个连接读写，免得两个连接互相等锁。建这几张表的旧迁移留在 store 里（迁移只追加，不改已发布的）。outbox 行（`OutboxRow`）带 `seq` 和 `sentAt`。
 - 观察页的「serve 状态」读 `host_beat`；从来没有宿主跑过时仍是 `never`。
 
+第 5 步已完成（2026-11-18）：`RunInput.emit` 和 `RunActivity` 在内核，内核在执行工具的唯一入口（`executeRecorded`）前后发 `tool_start`/`tool_end`，pi 把模型的 `text_delta`、`thinking_delta` 转成 `text`、`reasoning`。和上文不同或上文没写的地方：
+
+- 订阅口是 `agent.activity(fn)`，`fn` 收到活动和 `{ runId, sessionId }`，返回取消订阅的函数；上文没写从哪里订阅。`AgentSpec` 不加回调，订阅可以随时开关（以后的页面或 GUI 连上才订）。
+- worker 每次 run 都给 `emit`，`RunInput.emit` 的类型仍是可选的，runtime 写 `input.emit?.(...)`，手搭的 `RunInput`（比如 Codex 的冒烟测试）不用给。
+- 订阅者抛错被丢掉（宿主记一行日志），不影响 run 的结局和工具日志：抛错落在执行和记结果之间，下一次 run 就会拿到「结果未知」。run 结束后再来的活动不送出。
+- 被批准的调用在拿到答复的那次 run 里执行，也在那次 run 里发 `tool_start`/`tool_end`。只有意图、没有结果的可重入调用重跑时是真的执行，照样发。被停下打断的调用只有 `tool_start`，没有 `tool_end`：看的人以 run 的结束收尾，不另加事件类型。
+- `tool_end` 在结果写进日志之后才发，活动流不会比库里多。
+- pi 在同一次 `prompt` 里自己重试模型请求时，重试前已经发出的文字会再来一遍。
+- Codex 和 dsh 示例还不发自己的文字和自带工具的调用；它们经 `input.tools` 的调用由内核发。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |

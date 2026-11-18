@@ -141,7 +141,24 @@ export type RunInput = {
    * session first) and throws. The kernel puts the run's events back without counting the stop as a failure's delay.
    */
   signal: AbortSignal;
+  /**
+   * What the run is doing as it happens (design §15「活动流」), for whoever watches in this process; nothing of it is
+   * stored. A runtime emits its model's text and reasoning, and a harness its own tools' calls; never calls to
+   * `input.tools`, which the kernel emits itself. Optional: a runtime calls `input.emit?.(...)`.
+   */
+  emit?: (a: RunActivity) => void;
 };
+
+/**
+ * One step of a run as it happens. `tool_start` comes only for a call that executes: not for a deferred or blocked
+ * one, and not for a result replayed from the journal. A call cut off by a stop has a `tool_start` and no `tool_end`;
+ * the run's end closes it.
+ */
+export type RunActivity =
+  | { kind: "text"; delta: string }
+  | { kind: "reasoning"; delta: string }
+  | { kind: "tool_start"; callId: CallId; tool: string; args: unknown }
+  | { kind: "tool_end"; callId: CallId; result: ToolResult };
 
 /**
  * Called by a harness runtime when its harness asks permission for one of its own calls (design §12). `allow` means

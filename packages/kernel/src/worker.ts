@@ -8,7 +8,7 @@ import { policyReader } from "./read.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
-import type { Event, EventId, InboxId, RunEnd, RunId, RunInput, RunResult, Session, SessionId, ToolDef } from "./types.ts";
+import type { Event, EventId, InboxId, RunActivity, RunEnd, RunId, RunInput, RunResult, Session, SessionId, ToolDef } from "./types.ts";
 
 export const LEASE_MS = 5 * 60_000;
 export const LEASE_RENEW_MS = 60_000;
@@ -50,6 +50,11 @@ export type WorkerOptions = {
   onRunStart?: (run: { runId: RunId; sessionId: SessionId; events: number }) => void;
   /** Called once a run's outcome is stored: its end, or the error that sent its events back. */
   onRunEnd?: (run: RunOutcome) => void;
+  /**
+   * The activity of each run as it happens (design §15「活动流」). An error it throws is dropped: watching a run must
+   * not change it. Nothing reaches it once the run has settled.
+   */
+  onActivity?: (a: RunActivity, run: { runId: RunId; sessionId: SessionId }) => void;
 };
 
 export type RunOutcome = { runId: RunId; sessionId: SessionId; end: RunEnd | null; error: string | null };
@@ -77,6 +82,7 @@ export class Worker {
   private readonly memory: Memory | undefined;
   private readonly onRunStart: NonNullable<WorkerOptions["onRunStart"]>;
   private readonly onRunEnd: NonNullable<WorkerOptions["onRunEnd"]>;
+  private readonly onActivity: WorkerOptions["onActivity"];
 
   /** Set once a crash point fires; from then on this worker behaves as a dead process. */
   private crashed: SimulatedCrash | null = null;
@@ -101,6 +107,7 @@ export class Worker {
     this.memory = o.memory;
     this.onRunStart = o.onRunStart ?? (() => {});
     this.onRunEnd = o.onRunEnd ?? (() => {});
+    this.onActivity = o.onActivity;
   }
 
   /**
@@ -232,6 +239,16 @@ export class Worker {
     this.current = controller;
     const { signal } = controller;
     const c = { ...claim };
+    let settled = false;
+    const run = { runId: c.runId, sessionId: c.session.id };
+    const emit = (a: RunActivity) => {
+      if (settled || !this.onActivity) return;
+      try {
+        this.onActivity(a, run);
+      } catch {
+        // A watcher's failure is the watcher's.
+      }
+    };
     let result: RunResult;
     try {
       if (c.session.workdir === null && this.prepareSession) {
@@ -248,6 +265,7 @@ export class Worker {
         workdir: c.session.workdir,
         signal,
         policy: this.policy,
+        emit,
         read: policyReader(this.store, this.inboxId),
         crash: (p) => this.crashAt(p),
         assertAlive: () => this.assertAlive(),
@@ -264,6 +282,7 @@ export class Worker {
         tools: wrapTools(this.tools, toolCtx),
         ...(answer ? { answer } : {}),
         signal,
+        emit,
       };
       result =
         this.runtime.kind === "harness"
@@ -294,6 +313,7 @@ export class Worker {
       this.onRunEnd({ runId: c.runId, sessionId: c.session.id, end: null, error });
       return;
     } finally {
+      settled = true;
       stopRenewal();
       this.current = null;
     }
