@@ -96,7 +96,7 @@ store 只有 SQLite 一个实现，但 SDK 的公开类型里不出现 `SqliteSt
 - 风险等级跟着工具走：`ToolDef` 多一个 `risk?: Risk`。内核自带的工具（timers、notify、memory、`send_to`、`follow`）自己标 `low`，`ask_user` 不经风险；编码工具包里的工具自己标等级。`policy.risk` 只用来覆盖。现在 `low` 的名单写死在 `apps/aoa/src/policy.ts`，SDK 用户一开 `policy`，连 `notify` 都会停下来等审批。
 - 规则只有一张有序的表，SDK 不往里拼任何东西。`apps/aoa` 现在分 `ahead` 和 `rules` 两段，是因为审查的只读拦截要排在凭据路径的延后之前，本地 `git push` 的延后要排在禁止强推之后；这种顺序由调用方自己拼表决定。
 - 编码相关的规则跟着编码工具走：原来内核的 `defaultRules`（sudo、强推、git 配置、`curl | sh`、凭据路径、tainted 时联网、只读命令）改名 `codingRules`，和 `apps/aoa` 的 `outsideWorktree` 一起搬进 `@aoa/sdk/tools/coding`，分开导出，由调用方放进自己的规则表。规则名不变，库里记的 `rule:<名字>` 照旧能对上。内核本身不带规则。`codingTools` 第 3 步也搬了过来。
-- 分类器能读 session（第 4 步，随 `agent.read`）：`Classify` 的上下文多一个只读的 `read`（同 `Agent.read`），审核模型（§12「审核模型」）不用再绕过 agent 直接扫 store。它仍然只拿得到库里的东西，拿不到调用结果，§6.2 的要害不变。
+- 分类器能读 session（第 4 步，随 `agent.read`）：`Classify` 的上下文多一个只读的 `read`（同 `Agent.read`，但先前调用只有参数、没有结果），审核模型（§12「审核模型」）不用再绕过 agent 直接扫 store。它仍然只拿得到库里的东西，拿不到调用结果，§6.2 的要害不变。
 
 ## 两档 runtime
 
@@ -185,7 +185,7 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - `watch(fn, { othersOnly })`：宿主的循环只因别的进程的提交被叫醒，否则自己的每次写入都会把所有循环叫醒一遍。本进程的写事务按 SQLite 的 `total_changes()` 判断，只读的事务不触发。
 - 没有 channel 时，消息在写进 outbox 的同一个事务里标为 `sent`，不经 dispatcher：这样只调 `step.worker()` 也成立，同一次 drain 里的下一个 run 也看得到。
 - `schedule` 的 id 在库里是 `schedule:<inbox>:<id>`，两个 agent 的同名定时器互不相干，也碰不上内核自己的 `wake:`、`expire:`。用同样的参数再调什么都不改，所以宿主停着时错过的那一次照样触发；参数不同，或定时器已被撤，才按新的锚点重排并重新武装。`followUp` 带了调用方的 id 时同样加前缀（`follow_up:<inbox>:<id>`）。
-- `read` 的 `since` 是时间（事件按收到、run 按开始），`limit` 取 `since` 之后最早的几条。读口的类型 `Reader` 在内核，分类器经 `PolicyContext.read` 拿到同一个读口；`apps/aoa` 的审核模型改用它。读口里有 `journal`，也就是先前调用的结果；§6.2 说分类器拿不到的是这一次调用的结果，先前的结果算不算在内还没定。
+- `read` 的 `since` 是时间（事件按收到、run 按开始），`limit` 取 `since` 之后最早的几条。读口的类型 `Reader` 在内核，分类器经 `PolicyContext.read` 拿到同一个读口；`apps/aoa` 的审核模型改用它。分类器的读口是 `PolicyReader`：没有 `journal`，换成 `calls`，只有先前调用的工具名和参数，不带结果（2026-11-18 定）。结果是工具从外面取回的文字，正是 §6.2 不让它左右判断的东西，这一次的和先前的都一样。
 - `append` 拒绝时抛 `AwaitingApproval`（带着在等的调用），措辞由调用方给。
 - `send_to`：一个工具给所有 agent 共用，说明里列出全部 agent（包括发送方自己），发给自己时报错。不是回复时的默认 thread 是 `agent:<目标名>/<发送方 session>/<调用 id>`，由调用推出而不是随机，所以同一个调用重跑仍然写进同一条 thread。额外参数用 `params` 声明（JSON Schema 属性），原样进 payload；`check` 之外多一个 `thread` 钩子，`apps/aoa` 用它照旧开 thread（GitHub 模式下是一个 issue，`agent:` 开头的 thread 发不到 GitHub）。
 - `AgentSpec.description` 和 `Agent.description` 给 `send_to` 的列表用；`apps/aoa` 填角色名。

@@ -1,4 +1,4 @@
-import type { Reader } from "./read.ts";
+import type { PolicyReader } from "./read.ts";
 import type { CallId, Decision, Risk, SessionId } from "./types.ts";
 
 export type { Risk } from "./types.ts";
@@ -13,8 +13,8 @@ export type PolicyContext = {
   workdir: string | null;
   /** The call's identity, for a shadow judge that records under it. Absent when the policy runs on its own. */
   call?: { id: CallId; sessionId: SessionId };
-  /** The inbox the call's session belongs to, read-only; present with `call`. The call's result is never in it (§6.2). */
-  read?: Reader;
+  /** The inbox the call's session belongs to, read-only, with no call results in it (§6.2); present with `call`. */
+  read?: PolicyReader;
 };
 
 /** A rule with an opinion returns a decision; `null` passes the call to the next rule. */

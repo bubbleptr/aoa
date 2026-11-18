@@ -57,3 +57,18 @@ export function reader(store: Store, inboxId: InboxId): Reader {
     },
   };
 }
+
+/**
+ * What the policy's classifier may read (design §6.2): the inbox as `Reader` shows it, except that of earlier calls it
+ * gets only which tool was called with what arguments. A result is text a tool fetched from outside, which is exactly
+ * what must not steer the judgment of the next call.
+ */
+export type PolicyReader = Omit<Reader, "journal"> & {
+  /** The session's calls the policy allowed, in order: tool and arguments, no result. */
+  calls(session: SessionId): { callId: string; tool: string; args: unknown }[];
+};
+
+export function policyReader(store: Store, inboxId: InboxId): PolicyReader {
+  const { journal, ...rest } = reader(store, inboxId);
+  return { ...rest, calls: (session) => journal(session).map(({ callId, tool, args }) => ({ callId, tool, args })) };
+}

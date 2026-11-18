@@ -2,7 +2,7 @@ import type { CrashHook } from "./crash.ts";
 import { DEFER_TTL_MS, deferInTx, isQuestionTool } from "./deferred.ts";
 import { decide, type PolicyConfig, type Verdict } from "./policy.ts";
 import type { Clock, Store } from "./ports.ts";
-import type { Reader } from "./read.ts";
+import type { PolicyReader } from "./read.ts";
 import type { CallId, InboxId, SessionId, Tool, ToolDef, ToolExecContext, ToolResult } from "./types.ts";
 
 export type ToolContext = {
@@ -15,7 +15,7 @@ export type ToolContext = {
   signal: AbortSignal;
   policy?: PolicyConfig;
   /** What the policy may read of the inbox. */
-  read?: Reader;
+  read?: PolicyReader;
   crash: CrashHook;
   /** Throws if this process has (simulated) crashed, so nothing more is written. */
   assertAlive: () => void;

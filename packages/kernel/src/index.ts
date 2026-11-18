@@ -70,4 +70,4 @@ export {
 export { DEFER_TTL_MS, askUserTools, type AnswerPayload } from "./deferred.ts";
 export { dirMemory, memoryTools, type Memory } from "./memory.ts";
 export { RESIDENT_FILE_LIMIT, RESIDENT_PREAMBLE, RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
-export { reader, type Reader } from "./read.ts";
+export { policyReader, reader, type PolicyReader, type Reader } from "./read.ts";

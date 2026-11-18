@@ -1,4 +1,4 @@
-import type { DecisionRecord, Event, PolicyConfig, Reader, ToolCall } from "@aoa/kernel";
+import type { DecisionRecord, Event, PolicyConfig, PolicyReader, ToolCall } from "@aoa/kernel";
 import { encode } from "@aoa/sdk/prompt";
 import type { Role } from "./config.ts";
 
@@ -73,7 +73,7 @@ const textOf = (e: Event): string => {
  * the session of the run that took it, else of its thread: the same rule the eval's export used.
  */
 export function liveReviewInput(
-  read: Reader,
+  read: PolicyReader,
   o: { role: Role; sessionId: string; workdir: string | null; tainted: boolean },
   call: ToolCall & { id: string },
 ): ReviewInput {
@@ -86,7 +86,7 @@ export function liveReviewInput(
     .sort((a, b) => a.receivedAt - b.receivedAt);
   const firsts = new Map<string, DecisionRecord>();
   for (const d of read.decisions(o.sessionId)) if (d.callId !== call.id && !firsts.has(d.callId)) firsts.set(d.callId, d);
-  const argsOf = new Map(read.journal(o.sessionId).map((j) => [j.callId, j.args]));
+  const argsOf = new Map(read.calls(o.sessionId).map((c) => [c.callId, c.args]));
   return {
     role: o.role,
     workdir: o.workdir,

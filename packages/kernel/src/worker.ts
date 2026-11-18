@@ -4,7 +4,7 @@ import type { Memory } from "./memory.ts";
 import { reportDead } from "./outbox.ts";
 import { askPermission, holdUntrusted, resolveAdmit } from "./permission.ts";
 import type { PolicyConfig } from "./policy.ts";
-import { reader } from "./read.ts";
+import { policyReader } from "./read.ts";
 import { RESIDENT_RECENT_MESSAGES, buildResident } from "./resident.ts";
 import { answers, resolveAnswer } from "./resume.ts";
 import { wrapTools, type ToolContext } from "./tools.ts";
@@ -248,7 +248,7 @@ export class Worker {
         workdir: c.session.workdir,
         signal,
         policy: this.policy,
-        read: reader(this.store, this.inboxId),
+        read: policyReader(this.store, this.inboxId),
         crash: (p) => this.crashAt(p),
         assertAlive: () => this.assertAlive(),
       };
