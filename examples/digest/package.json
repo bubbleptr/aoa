@@ -7,7 +7,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@aoa/kernel": "workspace:*",
     "@aoa/sdk": "workspace:*",
     "@aoa/store-sqlite": "workspace:*"
   },

@@ -1,4 +1,4 @@
-import type { AgentRuntime, ToolDef } from "@aoa/kernel";
+import type { AgentRuntime, ToolDef } from "@aoa/sdk";
 import type { Agent, Host } from "@aoa/sdk";
 import type { IssueSource } from "./issues.ts";
 

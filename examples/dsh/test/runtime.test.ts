@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Event, PermissionAsk, HarnessRunInput, Tool, ToolResult } from "@aoa/kernel";
+import type { Event, PermissionAsk, HarnessRunInput, Tool, ToolResult } from "@aoa/sdk";
 import { DISABLED_ROWS, SHUTDOWN_GRACE_MS, dshRuntime, type DshRuntimeConfig } from "../src/index.ts";
 import { FakeDshServer, dyingDsh, type FakeTurn } from "./fake-dsh-server.ts";
 

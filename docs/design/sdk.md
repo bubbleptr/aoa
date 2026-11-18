@@ -212,6 +212,8 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 
 2026-11-18 起 `apps/aoa` 只经 `@aoa/sdk` 用内核，`package.json` 里不再有 `@aoa/kernel`，`apps/aoa/test/depends-on-sdk.test.ts` 守着这一点。`@aoa/sdk` 重新导出内核的全部类型，值只导出不属于宿主的几样（`systemClock`、`dirMemory`、`followTools`、单独跑策略的 `decide`、`DEAD_NOTICE_PREFIX`、`RESIDENT_RECENT_MESSAGES`），另加 `builtinToolRisk()`：按名字查内置工具、`follow` 和 `send_to` 的风险等级，给只知道工具名的重放和测试用。store 和 channel 仍是应用直接依赖、传进 SDK 的包，SDK 不依赖它们。
 
+三个示例（`codex`、`dsh`、`digest`）也一样：依赖里没有 `@aoa/kernel`，源码和测试都从 `@aoa/sdk` 取，`examples/depends-on-sdk.test.ts` 守着。Codex 和 dsh 原来直接驱动内核 worker 的测试（`kernel.test.ts`）改成经 `createHost` 和 `agent.step`、`answer`、`read`，和 SDK 使用者的写法一样。测试工具 `@aoa/conformance` 仍是开发依赖。
+
 | 步 | 内容 | 验收 |
 | --- | --- | --- |
 | 1 | `createHost` / `host.agent`：把 `wiring.ts` 里每个 agent 的组装（worker、scheduler、dispatcher、poller、工具拼装、session 收尾）搬进 SDK；`apps/aoa` 改用它 | 现有 `bun test` 全过；`apps/aoa` 里不再 `new Worker`；关 session 时有 run 在用，返回 `busy`、什么都不动；只能关自己 inbox 的 session |

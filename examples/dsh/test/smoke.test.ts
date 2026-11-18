@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Event, HarnessRunInput, Tool, ToolResult } from "@aoa/kernel";
+import type { Event, HarnessRunInput, Tool, ToolResult } from "@aoa/sdk";
 import { type DshSpawn, dshRuntime, spawnDsh } from "../src/index.ts";
 
 /**

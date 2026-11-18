@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult } from "@aoa/kernel";
+import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult } from "@aoa/sdk";
 import { type Answer, encode, renderAnswer, renderUserMessage } from "@aoa/sdk/prompt";
 import { CallTable, type Bridge, startBridge } from "./bridge.ts";
 import { Connection, RpcError, spawnDsh } from "./connection.ts";

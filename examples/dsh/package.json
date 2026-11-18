@@ -7,11 +7,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@aoa/kernel": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@aoa/sdk": "workspace:*"
   },
   "devDependencies": {
-    "@aoa/conformance": "workspace:*"
+    "@aoa/conformance": "workspace:*",
+    "@aoa/store-sqlite": "workspace:*"
   }
 }

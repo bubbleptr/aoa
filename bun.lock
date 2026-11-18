@@ -34,18 +34,17 @@
       "name": "@aoa/example-codex",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
         "@aoa/sdk": "workspace:*",
       },
       "devDependencies": {
         "@aoa/conformance": "workspace:*",
+        "@aoa/store-sqlite": "workspace:*",
       },
     },
     "examples/digest": {
       "name": "@aoa/example-digest",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
         "@aoa/sdk": "workspace:*",
         "@aoa/store-sqlite": "workspace:*",
       },
@@ -58,12 +57,12 @@
       "name": "@aoa/example-dsh",
       "version": "0.0.0",
       "dependencies": {
-        "@aoa/kernel": "workspace:*",
         "@aoa/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "1.32.2",
       },
       "devDependencies": {
         "@aoa/conformance": "workspace:*",
+        "@aoa/store-sqlite": "workspace:*",
       },
     },
     "packages/channels/github": {

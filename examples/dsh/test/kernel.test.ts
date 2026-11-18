@@ -2,19 +2,19 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { answerDeferred, askUserTools, outboxTools, type ToolDef } from "@aoa/kernel";
-import { Harness, sqliteFactory } from "@aoa/conformance";
+import { FakeClock } from "@aoa/conformance";
+import { createHost, type ToolDef } from "@aoa/sdk";
+import { sqliteStore } from "@aoa/store-sqlite";
 import { dshRuntime } from "../src/index.ts";
 import { FakeDshServer, type FakeTurn, type TurnScript } from "./fake-dsh-server.ts";
 
-let h: Harness;
 let home: string;
+const opened: { close(): void }[] = [];
 beforeEach(() => {
-  h = new Harness(sqliteFactory());
   home = realpathSync(mkdtempSync(join(tmpdir(), "aoa-dsh-kernel-")));
 });
 afterEach(() => {
-  h.dispose();
+  for (const s of opened.splice(0)) s.close();
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -30,11 +30,18 @@ const ping: ToolDef = {
   },
 };
 
-function worker(scripts: TurnScript[]) {
+/** The dsh runtime as an SDK user hosts it, driven one pass at a time. */
+function hosted(scripts: TurnScript[]) {
   pingCount.executions = 0;
   const fake = new FakeDshServer(scripts);
-  const deps = { store: h.store, clock: h.clock, inboxId: h.inboxId };
-  const w = h.worker({
+  const store = sqliteStore(":memory:");
+  opened.push(store);
+  const clock = new FakeClock();
+  const host = createHost({ store, clock, log: () => {} });
+  const agent = host.agent({
+    name: "dsh",
+    inbox: "inbox",
+    debounceMs: 0,
     runtime: dshRuntime({
       systemPrompt: "",
       model: "deepseek-flash",
@@ -45,34 +52,36 @@ function worker(scripts: TurnScript[]) {
       spawn: fake.spawn,
       log: () => {},
     }),
-    tools: [...outboxTools(deps), ...askUserTools(), ping],
+    tools: [ping],
   });
-  return { fake, w };
+  let n = 0;
+  const say = () => agent.append({ source: "user_message", dedupeKey: `m${++n}`, payload: { text: `message ${n}` }, thread: "local:1", trusted: true });
+  return { fake, host, agent, clock, say };
 }
 
 const askToRun = (t: FakeTurn, callId: string, args: object = { command: "rm -rf build" }) =>
   t.request("approval/request", { sessionId: t.sessionId, toolName: "bash", callId });
 
 test("a deferred approval leaves one request in the outbox and pauses the session on dsh's call", async () => {
-  const { fake, w } = worker([
+  const { fake, host, agent, say } = hosted([
     async (t) => {
       await t.toolCall("call-1", "bash", { command: "rm -rf build" });
       await askToRun(t, "call-1");
     },
   ]);
-  h.append({ thread: "local:1" });
-  await w.drain();
+  say();
+  await agent.step.worker();
 
-  const [run] = h.runs();
+  const [run] = agent.read.runs();
   const callId = `${run!.sessionId}:call-1`;
   expect(run!.end).toEqual({ kind: "deferred", callId });
-  expect(h.outbox().filter((m) => m.kind === "approval_request")).toMatchObject([{ callId, body: expect.stringContaining("rm -rf build") }]);
+  expect(host.messages().filter((m) => m.kind === "approval_request")).toMatchObject([{ callId, body: expect.stringContaining("rm -rf build") }]);
   expect(fake.serverRequests[0]!.reply).toEqual({ outcome: "rejected" });
-  expect(h.store.tx((t) => t.getSession(run!.sessionId))).toMatchObject({ status: "paused", pending: callId, runtimeRef: expect.any(String) });
+  expect(agent.read.sessions()[0]).toMatchObject({ status: "paused", pending: callId, runtimeRef: expect.any(String) });
 });
 
 test("approve: the resumed run says so, dsh asks again with the same arguments and is allowed without a second request", async () => {
-  const { fake, w } = worker([
+  const { fake, host, agent, say } = hosted([
     async (t) => {
       await t.toolCall("call-1", "bash", { command: "rm -rf build", cwd: "/work" });
       await askToRun(t, "call-1", { command: "rm -rf build", cwd: "/work" });
@@ -82,26 +91,25 @@ test("approve: the resumed run says so, dsh asks again with the same arguments a
       await askToRun(t, "call-2", { command: "rm -rf build", cwd: "/work" });
     },
   ]);
-  h.append({ thread: "local:1" });
-  await w.drain();
-  const [run] = h.runs();
+  say();
+  await agent.step.worker();
+  const [run] = agent.read.runs();
   const callId = `${run!.sessionId}:call-1`;
-  answerDeferred(h.store, h.clock, h.inboxId, callId, "approve");
-  await w.drain();
+  agent.answer(callId, { verdict: "approve" });
+  await agent.step.worker();
 
   expect(fake.inputs[1]).toContain("approved");
   expect(fake.inputs[1]).toContain("rm -rf build");
   expect(fake.serverRequests.map((r) => r.reply)).toEqual([{ outcome: "rejected" }, { outcome: "allowed-once" }]);
-  expect(h.outbox().filter((m) => m.kind === "approval_request")).toHaveLength(1);
-  expect(h.runs().map((r) => [r.error, r.end?.kind])).toEqual([
+  expect(host.messages().filter((m) => m.kind === "approval_request")).toHaveLength(1);
+  expect(agent.read.runs().map((r) => [r.error, r.end?.kind])).toEqual([
     [null, "deferred"],
     [null, "silent"],
   ]);
-
 });
 
 test("notify through the MCP bridge is decided, journaled and lands in the outbox; the result reaches dsh", async () => {
-  const { fake, w } = worker([
+  const { fake, host, agent, say } = hosted([
     async (t) => {
       await t.toolCall("call-1", "mcp__aoa__notify", { body: "Branch aoa/1 is ready." });
       const reply = await t.mcp("notify", { body: "Branch aoa/1 is ready." });
@@ -109,14 +117,14 @@ test("notify through the MCP bridge is decided, journaled and lands in the outbo
       expect(reply.text).toContain("msgId");
     },
   ]);
-  h.append({ thread: "local:1" });
-  await w.drain();
+  say();
+  await agent.step.worker();
 
-  const [run] = h.runs();
+  const [run] = agent.read.runs();
   const callId = `${run!.sessionId}:call-1`;
-  expect(h.store.tx((t) => t.listDecisions(run!.sessionId)).map((d) => [d.callId, d.tool, d.decision])).toEqual([[callId, "notify", "allow"]]);
-  expect(h.store.tx((t) => t.getJournal(run!.sessionId, callId))).toMatchObject({ state: "done", result: { status: "ok" } });
-  expect(h.outbox()).toMatchObject([{ kind: "message", body: "Branch aoa/1 is ready." }]);
+  expect(agent.read.decisions(run!.sessionId).map((d) => [d.callId, d.tool, d.decision])).toEqual([[callId, "notify", "allow"]]);
+  expect(agent.read.journal(run!.sessionId)).toMatchObject([{ callId, state: "done", result: { status: "ok" } }]);
+  expect(host.messages()).toMatchObject([{ kind: "message", body: "Branch aoa/1 is ready." }]);
   expect(run!.end).toMatchObject({ kind: "sent" });
   expect(fake.live).toBe(0);
 });
@@ -127,36 +135,37 @@ test("a retried run replays the journaled MCP call under the same call id instea
     const reply = await t.mcp("ping", {});
     expect(reply.text).toBe("pong");
   };
-  const { fake, w } = worker([
+  const { fake, agent, clock, say } = hosted([
     async (t) => {
       await call(t);
       t.die("dsh exited with code 137");
     },
     call,
   ]);
-  h.append({ thread: "local:1" });
-  await w.drain();
-  h.waitOutLease();
-  await w.drain();
+  say();
+  await agent.step.worker();
+  // Past the retry delay after one failure.
+  clock.advance(60 * 60_000);
+  await agent.step.worker();
 
-  expect(h.runs().map((r) => r.error !== null)).toEqual([true, false]);
+  expect(agent.read.runs().map((r) => r.error !== null)).toEqual([true, false]);
   // The retry makes the call under the same kernel id; the journal answers it, so the tool ran once.
   expect(pingCount.executions).toBe(1);
   expect(fake.inputs[1]).toContain("interrupted");
 });
 
 test("ask_user through the MCP bridge pauses the session and stops dsh", async () => {
-  const { fake, w } = worker([
+  const { fake, host, agent, say } = hosted([
     async (t) => {
       await t.toolCall("call-1", "mcp__aoa__ask_user", { question: "Which colour?" });
       await t.mcp("ask_user", { question: "Which colour?" });
     },
   ]);
-  h.append({ thread: "local:1" });
-  await w.drain();
+  say();
+  await agent.step.worker();
 
-  const [run] = h.runs();
+  const [run] = agent.read.runs();
   expect(run!.end).toEqual({ kind: "deferred", callId: `${run!.sessionId}:call-1` });
-  expect(h.outbox()).toMatchObject([{ kind: "approval_request", body: "Which colour?" }]);
+  expect(host.messages()).toMatchObject([{ kind: "approval_request", body: "Which colour?" }]);
   expect(fake.sent("shutdown")).toHaveLength(1);
 });

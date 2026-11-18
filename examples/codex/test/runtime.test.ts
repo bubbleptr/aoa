@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Event, PermissionAsk, HarnessRunInput, Tool, ToolResult } from "@aoa/kernel";
+import type { Event, PermissionAsk, HarnessRunInput, Tool, ToolResult } from "@aoa/sdk";
 import { codexRuntime } from "../src/index.ts";
 import { FakeAppServer, dyingProcess, type FakeTurn } from "./fake-app-server.ts";
 

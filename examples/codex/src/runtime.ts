@@ -1,4 +1,4 @@
-import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult, Tool, ToolResult } from "@aoa/kernel";
+import type { HarnessRuntime, CallId, PermissionAsk, RunInput, RunResult, Tool, ToolResult } from "@aoa/sdk";
 import { type Answer, encode, renderAnswer, renderUserMessage, resultText } from "@aoa/sdk/prompt";
 import { Connection, RpcError, type SpawnCodex, spawnAppServer } from "./connection.ts";
 import type {
