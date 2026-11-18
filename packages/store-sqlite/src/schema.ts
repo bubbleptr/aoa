@@ -204,6 +204,15 @@ const migrations: string[] = [
   );
   CREATE INDEX grants_session ON grants (session_id);
   `,
+  `
+  -- The heartbeat of the host that holds the lock (design §15); one row.
+  CREATE TABLE host_beat (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    pid   INTEGER NOT NULL,
+    since INTEGER NOT NULL,
+    seen  INTEGER NOT NULL
+  );
+  `,
 ];
 
 /**

@@ -4,7 +4,6 @@ import { systemClock } from "@aoa/kernel";
 import { sqliteStore } from "@aoa/store-sqlite";
 import { validateConfig } from "../src/config.ts";
 import type { Edge, Snapshot } from "../src/observe.ts";
-import { SERVE_SEEN } from "../src/serve.ts";
 import { type Web, startWeb } from "../src/web.ts";
 import { type Agent, assemble } from "../src/wiring.ts";
 import { World, call, say } from "./world.ts";
@@ -103,22 +102,8 @@ test("pushes a snapshot on connect, then only changes, each carrying what flowed
   expect(second.flows).toEqual({ in: 1 });
   expect(second.snapshot.edges.in.total).toBe(2);
 
-  // A write the watch missed is found by the data_version check within a second or two, not only after a long net.
-  await w.cli("send", "Third task.");
-  w.advance(2_000);
-  let missed: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const third = await Promise.race([
-      client.next(),
-      new Promise<never>((_, reject) => (missed = setTimeout(() => reject(new Error("a write the watch missed was not pushed within 2 s")), 1_000))),
-    ]);
-    expect(third.flows).toEqual({ in: 1 });
-  } finally {
-    clearTimeout(missed);
-  }
-
   const snapshot = (await (await fetch(`http://127.0.0.1:${server.port}/snapshot`)).json()) as Snapshot;
-  expect(snapshot.edges.in.total).toBe(3);
+  expect(snapshot.edges.in.total).toBe(2);
 });
 
 test("the page flips to serve offline when the heartbeat goes stale, without a write", async () => {
@@ -132,7 +117,9 @@ test("the page flips to serve offline when the heartbeat goes stale, without a w
   expect((await client.next()).snapshot.serve.state).toBe("never");
 
   const other = sqliteStore(w.agent.paths.db);
-  other.tx((t) => t.setCursor(w.agent.inboxId, SERVE_SEEN, String(w.clock.now())));
+  const lock = other.lock()!;
+  lock.beat(w.clock.now());
+  lock.release();
   other.close();
   trigger();
   w.advance(50);

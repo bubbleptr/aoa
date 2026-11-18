@@ -1,4 +1,4 @@
-import { type Clock, type Store, type ToolDef, appendEvent } from "@aoa/kernel";
+import type { Clock, Store, ToolDef } from "@aoa/kernel";
 import type { Role } from "./config.ts";
 import type { Agent } from "./wiring.ts";
 
@@ -96,11 +96,7 @@ export function sendToTool(o: {
         hop,
         ...(ownThread === null ? {} : { replyThread: ownThread }),
       };
-      appendEvent(
-        { store: o.store, clock: o.clock, inboxId: target.inboxId },
-        { source: "agent_message", dedupeKey: `send_to:${ctx.sessionId}:${ctx.callId}`, payload, thread, trusted },
-      );
-      target.wake();
+      target.hosted.append({ source: "agent_message", dedupeKey: `send_to:${ctx.sessionId}:${ctx.callId}`, payload, thread, trusted });
       return { sent: true, to: target.name, thread };
     },
   };

@@ -2,11 +2,14 @@ export type * from "./types.ts";
 export { UNKNOWN_OUTCOME } from "./tools.ts";
 export type {
   AgentRuntime,
+  Beat,
   Clock,
   HarnessRuntime,
+  HostStore,
   KernelRuntime,
   EventInsert,
   JournalRecord,
+  Lock,
   OutMsgInsert,
   OutboxRow,
   QueuedMsg,

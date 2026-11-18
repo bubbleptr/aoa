@@ -1,5 +1,7 @@
 import { Database } from "bun:sqlite";
+import { type FSWatcher, watch as watchFile } from "node:fs";
 import type {
+  Beat,
   DecisionRecord,
   OutMsg,
   PendingCall,
@@ -7,6 +9,7 @@ import type {
   EventInsert,
   EventStatus,
   Grant,
+  HostStore,
   JournalEntry,
   JournalRecord,
   RunEnd,
@@ -25,27 +28,136 @@ import { migrate } from "./schema.ts";
  * The SQLite store. `db` is the same connection the store writes with, for an application that keeps its own tables
  * in the same file; the kernel never reads them.
  */
-export type SqliteStore = Store & {
+export type SqliteStore = HostStore & {
   readonly db: Database;
-  /** SQLite's `data_version`: it changes whenever another connection commits to the database. */
-  dataVersion(): number;
-  close(): void;
 };
 
+export type SqliteStoreOptions = {
+  /**
+   * Whether `watch` also watches the WAL file, which sees another process's commit within a millisecond. Without it,
+   * or when the watch drops a write (fs.watch does, on macOS, across a burst of commits), a check of `data_version`
+   * every second finds it. Default true.
+   */
+  watchFile?: boolean;
+};
+
+/** How often `watch` checks `data_version` for another connection's commit. */
+const VERSION_CHECK_MS = 1_000;
+
 /** Opens (and migrates) a store on a file path or `:memory:`. */
-export function sqliteStore(path: string): SqliteStore {
+export function sqliteStore(path: string, o: SqliteStoreOptions = {}): SqliteStore {
   const db = new Database(path, { create: true, strict: true });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   migrate(db);
   const t = createTx(db);
+  const memory = path === ":memory:" || path === "";
   const dataVersion = db.query<{ data_version: number }, []>("PRAGMA data_version");
+  const totalChanges = db.query<{ n: number }, []>("SELECT total_changes() AS n");
+  const getBeat = db.query<Beat, []>("SELECT pid, since, seen FROM host_beat WHERE id = 1");
+  const putBeat = db.query(
+    `INSERT INTO host_beat (id, pid, since, seen) VALUES (1, $pid, $since, $seen)
+     ON CONFLICT (id) DO UPDATE SET pid = excluded.pid, since = excluded.since, seen = excluded.seen`,
+  );
+
+  type Watcher = { fn: () => void; othersOnly: boolean };
+  const watchers = new Set<Watcher>();
+  let notifying: { own: boolean; others: boolean } | null = null;
+  const notify = (from: "own" | "others") => {
+    if (notifying) {
+      notifying[from] = true;
+      return;
+    }
+    notifying = { own: from === "own", others: from === "others" };
+    // After the commit, once per burst: a watcher that reads or writes the store runs outside the transaction.
+    queueMicrotask(() => {
+      const n = notifying!;
+      notifying = null;
+      for (const w of [...watchers]) if (n.others || !w.othersOnly) w.fn();
+    });
+  };
+  let lastVersion = 0;
+  const checkOthers = () => {
+    const v = dataVersion.get()!.data_version;
+    if (v !== lastVersion) {
+      lastVersion = v;
+      notify("others");
+    }
+  };
+  let stopSources: (() => void) | null = null;
+  const startSources = () => {
+    lastVersion = dataVersion.get()!.data_version;
+    const check = setInterval(checkOthers, VERSION_CHECK_MS);
+    check.unref();
+    let file: FSWatcher | null = null;
+    if (!memory && o.watchFile !== false) {
+      try {
+        file = watchFile(`${path}-wal`, () => checkOthers());
+        file.unref();
+      } catch {
+        // No WAL file yet: the check above finds the commits.
+      }
+    }
+    return () => {
+      clearInterval(check);
+      file?.close();
+    };
+  };
+
   return {
-    tx: (fn) => db.transaction(() => fn(t)).immediate(),
+    tx(fn) {
+      if (watchers.size === 0) return db.transaction(() => fn(t)).immediate();
+      const before = totalChanges.get()!.n;
+      const result = db.transaction(() => fn(t)).immediate();
+      if (totalChanges.get()!.n !== before) notify("own");
+      return result;
+    },
     db,
-    dataVersion: () => dataVersion.get()!.data_version,
-    close: () => db.close(),
+    lock() {
+      if (memory) return null;
+      const held = new Database(`${path}-host`, { create: true });
+      try {
+        held.exec("PRAGMA busy_timeout = 0");
+        held.exec("BEGIN EXCLUSIVE");
+      } catch {
+        held.close();
+        const b = getBeat.get();
+        throw new Error(
+          `Another host runs this store's loops${b ? ` (pid ${b.pid}, since ${new Date(b.since).toISOString()})` : ""}; stop it first.`,
+        );
+      }
+      let since: number | null = null;
+      return {
+        beat(at) {
+          since ??= at;
+          putBeat.run({ pid: process.pid, since, seen: at });
+        },
+        release() {
+          held.exec("ROLLBACK");
+          held.close();
+        },
+      };
+    },
+    lastBeat: () => getBeat.get() ?? null,
+    watch(fn, w = {}) {
+      const watcher = { fn, othersOnly: w.othersOnly ?? false };
+      watchers.add(watcher);
+      stopSources ??= startSources();
+      return () => {
+        watchers.delete(watcher);
+        if (watchers.size === 0) {
+          stopSources?.();
+          stopSources = null;
+        }
+      };
+    },
+    close() {
+      watchers.clear();
+      stopSources?.();
+      stopSources = null;
+      db.close();
+    },
   };
 }
 

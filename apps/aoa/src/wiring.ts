@@ -26,7 +26,7 @@ import { sendToTool } from "./send-to.ts";
 import { type Records, records } from "./records.ts";
 import { reviewer } from "./reviewer.ts";
 import { jevJudge, withShadowJudge } from "./shadow.ts";
-import { NUDGE_INTERVAL_MS, PULL_CHECK_INTERVAL_MS } from "./serve.ts";
+import { LOCAL_FINISH_CHECK_MS, PULL_CHECK_INTERVAL_MS } from "./serve.ts";
 import { type ModeColumns, branchColumns, pullColumns, pullOf } from "./status.ts";
 import { type Worktrees, sessionBranch, worktrees } from "./worktree.ts";
 
@@ -94,8 +94,6 @@ export type Agent = {
   /** What serve runs besides the loops. */
   schedule: { finishCheckMs: number };
   statusColumns: ModeColumns;
-  /** Wakes the agent's worker and dispatcher, for writes this process made outside a run. */
-  wake: HostAgent["wake"];
   /** The agent as the host knows it: appends, answers and reads go through it. */
   hosted: HostAgent;
   /** One pass of each of the agent's loops. */
@@ -205,8 +203,7 @@ function localFront(d: FrontDeps): Front {
       return declared && !declared.applied ? `declared ${declared.result}` : null;
     },
     closed: (sessionId) => d.records.results.markApplied(sessionId),
-    // Reads only the store, so it can run as often as serve looks for other processes' writes.
-    finishCheckMs: NUDGE_INTERVAL_MS,
+    finishCheckMs: LOCAL_FINISH_CHECK_MS,
     statusColumns: branchColumns(d.branchOf),
   };
 }
@@ -424,7 +421,6 @@ function assembleOne(spec: Spec, s: Shared): Agent {
     openThread: front.openThread,
     schedule: { finishCheckMs: front.finishCheckMs },
     statusColumns: front.statusColumns,
-    wake: hosted.wake,
     hosted,
     step: hosted.step,
     host: s.host,

@@ -5,7 +5,7 @@ import { runGitWithBun } from "@aoa/channel-github";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentInput } from "../src/config.ts";
 import type { Snapshot } from "../src/observe.ts";
-import { SERVE_SEEN, serve } from "../src/serve.ts";
+import { serve } from "../src/serve.ts";
 import { type View, startWeb } from "../src/web.ts";
 import { KEY_ENV, MODEL_KEY, World, call, lastResult, say, type Step } from "./world.ts";
 
@@ -360,7 +360,9 @@ describe("named agents", () => {
     await w.cli("send", "Hand something over.");
     await w.drain();
     await w.cli("send", "--agent", "reviewer", "And this.");
-    w.agent.store.tx((t) => t.setCursor(w.agent.inboxId, SERVE_SEEN, String(w.clock.now())));
+    const lock = w.agent.store.lock()!;
+    lock.beat(w.clock.now());
+    lock.release();
 
     let trigger = () => {};
     const server = startWeb(w.agent, {

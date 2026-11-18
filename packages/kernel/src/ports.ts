@@ -30,6 +30,33 @@ export interface Store {
   tx<T>(fn: (t: Tx) => T): T;
 }
 
+/** The last heartbeat of the host that runs the loops on a store. */
+export type Beat = { pid: number; since: number; seen: number };
+
+/** The right to run the loops on a store, held until released or until the process that holds it ends. */
+export interface Lock {
+  /** Records that the holder still runs; the first beat is its start. */
+  beat(at: number): void;
+  release(): void;
+}
+
+/** What a host needs of a store beyond transactions (design §15). */
+export interface HostStore extends Store {
+  /**
+   * Takes the lock, or returns null for a store only this process can open (`:memory:`). Throws while another
+   * holder, in this process or another, has it.
+   */
+  lock(): Lock | null;
+  /** The last heartbeat recorded by whoever held the lock; null if no host ever did. */
+  lastBeat(): Beat | null;
+  /**
+   * Calls `fn` after commits: this connection's write transactions, and other connections' commits (another process)
+   * within about a second. With `othersOnly`, only the latter. Returns what stops it.
+   */
+  watch(fn: () => void, o?: { othersOnly?: boolean }): () => void;
+  close(): void;
+}
+
 export type EventInsert = {
   id: EventId;
   inboxId: InboxId;

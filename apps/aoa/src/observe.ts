@@ -1,12 +1,12 @@
 import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { type Decision, type DecisionRecord, type EventSource, type EventStatus, type Event, type JournalRecord, type OutMsg, type OutboxRow as QueuedRow, type PendingCall, RESIDENT_RECENT_MESSAGES, type Tx } from "@aoa/kernel";
-import { SERVE_SEEN, SERVE_STARTED } from "./serve.ts";
+import { SERVING_STALE_MS } from "@aoa/sdk";
 import { asks } from "./status.ts";
 import type { Agent } from "./wiring.ts";
 
 /** A heartbeat older than this means `serve` is not running: three missed nudges. */
-export const SERVE_STALE_MS = 15_000;
+export const SERVE_STALE_MS = SERVING_STALE_MS;
 
 const DAY_MS = 24 * 60 * 60_000;
 /** The shadow judge's summary window (design §12). */
@@ -297,7 +297,6 @@ function fullAsk(d: PendingCall, events: Event[]): string {
 
 export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "clock" | "paths" | "agents">): Snapshot {
   const { inboxId } = agent;
-  const serveInbox = agent.agents[0]!.inboxId;
   const now = agent.clock.now();
   const since = now - DAY_MS;
   const recent = (at: number | null) => at !== null && at >= since;
@@ -306,13 +305,12 @@ export function snapshot(agent: Pick<Agent, "store" | "records" | "inboxId" | "c
 
   const files = listFiles(agent.paths.memory);
   const s = agent.store.tx((t: Tx): Snapshot => {
-    const seenAt = Number(t.getCursor(serveInbox, SERVE_SEEN) ?? NaN);
-    const startedAt = Number(t.getCursor(serveInbox, SERVE_STARTED) ?? NaN);
-    const seen = Number.isFinite(seenAt) ? seenAt : null;
+    const beat = agent.store.lastBeat();
+    const seen = beat?.seen ?? null;
     if (seen !== null && seen + SERVE_STALE_MS >= now) later.push(seen + SERVE_STALE_MS + 1);
     const serve: Snapshot["serve"] = {
       state: seen === null ? "never" : now - seen > SERVE_STALE_MS ? "offline" : "running",
-      startedAt: Number.isFinite(startedAt) ? startedAt : null,
+      startedAt: beat?.since ?? null,
       seenAt: seen,
     };
 

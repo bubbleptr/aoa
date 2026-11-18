@@ -1,4 +1,3 @@
-import { watch as watchFile } from "node:fs";
 import { join } from "node:path";
 import type { Role } from "./config.ts";
 import { type Edge, type Snapshot, changed, flows, snapshot } from "./observe.ts";
@@ -7,17 +6,12 @@ import type { Agent } from "./wiring.ts";
 export const DEFAULT_WEB_PORT = 7878;
 /** Commits come in bursts (intent, result, outbox); one rebuild covers a burst. */
 const COALESCE_MS = 50;
-/**
- * The safety net for a change the file watch missed; it reads only `data_version`, no tables. fs.watch can drop a
- * write for good (seen on macOS across a burst of commits), so this is not a rare path: one second bounds the staleness.
- */
-const VERSION_CHECK_MS = 1_000;
 
 const PAGE = join(import.meta.dir, "web.html");
 
 export type WebOptions = {
   port: number;
-  /** Calls `onChange` whenever the store may have changed; returns what stops it. By default, a watch on the WAL file. */
+  /** Calls `onChange` whenever the store may have changed; returns what stops it. By default, the host's watch. */
   watch?: (onChange: () => void) => () => void;
 };
 
@@ -38,15 +32,6 @@ type Flows = Partial<Record<Edge, number>>;
 
 /** A view with every `at` zeroed: when it was taken does not make it different. */
 const timeless = (v: View) => ({ ...v, agents: v.agents.map((a) => ({ ...a, snapshot: { ...a.snapshot, at: 0 } })) });
-
-/**
- * Watching the WAL file sees every commit from another process within a millisecond; watching its directory misses
- * some. The agent's own connection is open, so the file exists and stays.
- */
-const walWatch = (db: string) => (onChange: () => void) => {
-  const watcher = watchFile(`${db}-wal`, () => onChange());
-  return () => watcher.close();
-};
 
 const encoder = new TextEncoder();
 
@@ -96,10 +81,8 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
   /** Each open stream, with what forgets it: it counted toward `page.notifying` if its page notifies. */
   const clients = new Map<ReadableStreamDefaultController<Uint8Array>, () => void>();
   let current: View;
-  let version: number;
   let cancelCoalesce: (() => void) | null = null;
   let cancelFlip = () => {};
-  let cancelCheck = () => {};
 
   const send = (c: ReadableStreamDefaultController<Uint8Array>, update: object) =>
     c.enqueue(encoder.encode(`data: ${JSON.stringify(update)}\n\n`));
@@ -112,8 +95,6 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
   };
 
   function build(): View {
-    // Read before the tables, so a commit landing in between is caught by the next check.
-    version = agent.store.dataVersion();
     const [first, ...named] = agent.agents.map((a) => ({
       name: a.name,
       role: a.role,
@@ -154,15 +135,9 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     armFlip();
   }
 
-  const check = () => {
-    if (agent.store.dataVersion() !== version) rebuild();
-    cancelCheck = clock.setTimer(VERSION_CHECK_MS, check);
-  };
-
   current = build();
   armFlip();
-  cancelCheck = clock.setTimer(VERSION_CHECK_MS, check);
-  const stopWatch = (o.watch ?? walWatch(agent.paths.db))(() => {
+  const stopWatch = (o.watch ?? ((fn) => agent.host.watch(fn)))(() => {
     cancelCoalesce ??= clock.setTimer(COALESCE_MS, () => {
       cancelCoalesce = null;
       rebuild();
@@ -173,7 +148,6 @@ export function startWeb(agent: Agent, o: WebOptions): Web {
     stopWatch();
     cancelCoalesce?.();
     cancelFlip();
-    cancelCheck();
   };
 
   let server: ReturnType<typeof Bun.serve>;

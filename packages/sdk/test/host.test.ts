@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { FakeClock, ScriptedRuntime } from "@aoa/conformance";
-import { appendEvent, type Store } from "@aoa/kernel";
+import { appendEvent, type Tx } from "@aoa/kernel";
 import { sqliteStore } from "@aoa/store-sqlite";
 import { createHost } from "../src/index.ts";
 
@@ -13,19 +13,21 @@ test("a loop that dies stops the host, so a host with a dead worker does not kee
   const real = sqliteStore(":memory:");
   opened.push(real);
   let broken = false;
-  const store: Store = {
-    tx: (fn) => {
+  const clock = new FakeClock();
+  const store = {
+    ...real,
+    tx: <T>(fn: (t: Tx) => T): T => {
       if (broken) throw new Error("disk gone");
       return real.tx(fn);
     },
   };
   const lines: string[] = [];
-  const host = createHost({ store, clock: new FakeClock(), log: (l) => lines.push(l) });
-  const agent = host.agent({ name: "a", inbox: "in", runtime: new ScriptedRuntime() });
+  const host = createHost({ store, clock, log: (l) => lines.push(l) });
+  host.agent({ name: "a", inbox: "in", runtime: new ScriptedRuntime() });
   host.start();
 
   broken = true;
-  agent.wake();
+  clock.advance(60_000);
   await host.stopped;
   expect(lines.some((l) => /^the (worker|scheduler) stopped: disk gone$/.test(l))).toBe(true);
 });

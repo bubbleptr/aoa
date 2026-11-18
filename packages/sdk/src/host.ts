@@ -23,6 +23,7 @@ import {
   type DispatchResult,
   type DrainResult,
   type FollowUpInput,
+  type HostStore,
   type InboxId,
   type Memory,
   type MsgId,
@@ -44,7 +45,7 @@ import {
 } from "@aoa/kernel";
 
 export type HostOptions = {
-  store: Store;
+  store: HostStore;
   clock?: Clock;
   log?: (line: string) => void;
 };
@@ -133,8 +134,6 @@ export interface Agent {
    * deadlock a caller inside it. Try again later.
    */
   closeSession(id: SessionId, o?: { afterClose?: () => void }): Promise<"closed" | "busy">;
-  /** Tells the worker and the dispatcher to look again now. Interim: appends through the agent wake them from step 4. */
-  wake(): void;
   /** One pass of each loop, for tests and for hosts that do not run the loops. */
   readonly step: {
     worker(): Promise<DrainResult>;
@@ -149,8 +148,9 @@ export interface Host {
   agent(spec: AgentSpec): Agent;
   readonly agents: readonly Agent[];
   /**
-   * Runs every agent's worker, scheduler and dispatcher, and polls the channels that have `pollMs` (once right away).
-   * A host runs once: `start()` again, also after `stop()`, throws.
+   * Takes the store's lock and runs every agent's worker, scheduler and dispatcher, and polls the channels that have
+   * `poll` (once right away). Throws while another host runs the loops on the store. A host runs once: `start()` again,
+   * also after `stop()`, throws. A host that never starts can still append, answer, read and watch.
    */
   start(): void;
   /** Stops the loops and waits for what is in flight. */
@@ -162,9 +162,22 @@ export interface Host {
    * `limit` keeps the first ones after it.
    */
   messages(o?: { since?: MsgId; limit?: number }): QueuedOutMsg[];
+  /** The host that runs the loops on this store, this one or another process's; null if none has beaten lately. */
+  serving(): { pid: number; since: number } | null;
+  /**
+   * Calls `fn` after the store changes: this process's writes at once, another process's within about a second. It
+   * does not say what changed; read again.
+   */
+  watch(fn: () => void): () => void;
+  /** Ends every watch and closes the store. Call it after `stop()`. */
+  close(): void;
 }
 
 const DEFAULT_DEBOUNCE_MS = 2000;
+/** How often the host that holds the lock records that it runs. */
+export const BEAT_MS = 5_000;
+/** How long after its last beat a host still counts as serving: three missed beats. */
+export const SERVING_STALE_MS = 15_000;
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -188,6 +201,7 @@ export function createHost(o: HostOptions): Host {
   let settle = () => {};
   const stopped = new Promise<void>((resolve) => (settle = resolve));
   let running: { stop(): Promise<void> } | null = null;
+  const watches = new Set<() => void>();
 
   function agent(spec: AgentSpec): Agent {
     // Without a channel nothing would ever deliver a message, and what the user was told would stay empty (D-MEM-3).
@@ -309,10 +323,6 @@ export function createHost(o: HostOptions): Host {
       },
       read,
       closeSession: close,
-      wake: () => {
-        worker.wake();
-        dispatcher?.wake();
-      },
       step: {
         worker: () => worker.drain(),
         scheduler: () => scheduler.pass(),
@@ -327,7 +337,9 @@ export function createHost(o: HostOptions): Host {
   let started = false;
   function start(): void {
     if (started) throw new Error("A host runs once: create another to start again.");
+    const lock = store.lock();
     started = true;
+    lock?.beat(clock.now());
     const several = all.length > 1;
     const loops = all.flatMap((a) => {
       const of = (name: string) => (several ? `${name} of ${a.agent.name}` : name);
@@ -337,14 +349,30 @@ export function createHost(o: HostOptions): Host {
         ...(a.dispatcher ? [[of("dispatcher"), a.dispatcher] as const] : []),
       ] as const;
     });
-    const repeating = all.flatMap((a) =>
-      a.poller ? [every(clock, a.pollMs, () => a.poller!.pass(), (err) => log(`polling the channel failed: ${errorText(err)}`))] : [],
+    const repeating = [
+      ...all.flatMap((a) =>
+        a.poller ? [every(clock, a.pollMs, () => a.poller!.pass(), (err) => log(`polling the channel failed: ${errorText(err)}`))] : [],
+      ),
+      ...(lock ? [every(clock, BEAT_MS, async () => lock.beat(clock.now()), (err) => log(`recording the heartbeat failed: ${errorText(err)}`), { first: false })] : []),
+    ];
+    // Another process's append or answer; this process's own writes wake what they concern themselves.
+    const unwatch = store.watch(
+      () => {
+        for (const a of all) {
+          a.worker.wake();
+          a.scheduler.wake();
+          a.dispatcher?.wake();
+        }
+      },
+      { othersOnly: true },
     );
     let stopping: Promise<void> | null = null;
     const stop = () =>
       (stopping ??= (async () => {
+        unwatch();
         for (const [, loop] of loops) loop.stop();
         await Promise.all([...repeating.map((r) => r.stop()), ...serving]);
+        lock?.release();
         settle();
       })());
     const serving = loops.map(([name, loop]) =>
@@ -362,6 +390,23 @@ export function createHost(o: HostOptions): Host {
       return all.map((a) => a.agent);
     },
     start,
+    serving() {
+      const b = store.lastBeat();
+      return b === null || clock.now() - b.seen > SERVING_STALE_MS ? null : { pid: b.pid, since: b.since };
+    },
+    watch(fn) {
+      const stop = store.watch(fn);
+      watches.add(stop);
+      return () => {
+        watches.delete(stop);
+        stop();
+      };
+    },
+    close() {
+      for (const stop of watches) stop();
+      watches.clear();
+      store.close();
+    },
     messages(o = {}) {
       const queued = store
         .tx((t) => all.flatMap((a) => t.listOutbox(a.agent.inbox).map((m): QueuedOutMsg => ({ ...m, agent: a.agent.name }))))
@@ -398,8 +443,17 @@ function sentOnWrite(store: Store, clock: Clock): Store {
   };
 }
 
-/** Calls `fn` right away and then `ms` after each call ends, until stopped; an error is reported and the next call still comes. */
-function every(clock: Clock, ms: number, fn: () => Promise<unknown>, onError: (err: unknown) => void): { stop(): Promise<void> } {
+/**
+ * Calls `fn` right away (unless `first` is false) and then `ms` after each call ends, until stopped; an error is
+ * reported and the next call still comes.
+ */
+function every(
+  clock: Clock,
+  ms: number,
+  fn: () => Promise<unknown>,
+  onError: (err: unknown) => void,
+  o: { first?: boolean } = {},
+): { stop(): Promise<void> } {
   let cancel = () => {};
   let current: Promise<void> = Promise.resolve();
   let stopped = false;
@@ -413,7 +467,8 @@ function every(clock: Clock, ms: number, fn: () => Promise<unknown>, onError: (e
       if (!stopped) cancel = clock.setTimer(ms, tick);
     })();
   };
-  tick();
+  if (o.first === false) cancel = clock.setTimer(ms, tick);
+  else tick();
   return {
     stop: () => {
       stopped = true;
