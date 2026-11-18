@@ -1,0 +1,22 @@
+# @aoa/sdk
+
+在 aoa 内核上搭长期运行的 agent：宿主、agent、定时器、审批、`send_to`，内置 pi 作为第一档 runtime。只支持 Bun（≥ 1.3），包里直接是 TypeScript 源码。
+
+```sh
+bun add @aoa/sdk @aoa/store-sqlite
+```
+
+```ts
+import { createHost } from "@aoa/sdk";
+import { sqliteStore } from "@aoa/store-sqlite";
+
+const host = createHost({ store: sqliteStore("agents.db") });
+const agent = host.agent({ name: "helper", inbox: "helper", runtime });
+agent.append({ source: "user_message", dedupeKey: "m1", payload: { text: "hi" }, thread: "t1", trusted: true });
+host.start();
+```
+
+- store 是必传的；channel 可选，不传时消息写入即算送出，从 `host.messages()` 读。
+- 入口：`@aoa/sdk`（宿主、agent、内核的类型和少量值）、`@aoa/sdk/pi`（pi runtime）、`@aoa/sdk/prompt`（第二档适配器共用的渲染）、`@aoa/sdk/tools/coding`（可选的编码工具和规则）。
+- pi 是可选的 peer 依赖：用 `@aoa/sdk/pi` 或 `@aoa/sdk/tools/coding` 时自己装 `@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent` 和 `typebox`，其余入口不需要。
+- 0.x 期间接口可能有破坏性改动。设计和每一步的取舍见仓库里的 `docs/design/sdk.md`。

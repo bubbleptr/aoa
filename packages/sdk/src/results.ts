@@ -1,8 +1,9 @@
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-
-/** The result shape pi's own tools return; `codingTools()` outputs carry it through the kernel journal. */
+/**
+ * The result shape pi's own tools return; `codingTools()` outputs carry it through the kernel journal. Written out
+ * rather than imported from pi, so `@aoa/sdk/prompt` needs no pi installed.
+ */
 export type PiToolResult = {
-  content: (TextContent | ImageContent)[];
+  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
   details?: unknown;
   isError?: boolean;
 };

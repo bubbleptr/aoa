@@ -8,10 +8,12 @@
   },
   "dependencies": {
     "@aoa/sdk": "workspace:*",
-    "@aoa/store-sqlite": "workspace:*"
+    "@aoa/store-sqlite": "workspace:*",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "typebox": "1.3.27"
   },
   "devDependencies": {
-    "@aoa/conformance": "workspace:*",
-    "@earendil-works/pi-ai": "1.5.2"
+    "@aoa/conformance": "workspace:*"
   }
 }
