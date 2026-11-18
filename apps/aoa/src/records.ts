@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { SqliteStore } from "@aoa/store-sqlite";
 
 /**
  * What the app keeps beside the kernel's tables, in the same database file (design §15「store 收口」): the last known
@@ -53,8 +53,12 @@ type JudgmentRow = {
   at: number;
 };
 
-/** On the store's own connection, so a write here never waits on the store's transaction. */
-export function records(db: Database): Records {
+/**
+ * On the store's own connection, so a write here never waits on the store's transaction; each write is a store
+ * transaction, so the store's `watch` (and the observation page) sees it like any other.
+ */
+export function records(store: SqliteStore): Records {
+  const { db } = store;
   const getPull = db.query<{ number: number; state: PullState["state"]; checked_at: number }, [string]>(
     "SELECT number, state, checked_at FROM pull_states WHERE session_id = ?",
   );
@@ -88,7 +92,7 @@ export function records(db: Database): Records {
         return r ? { number: r.number, state: r.state, checkedAt: r.checked_at } : null;
       },
       set(sessionId, p) {
-        setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt });
+        store.tx(() => setPull.run({ session: sessionId, number: p.number, state: p.state, at: p.checkedAt }));
       },
     },
     results: {
@@ -97,15 +101,17 @@ export function records(db: Database): Records {
         return r ? { result: r.result, applied: r.applied === 1 } : null;
       },
       declare(sessionId, result) {
-        declareResult.run({ session: sessionId, result });
+        store.tx(() => declareResult.run({ session: sessionId, result }));
       },
       markApplied(sessionId) {
-        applyResult.run(sessionId);
+        store.tx(() => applyResult.run(sessionId));
       },
     },
     judgments: {
       record(j) {
-        recordJudgment.run({ call: j.callId, session: j.sessionId, model: j.model, p: j.p, latency: j.latencyMs, error: j.error, at: j.at });
+        store.tx(() =>
+          recordJudgment.run({ call: j.callId, session: j.sessionId, model: j.model, p: j.p, latency: j.latencyMs, error: j.error, at: j.at }),
+        );
       },
       list: (inboxId, since) =>
         listJudgments.all(inboxId, since).map((r) => ({

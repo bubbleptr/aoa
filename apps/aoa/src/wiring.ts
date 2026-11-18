@@ -257,7 +257,7 @@ export function assemble(config: AgentConfig, seams: Seams = {}): Agent {
     config,
     seams,
     store,
-    records: records(store.db),
+    records: records(store),
     clock,
     log: seams.log ?? defaultLog,
     runGit: seams.runGit ?? runGitWithBun,

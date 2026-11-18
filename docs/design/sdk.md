@@ -184,8 +184,8 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - 锁、心跳和 `watch` 不在内核的 `Store` 上，在 `HostStore extends Store` 上（`lock()`、`lastBeat()`、`watch()`、`close()`），`createHost` 要的是它：内核的 worker、scheduler 这些只用 `tx`。SQLite 的锁是在旁边的 `<db>-host` 文件上开着一个排他事务：持有的进程死了由系统放掉，同一个进程里第二个连接也拿不到。`lock()` 拿不到时抛错，`:memory:` 返回 null。
 - `watch(fn, { othersOnly })`：宿主的循环只因别的进程的提交被叫醒，否则自己的每次写入都会把所有循环叫醒一遍。本进程的写事务按 SQLite 的 `total_changes()` 判断，只读的事务不触发。
 - 没有 channel 时，消息在写进 outbox 的同一个事务里标为 `sent`，不经 dispatcher：这样只调 `step.worker()` 也成立，同一次 drain 里的下一个 run 也看得到。
-- `schedule` 的 id 在库里是 `schedule:<inbox>:<id>`，两个 agent 的同名定时器互不相干，也碰不上内核自己的 `wake:`、`expire:`。用同样的参数再调什么都不改，所以宿主停着时错过的那一次照样触发；参数不同，或定时器已被撤，才按新的锚点重排并重新武装。
-- `read` 的 `since` 是时间（事件按收到、run 按开始），`limit` 取 `since` 之后最早的几条。读口的类型 `Reader` 在内核，分类器经 `PolicyContext.read` 拿到同一个读口；`apps/aoa` 的审核模型改用它。
+- `schedule` 的 id 在库里是 `schedule:<inbox>:<id>`，两个 agent 的同名定时器互不相干，也碰不上内核自己的 `wake:`、`expire:`。用同样的参数再调什么都不改，所以宿主停着时错过的那一次照样触发；参数不同，或定时器已被撤，才按新的锚点重排并重新武装。`followUp` 带了调用方的 id 时同样加前缀（`follow_up:<inbox>:<id>`）。
+- `read` 的 `since` 是时间（事件按收到、run 按开始），`limit` 取 `since` 之后最早的几条。读口的类型 `Reader` 在内核，分类器经 `PolicyContext.read` 拿到同一个读口；`apps/aoa` 的审核模型改用它。读口里有 `journal`，也就是先前调用的结果；§6.2 说分类器拿不到的是这一次调用的结果，先前的结果算不算在内还没定。
 - `append` 拒绝时抛 `AwaitingApproval`（带着在等的调用），措辞由调用方给。
 - `send_to`：一个工具给所有 agent 共用，说明里列出全部 agent（包括发送方自己），发给自己时报错。不是回复时的默认 thread 是 `agent:<目标名>/<发送方 session>/<调用 id>`，由调用推出而不是随机，所以同一个调用重跑仍然写进同一条 thread。额外参数用 `params` 声明（JSON Schema 属性），原样进 payload；`check` 之外多一个 `thread` 钩子，`apps/aoa` 用它照旧开 thread（GitHub 模式下是一个 issue，`agent:` 开头的 thread 发不到 GitHub）。
 - `AgentSpec.description` 和 `Agent.description` 给 `send_to` 的列表用；`apps/aoa` 填角色名。

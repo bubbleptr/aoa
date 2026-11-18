@@ -42,11 +42,12 @@ for (const files of [true, false]) {
     let seen = 0;
     const stop = host.watch(() => seen++);
 
-    const wrote = Date.now();
     await writeFromAnotherProcess(db);
+    // The writer has exited, so its commit is in.
+    const wrote = Date.now();
     while (seen === 0 && Date.now() - wrote < 2000) await Bun.sleep(10);
     expect(seen).toBeGreaterThan(0);
-    expect(Date.now() - wrote).toBeLessThan(1000 + 500);
+    expect(Date.now() - wrote).toBeLessThan(1000 + 200);
     stop();
   }, 10_000);
 }

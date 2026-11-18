@@ -310,7 +310,8 @@ export function createHost(o: HostOptions): Host {
       followUp(t) {
         const session = store.tx((tx) => tx.getSession(t.sessionId));
         if (session === null || session.inboxId !== spec.inbox) throw new Error(`Agent ${spec.name} has no session ${t.sessionId}.`);
-        const timer = addFollowUp(store, spec.inbox, t);
+        // A caller's id is scoped like a schedule's.
+        const timer = addFollowUp(store, spec.inbox, t.id === undefined ? t : { ...t, id: `follow_up:${spec.inbox}:${t.id}` });
         scheduler.wake();
         return timer.id;
       },
