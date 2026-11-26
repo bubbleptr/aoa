@@ -1,6 +1,6 @@
 {
   "name": "@aoa-dev/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Build always-on agents on Bun: inboxes, sessions, timers, deferred approvals, SQLite store, send_to and loopRuntime.",
   "license": "MIT",
   "repository": {
