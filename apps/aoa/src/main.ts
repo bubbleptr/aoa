@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { answer, close, messages, renderMessages, send, sendTo, status } from "./commands.ts";
 import { findConfig, loadConfig, validateForServe } from "./config.ts";
-import { mcpServer } from "./mcp.ts";
+import { serveMcp } from "./mcp.ts";
 import { serve } from "./serve.ts";
 import { DEFAULT_WEB_PORT, type Web, startWeb } from "./web.ts";
 import { type Seams, assemble } from "./wiring.ts";
@@ -215,10 +214,9 @@ export async function main(argv: string[], io: Io): Promise<number> {
         return 0;
       }
       case "mcp": {
-        const server = mcpServer(agent);
         // The SDK's transport does not notice the client going away; stdin ending is how it goes.
         const ended = new Promise<void>((resolve) => process.stdin.once("end", resolve));
-        await server.connect(new StdioServerTransport());
+        const server = serveMcp(agent);
         await Promise.race([ended, (io.stopSignal ?? signals)()]);
         await server.close();
         return 0;

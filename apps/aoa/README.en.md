@@ -97,7 +97,17 @@ With a review agent configured, the implementation agent hands its branch over w
 
 ## A chat agent as the entry point
 
-aoa has no main session of its own. Talk to another chat agent (Claude Code, say) and have it run the commands:
+aoa has no main session of its own. Talk to another chat agent (Claude Code, say); it hands out work, waits for messages and relays approvals through `aoa mcp`. Register it once:
+
+```bash
+claude mcp add aoa -- aoa mcp
+```
+
+`aoa mcp` offers five tools, `send`, `messages`, `status`, `close` and `answer`, reads and writes the same config and database, and does not need `serve` running. When the client supports MCP 2026-07-28 Tasks (Claude Code 2.1.332 and later), `messages` with `wait` no longer waits two minutes at most: it returns a task the client polls, which completes when there is something new. When the client can also show forms, an approval or question waiting for you is asked of you directly as a form: approve or deny an approval, with an optional reason, or type the answer to a question. If you decline the form, the call keeps waiting and the wait ends with it, so you can still answer it elsewhere.
+
+Convention: approvals belong to you. In clients that cannot show forms, the chat agent only relays the request and calls `answer` after you have clearly approved or denied. Over MCP, `send` cannot be used to answer a task that is waiting for approval.
+
+Harnesses that don't speak MCP can run the commands instead:
 
 ```bash
 aoa send "..."                           # hand out work and note the printed thread
@@ -106,14 +116,6 @@ aoa answer <call id> approve|deny [reason]  # when the message is an approval re
 ```
 
 `messages` reads the outbox, not `messages.md`, so it works in both modes; add `--json` for programs.
-
-Harnesses that speak MCP don't need to run commands. `aoa mcp` offers the same five tools, reads and writes the same config and database, and does not need `serve` running. Register it once in Claude Code:
-
-```bash
-claude mcp add aoa -- aoa mcp
-```
-
-Convention: approvals belong to you. The chat agent only relays the request and calls `answer` after you have clearly approved or denied. Over MCP, `send` cannot be used to answer a task that is waiting for approval.
 
 ## Connecting GitHub (optional)
 

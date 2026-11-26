@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { World } from "./world.ts";
 
 let worlds: World[] = [];
@@ -68,5 +70,27 @@ test("aoa mcp speaks MCP over stdio, and stdout carries nothing but protocol fra
     for (const line of raw) expect(JSON.parse(line)).toMatchObject({ jsonrpc: "2.0" });
   } finally {
     child.kill();
+  }
+}, 20_000);
+
+test("aoa mcp answers a 2026-07-28 client over stdio", async () => {
+  const w = new World({ local: true });
+  worlds.push(w);
+  await w.start();
+  const client = new Client({ name: "test", version: "0.0.0" }, { versionNegotiation: { mode: "auto" } });
+  try {
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [main, "mcp", "--config", w.configPath],
+        cwd: w.root,
+        env: { PATH: process.env.PATH ?? "", HOME: w.root },
+        stderr: "ignore",
+      }),
+    );
+    expect(client.getNegotiatedProtocolVersion()).toBe("2026-07-28");
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(["answer", "close", "messages", "send", "status"]);
+  } finally {
+    await client.close();
   }
 }, 20_000);
