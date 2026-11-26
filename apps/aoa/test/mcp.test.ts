@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { mcpServer } from "../src/mcp.ts";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { serveMcp } from "../src/mcp.ts";
 import { World, call, say } from "./world.ts";
 import type { AgentInput } from "../src/config.ts";
 
@@ -26,7 +25,8 @@ async function world(agents?: Record<string, AgentInput>): Promise<World> {
 async function connect(w: World): Promise<Client> {
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0.0.0" });
-  await Promise.all([mcpServer(w.agent).connect(serverSide), client.connect(clientSide)]);
+  serveMcp(w.agent, serverSide);
+  await client.connect(clientSide);
   clients.push(client);
   return client;
 }

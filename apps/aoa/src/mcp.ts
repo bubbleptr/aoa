@@ -1,4 +1,5 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type Transport } from "@modelcontextprotocol/server";
+import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
 import { answer, close, messages, send, sendTo, status } from "./commands.ts";
 import type { Agent } from "./wiring.ts";
@@ -22,12 +23,12 @@ export function mcpServer(agent: Agent): McpServer {
         "for the named `agent`; `branch` names the branch a review agent reviews. With `to` (a thread, or a prefix of a " +
         "thread or session id) the text continues that task; on a task waiting for an answer to its question, the text " +
         "is the answer. A task waiting for an approval is refused: approvals go through `answer`. Returns the thread.",
-      inputSchema: {
+      inputSchema: z.object({
         text: z.string().describe("What to tell the agent."),
         agent: z.string().optional().describe("A named agent from the config; without it, the default agent."),
         branch: z.string().optional().describe("For a review agent: the branch to review."),
         to: z.string().optional().describe("The task to add to: a thread, or a prefix of a thread or session id."),
-      },
+      }),
     },
     async ({ text, agent: name, branch, to }) => {
       if (to !== undefined) {
@@ -47,10 +48,10 @@ export function mcpServer(agent: Agent): McpServer {
         "What aoa's agents said, oldest first, with a cursor. Pass the cursor as `since` to get only what came after it. " +
         "With `wait`, the call waits up to that many seconds for something new; when it returns empty, call it again " +
         "with the returned cursor to keep waiting. An approval request carries the call id to `answer`.",
-      inputSchema: {
+      inputSchema: z.object({
         since: z.string().optional().describe("The cursor a previous call returned."),
         wait: z.number().min(0).max(MAX_WAIT_SECONDS).default(0).describe(`Seconds to wait for something new, 0 to ${MAX_WAIT_SECONDS}.`),
-      },
+      }),
     },
     async ({ since, wait }) => json(await messages(agent, { since: since ?? null, waitMs: wait * 1000 })),
   );
@@ -71,10 +72,10 @@ export function mcpServer(agent: Agent): McpServer {
       description:
         "Local mode only: record how a task's branch ended, after the user merged or discarded it. serve then closes " +
         "the task and removes its worktree, keeping the branch.",
-      inputSchema: {
+      inputSchema: z.object({
         thread: z.string().describe("The task: a thread, or a prefix of a thread or session id."),
         outcome: z.enum(["merged", "discarded"]),
-      },
+      }),
     },
     async ({ thread, outcome }) => {
       const session = close(agent, thread, outcome);
@@ -88,14 +89,22 @@ export function mcpServer(agent: Agent): McpServer {
       description:
         "Answer a call that waits for the user: approve or deny an approval request, or answer a question. Only call " +
         "this after the user has explicitly said yes or no to that call in this conversation; never decide for them.",
-      inputSchema: {
+      inputSchema: z.object({
         callId: z.string().describe("The call id, or a unique prefix of it, from `status` or `messages`."),
         verdict: z.enum(["approve", "deny"]),
         text: z.string().optional().describe("The user's reason, or their answer to a question."),
-      },
+      }),
     },
     async ({ callId, verdict, text }) => json({ callId: answer(agent, callId, verdict, text, "mcp"), verdict }),
   );
 
   return server;
+}
+
+/**
+ * Serves `aoa mcp` on `transport` (stdio by default). The opening exchange picks the protocol era per connection, so a
+ * 2025 client that initializes and a 2026-07-28 client that sends `server/discover` both work.
+ */
+export function serveMcp(agent: Agent, transport?: Transport): StdioServerHandle {
+  return serveStdio(() => mcpServer(agent), transport ? { transport } : {});
 }

@@ -15,11 +15,13 @@
     "@aoa-dev/sdk": "workspace:*",
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
-    "@modelcontextprotocol/sdk": "1.32.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "typebox": "1.3.27",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@aoa-dev/conformance": "workspace:*"
+    "@aoa-dev/conformance": "workspace:*",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/ext-tasks": "0.2.3"
   }
 }
