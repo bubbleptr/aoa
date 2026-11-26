@@ -24,6 +24,7 @@ const boards = [
   { name: "architecture", title: "aoa Architecture" },
   { name: "tool-call", title: "aoa Tool Call" },
   { name: "multi-agent", title: "aoa Multi Agent" },
+  { name: "mcp-oar", title: "aoa with MCP 2.0 and OAR" },
 ];
 
 const tokens: Record<string, string> = {

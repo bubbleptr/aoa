@@ -138,6 +138,17 @@ The kernel's own tools (timers, notify, memory, `send_to`) mark themselves `low`
 - **Tier 1 (the kernel decides and journals every tool call)**: `@aoa-dev/sdk/pi` ships the built-in pi multi-provider runtime (see [`examples/tui`](examples/tui)); `@aoa-dev/sdk/loop` has zero third-party dependencies — pass a single `complete()` function to plug in any model SDK or plain `fetch`.
 - **Tier 2: external harnesses** (`HarnessRuntime`), which use their own tools and sandboxes and relay approvals through `ask`; the SDK defines the interface and verifies its six conventions in conformance tests, without bundling vendor harness adapters.
 
+### With MCP 2.0 and OAR
+
+[OAR](https://github.com/botiverse/oar) (Open Agent Runtime) drives Claude Code, Codex, Pi and other coding harnesses through one API, so it can supply tier-2 runtimes. On the other side, MCP 2.0's Skills, Tasks and Elicitation let any MCP agent hand out work: Skills ship the manual, Tasks make each dispatch a background task whose result goes straight back to the caller, and Elicitation puts a worker's question in front of the user.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/mcp-oar-en-dark.png">
+  <img alt="aoa with MCP 2.0 and OAR: on the left, any MCP agent connects through Skills (the manual), Tasks (dispatch and result) and Elicitation (questions); in the middle, the aoa kernel has Inbox, Worker, Timers, Memory, Permissions and Outbox, with state in SQLite; on the right, OAR controls sessions with prompt, steer and abort, records facts as records, and returns approvals and questions to the kernel as requests, driving Claude Code, Codex, Pi, Kimi Code, Grok Build, OpenCode and more. This shows how they fit together; aoa does not ship an OAR adapter or an MCP 2.0 entry yet" src="docs/diagrams/mcp-oar-en-light.png">
+</picture>
+
+This shows how they fit together: aoa does not ship an OAR adapter or an MCP 2.0 entry yet. Plugging OAR in means implementing `HarnessRuntime`.
+
 ## Multiple agents
 
 One host holds several agents that share one database and one clock. Agents only cooperate by writing events into each other's inboxes, and `send_to` is the ready-made tool for it:

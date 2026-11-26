@@ -137,6 +137,17 @@ host.agent({
 - **第一档（内核管每次工具调用）**：`@aoa-dev/sdk/pi` 内置 pi 的多模型接入与会话管理（见 [`examples/tui`](examples/tui)）；不想装 pi 时，`@aoa-dev/sdk/loop` 零第三方依赖，传一个 `complete()` 函数就能接任意模型 SDK 或原生 `fetch`。
 - **第二档：外部 harness**（`HarnessRuntime`），用它们自己的工具和沙箱，把需要确认的操作经 `ask` 转成 aoa 的审批请求；SDK 定义接口并在一致性测试里覆盖六条约定，不内置具体 harness 实现。
 
+### 搭配 MCP 2.0 和 OAR
+
+[OAR](https://github.com/botiverse/oar)（Open Agent Runtime）用一套 API 驱动 Claude Code、Codex、Pi 等各家 coding harness，可以作为第二档 runtime 的来源。MCP 2.0 的 Skills、Tasks 和 Elicitation 让任意 MCP agent 在另一头派活：Skills 是自带的说明书，Tasks 让一次派单成为后台任务、结果直接回给调用者，Elicitation 让 worker 的提问直接到用户面前。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/mcp-oar-dark.png">
+  <img alt="aoa 搭配 MCP 2.0 和 OAR：左边任意 MCP agent 通过 Skills（说明书）、Tasks（派单与结果）、Elicitation（提问）接入；中间 aoa 内核有 Inbox、Worker、Timers、Memory、Permissions、Outbox，状态在 SQLite；右边 OAR 用 prompt、steer、abort 控制会话，用 records 记录事实，用 requests 把审批和提问交回内核，驱动 Claude Code、Codex、Pi、Kimi Code、Grok Build、OpenCode 等。这是组合方式示意，aoa 尚未内置 OAR 适配器和 MCP 2.0 入口" src="docs/diagrams/mcp-oar-light.png">
+</picture>
+
+这是组合方式示意：aoa 尚未内置 OAR 适配器和 MCP 2.0 入口，OAR 接入时实现 `HarnessRuntime` 即可。
+
 ## 多个 agent
 
 一个 host 持有多个 agent，共用一个库和一个时钟。agent 之间只通过往对方的 inbox 写事件合作，`send_to` 是现成的工具：
