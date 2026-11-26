@@ -1,7 +1,8 @@
-import { McpServer, type Transport } from "@modelcontextprotocol/server";
+import { McpServer, ProtocolError, ProtocolErrorCode, type ServerContext, type Transport } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
-import { answer, close, messages, send, sendTo, status } from "./commands.ts";
+import { type Listing, answer, close, messages, send, sendTo, status } from "./commands.ts";
+import { type Ask, TASKS_EXTENSION, type Wait, Waits, declaresTasks, waitOf } from "./mcp-wait.ts";
 import type { Agent } from "./wiring.ts";
 
 const MAX_WAIT_SECONDS = 120;
@@ -14,6 +15,38 @@ const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSO
  */
 export function mcpServer(agent: Agent): McpServer {
   const server = new McpServer({ name: "aoa", version: "0.0.0" });
+  const waits = new Waits();
+
+  /**
+   * What a wait from `since` finds now: whether something new needs the caller, the calls to ask as forms, and the
+   * listing it completes with. An approval request counts only while its call still waits and cannot be asked as a
+   * form; one already answered is history, and the agent says something once it goes on.
+   */
+  async function look(since: string | null, _ctx: ServerContext): Promise<{ settled: boolean; asks: Ask[]; listing: Listing }> {
+    const listing = await messages(agent, { since, waitMs: 0 });
+    const asks: Ask[] = [];
+    const asked = new Set(asks.map((a) => a.callId));
+    const settled = listing.messages.some((m) => m.kind !== "approval_request" || (m.pending === true && !asked.has(m.callId!)));
+    return { settled, asks, listing };
+  }
+
+  function waitBehind(handle: string): Wait {
+    const w = waitOf(handle);
+    if (w === null) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `No wait ${handle}.`);
+    return w;
+  }
+
+  /** A wait's state now; an unknown cursor is the caller's error, as for `messages`. */
+  async function stateOf(handle: string, ctx: ServerContext) {
+    const w = waitBehind(handle);
+    let found;
+    try {
+      found = await look(w.since, ctx);
+    } catch (err) {
+      throw new ProtocolError(ProtocolErrorCode.InvalidParams, err instanceof Error ? err.message : String(err));
+    }
+    return waits.state(handle, w, agent.clock.now(), { settled: found.settled, asks: found.asks, result: () => json(found.listing) });
+  }
 
   server.registerTool(
     "send",
@@ -47,13 +80,23 @@ export function mcpServer(agent: Agent): McpServer {
       description:
         "What aoa's agents said, oldest first, with a cursor. Pass the cursor as `since` to get only what came after it. " +
         "With `wait`, the call waits up to that many seconds for something new; when it returns empty, call it again " +
-        "with the returned cursor to keep waiting. An approval request carries the call id to `answer`.",
+        "with the returned cursor to keep waiting. A client that declares MCP Tasks gets a task to poll instead, which " +
+        "completes with the same listing once something new needs the caller. An approval request carries the call id to `answer`.",
       inputSchema: z.object({
         since: z.string().optional().describe("The cursor a previous call returned."),
         wait: z.number().min(0).max(MAX_WAIT_SECONDS).default(0).describe(`Seconds to wait for something new, 0 to ${MAX_WAIT_SECONDS}.`),
       }),
     },
-    async ({ since, wait }) => json(await messages(agent, { since: since ?? null, waitMs: wait * 1000 })),
+    async ({ since, wait }, ctx) => {
+      const from = since ?? null;
+      if (wait > 0 && declaresTasks(ctx)) {
+        const now = await look(from, ctx);
+        // A CreateTaskResult is not a CallToolResult; the SDK passes it through to the wire as it is.
+        if (!now.settled || now.asks.length > 0) return waits.start({ since: from, startedAt: agent.clock.now() }) as unknown as ReturnType<typeof json>;
+        return json(now.listing);
+      }
+      return json(await messages(agent, { since: from, waitMs: wait * 1000 }));
+    },
   );
 
   server.registerTool(
@@ -97,6 +140,13 @@ export function mcpServer(agent: Agent): McpServer {
     },
     async ({ callId, verdict, text }) => json({ callId: answer(agent, callId, verdict, text, "mcp"), verdict }),
   );
+
+  server.server.setRequestHandler("tasks/get", { params: z.object({ taskId: z.string() }) }, async ({ taskId }, ctx) => stateOf(taskId, ctx));
+  server.server.setRequestHandler("tasks/cancel", { params: z.object({ taskId: z.string() }) }, async ({ taskId }) => {
+    waits.cancel(taskId, waitBehind(taskId), agent.clock.now());
+    return {};
+  });
+  server.server.registerCapabilities({ extensions: { [TASKS_EXTENSION]: {} } });
 
   return server;
 }
