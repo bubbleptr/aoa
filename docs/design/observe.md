@@ -36,3 +36,15 @@
 - `send` 带 `to` 时，如果那个任务在等审批（延后的调用不是 `ask_user` 的提问），直接拒绝并指向 `answer`，什么都不追加。原因：内核会把等审批的 thread 上来的 `/approve` 当成批准，答复就有了两条路；拒掉以后答复只有 `answer` 一条。检查和追加在同一个事务里，`serve` 不会在两者之间把 session 停下来。为此内核多导出了 `appendInTx`（只是导出，行为不变）。在等 `ask_user` 提问的任务上，文字照旧就是答案。CLI 的 `send --to` 行为不变。
 - `answer` 写下的 `approval_answer` 在 payload 里多一个 `via: "mcp"`；CLI 和 thread 上的回复不带它，所以库里分得清答复从哪来。这是 `AnswerPayload` 上新增的可选字段，`answerDeferred` 多一个可选参数，规范里没有，这里加上，表结构不变。
 - 安全只靠两样：`answer` 的工具说明写明只有在用户在对话里对那个调用明确说了同意或拒绝之后才能调用；以及 harness 自己对工具调用的确认。这和让 shell 去跑 `aoa answer` 是同一种信任，没有另加机制。
+
+### MCP 2026-07-28：等待是 task，等你的调用是表单（2026-11-26 加）
+
+起因：经 MCP 时主会话要一直拿游标重调 `messages`，每次最多两分钟；审批虽然约定「只转述、等用户说了再 `answer`」，但这只写在工具说明里。MCP 2026-07-28 的 Tasks 扩展（`io.modelcontextprotocol/tasks`）和表单 elicitation 正好补上这两处，Claude Code 2.1.332 两样都声明了。
+
+- 改用 MCP TS SDK v2（`@modelcontextprotocol/server`），经 `serveStdio` 按连接协商协议版本：发 `initialize` 的 2025 版客户端照旧，发 `server/discover` 的拿到 2026-07-28。服务端声明 Tasks 扩展。
+- 不加新工具。客户端在这次请求的 `_meta` 里声明了 Tasks，且 `messages` 带 `wait > 0` 时，若现在没有要给它看的东西，返回一个 task（`resultType: "task"`），不再受两分钟上限；客户端用 `tasks/get` 轮询，完成时的结果就是那一刻 `messages` 会返回的列表。没声明 Tasks 或 `wait` 为 0 时行为不变。
+- task 就是这次等待，句柄里带着游标和开始时间（`wait:<游标>:<开始时间>:<随机串>`），每次轮询都直接读库，没有定时器，重连后的轮询照样找得到。游标不存在时报 `InvalidParams`。取消只是不再等，什么都不写进库。已经结束（完成或取消）的等待在这条连接上保持原样，之后再来的消息不会改它。
+- 什么算「有东西要给它看」：游标之后任何一条消息，审批请求除外。审批请求只在它的调用仍在等用户、又没法用表单问时才算；已经有答复排着的调用在等 agent，不算，agent 接着做会再说话。内核里一个调用要等 agent 取走答复才离开 `pending()`，所以「在等用户」是 `pending()` 减去已有未被丢弃的 `approval_answer` 的那些。
+- 客户端同时声明了表单 elicitation 时，所有 agent 里在等用户的调用都在 task 上以 `input_required` 的表单问用户本人，等待开始前就在等的也一样：`messages` 本来就不分任务，所以表单里写明哪个 agent（多于一个时）和 thread。内容用 outbox 里审批请求的全文（`bash` 的命令、其他调用的完整 JSON、放行请求的预览），去掉末尾给通道的 `/approve` 回复说明，不用 `status` 截过的那句。提问要一个必填的答案；审批、harness 审批和放行要一个必填的 `approve`/`deny` 和可选理由。
+- 答复经 `tasks/update` 的 `inputResponses` 回来，只认这次能问的调用的完整 id，其他键忽略。写的和页面上回答是同一条 `approval_answer`，`via: "elicitation"`，库里分得清是用户在表单里答的还是模型经 `answer` 转的。拒绝、取消、没选决定或答案为空都不算答复，更不算拒绝：调用留着等，这条连接上不再用表单问它，等待随即带着它结束，用户可以用 `answer`、页面或 CLI 再答。从轮询到答复之间被别处答了的调用跳过，那边的答复为准。取消等待时同样把在等的调用记为不再问。
+- `answer` 工具和它的约定不变，给不能显示表单的客户端用。

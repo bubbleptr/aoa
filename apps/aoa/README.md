@@ -97,7 +97,17 @@ agents: {
 
 ## 让聊天里的 agent 当入口
 
-aoa 自己没有主会话。你在别的聊天 agent（比如 Claude Code）里说话，让它敲命令就行：
+aoa 自己没有主会话。你在别的聊天 agent（比如 Claude Code）里说话，它经 `aoa mcp` 派活、等消息、转审批。注册一次：
+
+```bash
+claude mcp add aoa -- aoa mcp
+```
+
+`aoa mcp` 提供 `send`、`messages`、`status`、`close`、`answer` 五个工具，读写同一份配置和库，不需要 `serve` 在跑。客户端支持 MCP 2026-07-28 的 Tasks 时（Claude Code 2.1.332 起），`messages` 带 `wait` 不再一次最多等两分钟，而是返回一个客户端自己轮询的 task，有新消息时完成。客户端还能显示表单时，等你的审批或提问直接以表单问你本人：审批选批准或拒绝，可附理由；提问填答案。你拒绝填写，调用就留着等，等待带着它结束，之后还能在别处回答。
+
+约定：审批留给你。不能显示表单的客户端里，聊天 agent 只转述请求，你明确同意或拒绝之后才调用 `answer`。通过 MCP 时，`send` 不能拿来回答等审批的任务。
+
+不说 MCP 的 harness 让它敲命令就行：
 
 ```bash
 aoa send "<text>"                        # 派活，记下输出的线程
@@ -106,14 +116,6 @@ aoa answer <call-id> approve|deny [reason]  # 消息是审批请求时
 ```
 
 `messages` 读的是 outbox，不是 `messages.md`，所以两种模式都能用；加 `--json` 方便程序读。
-
-会说 MCP 的 harness 不用敲命令。`aoa mcp` 提供同样的五个工具，读写同一份配置和库，不需要 `serve` 在跑。在 Claude Code 里注册一次：
-
-```bash
-claude mcp add aoa -- aoa mcp
-```
-
-约定：审批留给你。聊天 agent 只转述请求，你明确同意或拒绝之后才调用 `answer`。通过 MCP 时，`send` 不能拿来回答等审批的任务。
 
 ## 接 GitHub（可选）
 
