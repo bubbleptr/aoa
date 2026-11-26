@@ -144,3 +144,135 @@ describe("messages with wait, for a client that declares Tasks", () => {
     expect(s.text<Listing>(await s.tool("messages", { wait: 60 })).messages.map((m) => m.body)).toEqual(["First."]);
   });
 });
+
+describe("calls waiting on the user go to them as forms, for a client that declares form elicitation", () => {
+  type Form = { method: string; params: { message: string; requestedSchema: { properties: Record<string, { enum?: string[] }>; required: string[] } } };
+
+  /** A world whose agent asks to deploy, which the classifier leaves to the user, and then says it did. */
+  async function deploying(caps: Caps = { tasks: true, elicitation: true }) {
+    const s = await world(caps);
+    s.w.judge = (shown) => (shown.includes("deploy") ? "unsure" : "allow");
+    s.w.script([call("bash", { command: "echo deployed >> deploy.log" }), call("notify", { body: "Deployed." }), say("Done.")]);
+    await s.tool("send", { text: "Deploy it." });
+    await s.w.drain();
+    const callId = s.w.sessions()[0]!.pending!;
+    expect(callId).toBeTruthy();
+    return { ...s, callId };
+  }
+
+  async function inputs(s: Awaited<ReturnType<typeof world>>, taskId: string): Promise<Record<string, Form>> {
+    const got = await s.get(taskId);
+    expect(got.status).toBe("input_required");
+    return (got as unknown as { inputRequests: Record<string, Form> }).inputRequests;
+  }
+
+  test("an approval asks for a decision on the whole call; approving it lets the agent go on, and the wait ends with what it said", async () => {
+    const s = await deploying();
+    // The request is already queued when the wait starts: the form still goes out.
+    const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+    const form = (await inputs(s, task.taskId))[s.callId]!;
+    expect(form.method).toBe("elicitation/create");
+    expect(form.params.message).toContain("echo deployed >> deploy.log");
+    expect(form.params.message).not.toContain("/approve");
+    expect(form.params.requestedSchema.properties.decision!.enum).toEqual(["approve", "deny"]);
+    expect(form.params.requestedSchema.required).toEqual(["decision"]);
+
+    await s.rpc("tasks/update", { taskId: task.taskId, inputResponses: { [s.callId]: { action: "accept", content: { decision: "approve" } } } });
+    expect(s.w.events().at(-1)).toMatchObject({ source: "approval_answer", payload: { callId: s.callId, verdict: "approve", via: "elicitation" } });
+    expect(await s.get(task.taskId)).toMatchObject({ status: "working" });
+
+    await s.w.drain();
+    const done = await s.get(task.taskId);
+    expect(done.status).toBe("completed");
+    const listing = s.text<Listing>((done as unknown as { result: Record<string, unknown> }).result);
+    expect(listing.messages.at(-1)!.body).toBe("Deployed.");
+    expect(listing).toEqual(s.text<Listing>(await s.tool("messages")));
+  });
+
+  test("denying with a reason passes the reason on", async () => {
+    const s = await deploying();
+    const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+    await inputs(s, task.taskId);
+    await s.rpc("tasks/update", {
+      taskId: task.taskId,
+      inputResponses: { [s.callId]: { action: "accept", content: { decision: "deny", reason: "Not on a Friday." } } },
+    });
+    expect(s.w.events().at(-1)).toMatchObject({ payload: { callId: s.callId, verdict: "deny", text: "Not on a Friday.", via: "elicitation" } });
+  });
+
+  test("a question asks for its answer as text", async () => {
+    const s = await world({ tasks: true, elicitation: true });
+    s.w.script([call("ask_user", { question: "Which file name?" }), call("notify", { body: "Thanks." }), say("Done.")]);
+    await s.tool("send", { text: "Add a greeting file." });
+    await s.w.drain();
+    const callId = s.w.sessions()[0]!.pending!;
+
+    const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+    const form = (await inputs(s, task.taskId))[callId]!;
+    expect(form.params.message).toContain("Which file name?");
+    expect(form.params.requestedSchema.required).toEqual(["answer"]);
+
+    await s.rpc("tasks/update", { taskId: task.taskId, inputResponses: { [callId]: { action: "accept", content: { answer: "hello.txt" } } } });
+    expect(s.w.events().at(-1)).toMatchObject({ payload: { callId, verdict: "approve", text: "hello.txt", via: "elicitation" } });
+  });
+
+  test("declining, or accepting without a decision, leaves the call waiting and ends the wait with it", async () => {
+    for (const response of [{ action: "decline" }, { action: "cancel" }, { action: "accept", content: {} }, { action: "accept", content: { decision: "maybe" } }]) {
+      const s = await deploying();
+      const events = s.w.events().length;
+      const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+      await inputs(s, task.taskId);
+      await s.rpc("tasks/update", { taskId: task.taskId, inputResponses: { [s.callId]: response } });
+      expect(s.w.events()).toHaveLength(events);
+
+      const done = await s.get(task.taskId);
+      expect(done.status).toBe("completed");
+      const listing = s.text<Listing>((done as unknown as { result: Record<string, unknown> }).result);
+      expect(listing.messages.map((m) => [m.callId, m.pending])).toEqual([[s.callId, true]]);
+      // A declined call is not asked again on this connection: a new wait returns it at once.
+      expect((await s.tool("messages", { wait: 60 })).resultType).not.toBe("task");
+    }
+  });
+
+  test("an update takes only the ids it asked about, by their whole id", async () => {
+    const s = await deploying();
+    const events = s.w.events().length;
+    const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+    await inputs(s, task.taskId);
+    const r = await s.rpc("tasks/update", {
+      taskId: task.taskId,
+      inputResponses: { [s.callId.slice(0, 8)]: { action: "accept", content: { decision: "approve" } }, other: { action: "accept" } },
+    });
+    expect(r.error).toBeUndefined();
+    expect(s.w.events()).toHaveLength(events);
+    expect(await s.get(task.taskId)).toMatchObject({ status: "input_required" });
+  });
+
+  test("a call answered elsewhere since the poll is not answered again", async () => {
+    const s = await deploying();
+    const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+    await inputs(s, task.taskId);
+    expect((await s.w.cli("answer", s.callId, "deny", "from the CLI")).code).toBe(0);
+    const r = await s.rpc("tasks/update", { taskId: task.taskId, inputResponses: { [s.callId]: { action: "accept", content: { decision: "approve" } } } });
+    expect(r.error).toBeUndefined();
+    const answers = s.w.events().filter((e) => e.source === "approval_answer");
+    expect(answers.map((e) => (e.payload as { verdict: string; text?: string }).text)).toEqual(["from the CLI"]);
+  });
+
+  test("cancelling the wait leaves the call waiting and does not ask it again", async () => {
+    const s = await deploying();
+    const task = CreateTaskResultV2Schema.parse(await s.tool("messages", { wait: 60 }));
+    await inputs(s, task.taskId);
+    await s.rpc("tasks/cancel", { taskId: task.taskId });
+    expect(await s.get(task.taskId)).toMatchObject({ status: "cancelled" });
+    expect(s.w.sessions()[0]).toMatchObject({ status: "paused", pending: s.callId });
+    expect((await s.tool("messages", { wait: 60 })).resultType).not.toBe("task");
+  });
+
+  test("without form elicitation, a waiting approval ends the wait as it does today", async () => {
+    const s = await deploying({ tasks: true });
+    const r = await s.tool("messages", { wait: 60 });
+    expect(r.resultType).not.toBe("task");
+    expect(s.text<Listing>(r).messages.map((m) => [m.callId, m.pending])).toEqual([[s.callId, true]]);
+  });
+});
