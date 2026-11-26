@@ -12,7 +12,7 @@ An SDK for building Always-on Agents on Bun. Agents run 24x7 on an Inbox + Worke
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/sdk-en-dark.png">
-  <img alt="aoa SDK architecture: your app writes events and approval answers to the Inbox with append and answer, sets timers with schedule and followUp, and reads the Outbox with messages and watch; each agent has an Inbox, Worker, Timers, Memory, Outbox, Permissions and Tools, and several agents can message each other with send_to; the Worker hands a run to a runtime, tier 1 being a runtime whose tools the kernel runs, such as loop or pi, and tier 2 an external harness, with Codex and dsh adapters in examples/; the runtime's tool calls come back to Permissions, allowed ones run in Tools and ones needing approval go out through the Outbox; every agent shares one SQLite file" src="docs/diagrams/sdk-en-light.png">
+  <img alt="aoa SDK architecture: your app writes events and approval answers to the Inbox with append and answer, sets timers with schedule and followUp, and reads the Outbox with messages and watch; each agent has an Inbox, Worker, Timers, Memory, Outbox, Permissions and Tools, and several agents can message each other with send_to; the Worker hands a run to a runtime, tier 1 being the dependency-free loop and tier 2 an external harness, with Codex and dsh adapters in examples/; the runtime's tool calls come back to Permissions, allowed ones run in Tools and ones needing approval go out through the Outbox; every agent shares one SQLite file" src="docs/diagrams/sdk-en-light.png">
 </picture>
 
 If you want a coding agent you can use right away, see the [`aoa` command](apps/aoa/README.en.md), built on this SDK.

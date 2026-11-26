@@ -12,7 +12,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/sdk-dark.png">
-  <img alt="aoa SDK 架构：你的应用用 append、answer 往 Inbox 写事件和审批答复，用 schedule、followUp 设定时器，用 messages、watch 读 Outbox；每个 agent 有 Inbox、Worker、Timers、Memory、Outbox、Permissions 和 Tools，可以有多个 agent，用 send_to 互发；Worker 把 run 交给 runtime，第一档是 loop 或 pi 这类由内核管工具的 runtime，第二档是外部 harness，Codex 和 dsh 的适配器在 examples/；runtime 的工具调用回到 Permissions，放行的交给 Tools 执行，要审批的经 Outbox 发出；所有 agent 共用一个 SQLite 文件" src="docs/diagrams/sdk-light.png">
+  <img alt="aoa SDK 架构：你的应用用 append、answer 往 Inbox 写事件和审批答复，用 schedule、followUp 设定时器，用 messages、watch 读 Outbox；每个 agent 有 Inbox、Worker、Timers、Memory、Outbox、Permissions 和 Tools，可以有多个 agent，用 send_to 互发；Worker 把 run 交给 runtime，第一档是零依赖的 loop，第二档是外部 harness，Codex 和 dsh 的适配器在 examples/；runtime 的工具调用回到 Permissions，放行的交给 Tools 执行，要审批的经 Outbox 发出；所有 agent 共用一个 SQLite 文件" src="docs/diagrams/sdk-light.png">
 </picture>
 
 想直接用一个写代码的 agent，见建在这个 SDK 上的 [`aoa` 命令](apps/aoa/README.md)。
