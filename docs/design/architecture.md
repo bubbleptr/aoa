@@ -38,14 +38,15 @@ interface Channel {
 
 | 包 | 内容 |
 | --- | --- |
-| `packages/sdk` | 唯一对外发布的 npm 包（`@aoa-dev/sdk`）：内部含内核（`src/kernel`：类型、worker 循环、scheduler、dispatcher、策略裁决，不单独导出）与 SQLite 存储（`src/sqlite`：`bun:sqlite` 表结构和事务）；对外导出 `createHost`、`sqliteStore`、`@aoa-dev/sdk/loop`、`@aoa-dev/sdk/pi`、`@aoa-dev/sdk/prompt`、`@aoa-dev/sdk/tools/coding`（§15） |
+| `packages/sdk` | 唯一对外发布的 npm 包（`@aoa-dev/sdk`）：内部含内核（`src/kernel`：类型、worker 循环、scheduler、dispatcher、策略裁决，不单独导出）与 SQLite 存储（`src/sqlite`：`bun:sqlite` 表结构和事务）；对外导出 `createHost`、`sqliteStore`、`@aoa-dev/sdk/loop`、`@aoa-dev/sdk/prompt`、`@aoa-dev/sdk/tools/coding`（§15） |
+| `packages/pi` | `@aoa-dev/pi`，不发布：pi 作为第一档 runtime（`piRuntime`）、`piClassifier`、`codingTools`；`apps/aoa` 和 `examples/tui` 用 |
 | `packages/channels/local` | 本地通道：消息写文件，发桌面通知 |
 | `packages/channels/github` | 可选。轮询 issue 和评论，开 PR，发评论 |
 | `packages/conformance` | C1–C20，带故障注入点的假 runtime 和假时钟 |
 | `apps/aoa` | CLI、`serve`、worktree 管理；只经 `@aoa-dev/sdk` 公开接口组装 agent |
-| `examples/tui` | 极简 TUI 交互式编码 agent 示例，建立在 `@aoa-dev/sdk` 与 `@aoa-dev/sdk/pi` 之上 |
+| `examples/tui` | 极简 TUI 交互式编码 agent 示例，建立在 `@aoa-dev/sdk` 与 `@aoa-dev/pi` 之上 |
 
-写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`@aoa-dev/sdk/tools/coding` 的 `codingTools` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
+写代码用的工具（bash、read、edit、write 等）也是内核里登记的工具：`@aoa-dev/pi` 的 `codingTools` 把 pi 自带的实现包成内核工具，pi 自己不直接执行任何工具。所以每一次调用都经过裁决和日志，没有第二条路。
 
 runtime 只返回 `silent` 或 `deferred`；这次 run 往 outbox 里写过消息时，内核把结局记成 `sent`。
 

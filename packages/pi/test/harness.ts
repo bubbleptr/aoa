@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CallId, Event, RunInput, Tool, ToolResult } from "../../src/kernel/index.ts";
+import type { CallId, Event, RunInput, Tool, ToolResult } from "@aoa-dev/sdk";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -9,7 +9,7 @@ import {
   type FauxResponseStep,
   type Message,
 } from "@earendil-works/pi-ai";
-import { piRuntime } from "../../src/pi/index.ts";
+import { piRuntime } from "../src/index.ts";
 
 export const API_KEY = "sk-test-secret-0123456789";
 

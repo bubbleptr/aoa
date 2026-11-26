@@ -1,8 +1,8 @@
 import type { Event, RunInput, ToolResult } from "./kernel/index.ts";
-import { resultText } from "./results.ts";
+import { isPiToolResult, resultText, type PiToolResult } from "./results.ts";
 
-// For harness adapters: how a tool output reads as text.
-export { resultText };
+// For adapters: how a tool output reads as text, and the content-block result shape it understands.
+export { isPiToolResult, resultText, type PiToolResult };
 
 export type Answer = NonNullable<RunInput["answer"]>;
 

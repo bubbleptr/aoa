@@ -123,7 +123,7 @@ type RunActivity =
   | { kind: "tool_end"; callId: CallId; result: ToolResult };
 ```
 
-- SDK 只内置 pi（第一档）：pi 的 agent loop 和模型接入，放在子路径 `@aoa-dev/sdk/pi`，只用第二档的人不用装 pi 的依赖。编码工具（bash、read、edit、write）和编码规则是可选的 `@aoa-dev/sdk/tools/coding`，不默认装上，内核层不假设 agent 在写代码。
+- （2026-11-26 起不再成立，pi 移到不发布的 `@aoa-dev/pi`，见「步骤」末尾）SDK 只内置 pi（第一档）：pi 的 agent loop 和模型接入，放在子路径 `@aoa-dev/sdk/pi`，只用第二档的人不用装 pi 的依赖。编码工具（bash、read、edit、write）和编码规则是可选的 `@aoa-dev/sdk/tools/coding`，不默认装上，内核层不假设 agent 在写代码。
 - 第二档 SDK 只给接口，不实现任何 harness。Codex 和 dsh 的适配器搬到 `examples/`，是 workspace 里的包，测试照跑、不发布；`apps/aoa` 从那里引用，继续支持 `runtime: "codex" | "dsh"`。Codex 示例里的 `autoReview` 是为 `apps/aoa` 的审查角色加的选项，在示例的说明里写明。
 - `ToolExecContext` 也带 `signal`，长时间的工具（bash 的子进程）跟着停。
 
@@ -246,6 +246,8 @@ worktree 和分支（经 `session.prepare`/`cleanup` 接进来）、本地通道
 - 移除 `examples/codex`、`examples/dsh` 以及 `apps/aoa` 对它们的反向依赖（内核保留第二档 `HarnessRuntime` 接口与一致性测试）；原先 `digest` 和多 agent 客服台的 SDK 行为测试沉淀回 `packages/sdk/test/`，`examples/` 只保留唯一一个不被任何包引用的极简示例 `examples/tui`（`@aoa-dev/example-tui`）：约 150 行，建在 `@aoa-dev/sdk`、`@aoa-dev/sdk/pi` 和 `@aoa-dev/sdk/tools/coding` 上，`reply: "final_text"` + `agent.activity` 流式对话，只读工具直接跑，写操作走 `OutMsg.detail` + `approvals: { by: "answer" }` 在终端用 `/y`、`/n` 审批，待批期间打字排队而不误拒，Ctrl-C 调 `agent.abort` 中断在途 run。
 
 2026-11-19 起（`0.2.0`）三个发布包合并为唯一一个 `@aoa-dev/sdk`：`packages/kernel/src` 迁入 `packages/sdk/src/kernel`（不在 `package.json` 的 `exports` 里暴露，彻底封在包内），`packages/store-sqlite/src` 迁入 `packages/sdk/src/sqlite` 并同时从 `@aoa-dev/sdk` 顶层和 `@aoa-dev/sdk/sqlite` 导出 `sqliteStore`（`createHost({ store })` 仍接收 `HostStore` 接口）。因为 `bun:sqlite` 是 Bun 内置模块，`@aoa-dev/sdk` 的运行时 `dependencies` 为空，保持零构建直接发布 `.ts` 源码；外部安装测试验证空目录 `bun add @aoa-dev/sdk` 只装进这一个包。
+
+2026-11-26 起 pi 移出 SDK：`src/pi`（`piRuntime`、`piClassifier`、`piCompletion`、`createModelRuntime`）和依赖 `pi-coding-agent` 的 `codingTools` 搬进新的 workspace 包 `packages/pi`（`@aoa-dev/pi`，`private`，不发布），测试一起搬。`@aoa-dev/sdk` 去掉 `./pi` 出口和 pi 的三个可选 peer 依赖，不再有任何第三方依赖；第一档只留零依赖的 `@aoa-dev/sdk/loop`，README 的例子改用它。`@aoa-dev/sdk/tools/coding` 只剩编码规则和 `outsideWorktree`，`okToPi`、`text` 跟着 pi 走，`@aoa-dev/sdk/prompt` 多导出 `isPiToolResult` 和 `PiToolResult` 给它用。`apps/aoa` 和 `examples/tui` 改从 `@aoa-dev/pi` 引 pi，行为不变。`packages/sdk/test/no-pi.test.ts` 守住 SDK 的源码和 `package.json` 不再出现 pi。上文和下表里提到 `@aoa-dev/sdk/pi` 的地方是当时的记录，不再改。
 
 | 步 | 内容 | 验收 |
 | --- | --- | --- |

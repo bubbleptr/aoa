@@ -1,6 +1,7 @@
 import { githubTools } from "@aoa-dev/channel-github";
 import { builtinToolRisk, type PolicyConfig, type Risk, type Rule, type ToolDef } from "@aoa-dev/sdk";
-import { BRANCH_LIST_FLAGS, codingRules, codingTools, commandOf, gitInvocations, outsideWorktree } from "@aoa-dev/sdk/tools/coding";
+import { codingTools } from "@aoa-dev/pi";
+import { BRANCH_LIST_FLAGS, codingRules, commandOf, gitInvocations, outsideWorktree } from "@aoa-dev/sdk/tools/coding";
 
 /**
  * Local mode: the branch stays on this machine until the user merges it, so any `git push` in a bash call waits

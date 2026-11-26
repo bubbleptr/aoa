@@ -8,8 +8,8 @@ import {
   type OutMsg,
   type ToolDef,
 } from "@aoa-dev/sdk";
-import { piRuntime } from "@aoa-dev/sdk/pi";
-import { codingRules, codingTools } from "@aoa-dev/sdk/tools/coding";
+import { codingTools, piRuntime } from "@aoa-dev/pi";
+import { codingRules } from "@aoa-dev/sdk/tools/coding";
 import type { Provider } from "@earendil-works/pi-ai";
 
 export const TUI_THREAD = "tui";

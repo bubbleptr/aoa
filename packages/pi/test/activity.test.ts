@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { FakeClock } from "@aoa-dev/conformance";
-import type { RunActivity } from "../../src/kernel/index.ts";
-import { sqliteStore } from "../../src/index.ts";
-import { createHost } from "../../src/index.ts";
+import type { RunActivity } from "@aoa-dev/sdk";
+import { sqliteStore } from "@aoa-dev/sdk";
+import { createHost } from "@aoa-dev/sdk";
 import { scriptedRuntime } from "./harness.ts";
 
 const cleanups: (() => void)[] = [];

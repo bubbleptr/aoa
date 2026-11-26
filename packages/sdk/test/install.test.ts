@@ -5,8 +5,7 @@ import { join } from "node:path";
 
 /**
  * The SDK as another repository gets it: the single `@aoa-dev/sdk` package packed as it would be published, installed
- * into an empty directory outside this workspace, with nothing else of aoa around. pi is an optional peer, so it is not
- * installed.
+ * into an empty directory outside this workspace, with nothing else of aoa around.
  */
 const repo = join(import.meta.dir, "..", "..", "..");
 const dir = mkdtempSync(join(tmpdir(), "aoa-consumer-"));

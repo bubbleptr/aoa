@@ -12,7 +12,7 @@ An SDK for building Always-on Agents on Bun. Agents run 24x7 on an Inbox + Worke
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/sdk-en-dark.png">
-  <img alt="aoa SDK architecture: your app writes events and approval answers to the Inbox with append and answer, sets timers with schedule and followUp, and reads the Outbox with messages and watch; each agent has an Inbox, Worker, Timers, Memory, Outbox, Permissions and Tools, and several agents can message each other with send_to; the Worker hands a run to a runtime, tier 1 being the built-in pi and tier 2 an external harness, with Codex and dsh adapters in examples/; the runtime's tool calls come back to Permissions, allowed ones run in Tools and ones needing approval go out through the Outbox; every agent shares one SQLite file" src="docs/diagrams/sdk-en-light.png">
+  <img alt="aoa SDK architecture: your app writes events and approval answers to the Inbox with append and answer, sets timers with schedule and followUp, and reads the Outbox with messages and watch; each agent has an Inbox, Worker, Timers, Memory, Outbox, Permissions and Tools, and several agents can message each other with send_to; the Worker hands a run to a runtime, tier 1 being a runtime whose tools the kernel runs, such as loop or pi, and tier 2 an external harness, with Codex and dsh adapters in examples/; the runtime's tool calls come back to Permissions, allowed ones run in Tools and ones needing approval go out through the Outbox; every agent shares one SQLite file" src="docs/diagrams/sdk-en-light.png">
 </picture>
 
 If you want a coding agent you can use right away, see the [`aoa` command](apps/aoa/README.en.md), built on this SDK.
@@ -23,8 +23,6 @@ Bun only (≥ 1.3); the packages ship TypeScript source.
 
 ```bash
 bun add @aoa-dev/sdk
-# For the built-in pi runtime, add its peer dependencies (not needed with @aoa-dev/sdk/loop)
-bun add @earendil-works/pi-ai@1.5.2 @earendil-works/pi-coding-agent@1.5.2 typebox@1.3.27
 ```
 
 ## An example
@@ -33,7 +31,7 @@ An agent that can send email. Sending email is a high-risk tool, so the kernel s
 
 ```ts
 import { createHost, sqliteStore, type ToolDef } from "@aoa-dev/sdk";
-import { piRuntime } from "@aoa-dev/sdk/pi";
+import { dirTranscripts, loopRuntime, type LoopComplete, type LoopTurn } from "@aoa-dev/sdk/loop";
 
 const sendEmail: ToolDef = {
   name: "send_email",
@@ -46,18 +44,41 @@ const sendEmail: ToolDef = {
   },
 };
 
+// One model turn over an OpenAI-compatible API; any model SDK works the same way.
+const toChat = (m: LoopTurn) =>
+  m.role === "tool"
+    ? { role: "tool", tool_call_id: m.callId, content: m.content }
+    : m.role === "assistant"
+      ? { role: "assistant", content: m.text ?? "", tool_calls: m.toolCalls?.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } })) }
+      : m;
+type ChatReply = { choices: { message: { content: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[] };
+const complete: LoopComplete = async ({ systemPrompt, messages, tools, signal }) => {
+  const res = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    signal,
+    headers: { "content-type": "application/json", authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+    body: JSON.stringify({
+      model: "deepseek-v4-pro",
+      messages: [{ role: "system", content: systemPrompt }, ...messages.map(toChat)],
+      tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.schema } })),
+    }),
+  });
+  if (!res.ok) throw new Error(`model request failed: ${res.status}`);
+  const msg = ((await res.json()) as ChatReply).choices[0]!.message;
+  return {
+    text: msg.content ?? "",
+    toolCalls: msg.tool_calls?.map((c) => ({ id: c.id, name: c.function.name, args: JSON.parse(c.function.arguments) })),
+  };
+};
+
 const host = createHost({ store: sqliteStore("agent.db") });
 const agent = host.agent({
   name: "assistant",
   inbox: "assistant",
-  runtime: piRuntime({
-    provider: "deepseek",
-    modelId: "deepseek-v4-pro",
-    apiKey: process.env.DEEPSEEK_API_KEY,
-    agentDir: ".aoa/pi",
-    sessionsDir: ".aoa/sessions",
-    cwd: process.cwd(),
+  runtime: loopRuntime({
     systemPrompt: "You are a helpful assistant. When a task is done, tell the user with notify.",
+    complete,
+    transcripts: dirTranscripts(".aoa/sessions"),
   }),
   tools: [sendEmail],
 });
@@ -122,20 +143,20 @@ host.agent({
   policy: {
     rules: [{ name: "no-prod", match: (call) => (JSON.stringify(call.args).includes("prod") ? "block" : null) }],
     risk: { send_email: "medium" },
-    classify: piClassifier({ provider: "deepseek", modelId: "deepseek-flash", apiKey: process.env.DEEPSEEK_API_KEY }),
+    classify: async (call, ctx) => "unsure", // swap in your own model judgment; "unsure" hands the call to a person
   },
 });
 ```
 
-`piClassifier`'s prompt is written for a coding agent; elsewhere, write your own `classify`: it gets the call and whether the session has taken in others' content, and returns `allow`, `block` or `unsure`.
+`classify` gets the call and whether the session has taken in others' content, and returns `allow`, `block` or `unsure`. The `aoa` command uses `piClassifier`, written for a coding agent, from the in-repo `packages/pi`.
 
 Deferring is a deferred tool call: the kernel saves the session, ends the run, and puts an approval request in the outbox, while the worker moves on to other events. The answer from `agent.answer` enters the inbox as a new event; the kernel runs that one call, and a new run picks up where it left off. Only `answer` or a trusted `user_message` counts, not content written by others or messages from other agents.
 
-The kernel's own tools (timers, notify, memory, `send_to`) mark themselves `low`. The coding tools bash, read, edit and write, with their rules, are in the optional `@aoa-dev/sdk/tools/coding` and are not installed by default.
+The kernel's own tools (timers, notify, memory, `send_to`) mark themselves `low`. The coding rules are in the optional `@aoa-dev/sdk/tools/coding` and are not installed by default; the bash, read, edit and write tools themselves are pi's, in the in-repo `packages/pi`.
 
 ## Runtimes
 
-- **Tier 1 (the kernel decides and journals every tool call)**: `@aoa-dev/sdk/pi` ships the built-in pi multi-provider runtime (see [`examples/tui`](examples/tui)); `@aoa-dev/sdk/loop` has zero third-party dependencies — pass a single `complete()` function to plug in any model SDK or plain `fetch`.
+- **Tier 1 (the kernel decides and journals every tool call)**: `@aoa-dev/sdk/loop` has zero third-party dependencies; pass a single `complete()` function to plug in any model SDK or plain `fetch`. The SDK bundles no vendor runtime; the in-repo `packages/pi` (`@aoa-dev/pi`, unpublished) wires pi in as tier 1 for the `aoa` command and [`examples/tui`](examples/tui).
 - **Tier 2: external harnesses** (`HarnessRuntime`), which use their own tools and sandboxes and relay approvals through `ask`; the SDK defines the interface and verifies its six conventions in conformance tests, without bundling vendor harness adapters.
 
 ### With MCP 2.0 and OAR
@@ -176,7 +197,7 @@ Each of C1–C20 in §9 of the [spec](docs/spec.md) was written as a failing tes
 
 | | |
 |---|---|
-| [`examples/tui`](examples/tui) | Minimal terminal chat agent on `@aoa-dev/sdk/pi`: live streaming, read-only rules, `/y` approvals, Ctrl-C abort and SQLite persistence |
+| [`examples/tui`](examples/tui) | Minimal terminal chat agent on `@aoa-dev/pi`: live streaming, read-only rules, `/y` approvals, Ctrl-C abort and SQLite persistence |
 | [`apps/aoa`](apps/aoa/README.en.md) | The `aoa` command: a background coding agent with a CLI, MCP, GitHub and an observation page |
 
 The API may change in breaking ways during 0.x. The design is in [docs/design/](docs/design/README.md), the SDK's step-by-step tradeoffs in [docs/design/sdk.md](docs/design/sdk.md), and the spec in [docs/spec.md](docs/spec.md) (all in Chinese).
@@ -187,7 +208,8 @@ A Bun + TypeScript monorepo.
 
 | Package | What it does |
 |---|---|
-| `packages/sdk` | The single published package `@aoa-dev/sdk`: the five primitives, SQLite storage (`sqliteStore`), host, `@aoa-dev/sdk/loop`, `@aoa-dev/sdk/pi`, and optional coding tools and rules (`@aoa-dev/sdk/tools/coding`) |
+| `packages/sdk` | The single published package `@aoa-dev/sdk`: the five primitives, SQLite storage (`sqliteStore`), host, `@aoa-dev/sdk/loop`, and optional coding rules (`@aoa-dev/sdk/tools/coding`) |
+| `packages/pi` | `@aoa-dev/pi` (unpublished): pi as a tier-1 runtime, `piClassifier`, and pi's coding tools (used by the `aoa` command and `examples/tui`) |
 | `packages/channels/`: `local` · `github` | Local and GitHub channels (used by `apps/aoa`) |
 | `packages/conformance` | The C1–C20 conformance tests from §9 of the spec |
 | `examples/tui` | Minimal terminal chat example |

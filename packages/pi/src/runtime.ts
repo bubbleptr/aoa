@@ -1,4 +1,4 @@
-import type { KernelRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "../kernel/index.ts";
+import type { KernelRuntime, CallId, RunInput, RunResult, Tool, ToolResult } from "@aoa-dev/sdk";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
@@ -14,8 +14,8 @@ import type { TSchema } from "typebox";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createModelRuntime, redact } from "./models.ts";
-import { eventMarker, renderUserMessage } from "../prompt.ts";
-import { okToPi, text } from "../results.ts";
+import { eventMarker, renderUserMessage } from "@aoa-dev/sdk/prompt";
+import { okToPi, text } from "./results.ts";
 
 export type PiRuntimeConfig = {
   /** pi provider id, e.g. `anthropic`. */

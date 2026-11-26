@@ -1,4 +1,4 @@
-import type { Risk, ToolDef } from "../../kernel/index.ts";
+import type { Risk, ToolDef } from "@aoa-dev/sdk";
 import {
   createBashTool,
   createEditTool,

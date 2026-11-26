@@ -24,7 +24,7 @@ const boards: Record<string, Record<string, string>> = {
     "规则 · 风险 · 分类器": "decides each call",
     "你的 ToolDef · 内置工具 · send_to · 可选的编码工具": "your ToolDefs · built-ins · send_to · coding",
     "全部状态在一个文件里，所有 agent 共用": "all state in one file, shared by every agent",
-    "第一档 · 内置": "TIER 1 · BUILT-IN",
+    "第一档": "TIER 1",
     "第二档 · 外部 HARNESS": "TIER 2 · EXTERNAL HARNESS",
     "SDK 只给接口；这两个是 examples/ 里的适配器": "interface only; both adapters live in examples/",
     "审批请求": "approvals",

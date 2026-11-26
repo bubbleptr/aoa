@@ -1,0 +1,19 @@
+{
+  "name": "@aoa-dev/pi",
+  "version": "0.0.0",
+  "private": true,
+  "description": "pi as an aoa tier-1 runtime: piRuntime, the pi classifier, and pi's coding tools as kernel tools.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aoa-dev/sdk": "workspace:*",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "typebox": "1.3.27"
+  },
+  "devDependencies": {
+    "@aoa-dev/conformance": "workspace:*"
+  }
+}

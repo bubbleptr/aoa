@@ -1,8 +1,8 @@
-import type { PolicyConfig } from "../kernel/index.ts";
+import type { PolicyConfig } from "@aoa-dev/sdk";
 import type { Provider } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createModelRuntime, redact } from "./models.ts";
-import { encode } from "../prompt.ts";
+import { encode } from "@aoa-dev/sdk/prompt";
 
 export type PiClassifierConfig = {
   provider: string;

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { RETRY_NOTICE } from "../../src/prompt.ts";
+import { RETRY_NOTICE } from "@aoa-dev/sdk/prompt";
 import { fauxAssistantMessage, fauxToolCall, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
-import type { Tool, ToolResult } from "../../src/kernel/index.ts";
+import type { Tool, ToolResult } from "@aoa-dev/sdk";
 import {
   API_KEY,
   event,

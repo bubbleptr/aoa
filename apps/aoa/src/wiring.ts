@@ -2,8 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type FetchFn, type GitRunner, githubChannel, githubTools, runGitWithBun } from "@aoa-dev/channel-github";
 import { type Notifier, defaultNotifier, localChannel } from "@aoa-dev/channel-local";
-import { piCompletion, piRuntime } from "@aoa-dev/sdk/pi";
-import { codingTools } from "@aoa-dev/sdk/tools/coding";
+import { codingTools, piCompletion, piRuntime } from "@aoa-dev/pi";
 import {
   DEAD_NOTICE_PREFIX,
   createHost,
